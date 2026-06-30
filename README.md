@@ -62,3 +62,15 @@ To update the data and restart the services:
    ```
 
 Upon startup, the server will detect that the index files are missing and automatically parse the new `data/data.nt` file to rebuild the index from scratch.
+
+### Using Pre-built Indexes
+If you already possess the pre-built QLever index files (such as `croissant.index.*`, `croissant.vocabulary.*`, etc.) from another machine or backup, you can entirely skip the lengthy index building phase.
+
+1. Ensure the `server-croissant-live` container is stopped.
+2. Copy all your pre-built index files directly into the mounted server volume directory. By default, this is:
+   ```bash
+   ./qlever-tests/volumes/croissant-live/server/
+   ```
+   *(If you customized `$VOLUME_DIR`, place them in `$VOLUME_DIR/croissant-live/server/`)*
+3. Ensure the files are named correctly (e.g., prefixed with `croissant.`) and belong to the correct permissions (the QLever Docker container reads them as user `65534:0`).
+4. Run `docker compose --profile croissant-live up -d`. The server will instantly detect the existing index and load the graph into memory.
