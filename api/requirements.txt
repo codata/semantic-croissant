@@ -1,0 +1,5 @@
+fastapi==0.111.0
+uvicorn==0.30.1
+rdflib==7.0.0
+qlever==0.5.47
+pydantic==2.7.4
