@@ -44,6 +44,7 @@ services:
     profiles:
       - croissant-live
     image: api-croissant-live
+    pull_policy: never
     ports:
       - "7013:8000"
     env_file:
