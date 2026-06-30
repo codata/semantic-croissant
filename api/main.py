@@ -91,34 +91,38 @@ import concurrent.futures
 
 def search_datasets(q: str):
     q_lower = q.lower()
+    terms = q_lower.split()
     
+    name_filters = " && ".join([f'CONTAINS(LCASE(STR(?name)), "{t}")' for t in terms])
     q1 = f"""
     PREFIX schema: <https://schema.org/>
     PREFIX schema_http: <http://schema.org/>
     SELECT DISTINCT ?dataset ?name WHERE {{
       {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
       {{ ?dataset schema:name ?name }} UNION {{ ?dataset schema_http:name ?name }}
-      FILTER (CONTAINS(LCASE(STR(?name)), "{q_lower}"))
+      FILTER ({name_filters})
     }} LIMIT 5000
     """
     
+    keyword_filters = " && ".join([f'CONTAINS(LCASE(STR(?keyword)), "{t}")' for t in terms])
     q2 = f"""
     PREFIX schema: <https://schema.org/>
     PREFIX schema_http: <http://schema.org/>
     SELECT DISTINCT ?dataset WHERE {{
       {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
       {{ ?dataset schema:keywords ?keyword }} UNION {{ ?dataset schema_http:keywords ?keyword }}
-      FILTER (CONTAINS(LCASE(STR(?keyword)), "{q_lower}"))
+      FILTER ({keyword_filters})
     }} LIMIT 5000
     """
     
+    desc_filters = " && ".join([f'CONTAINS(LCASE(STR(?desc)), "{t}")' for t in terms])
     q3 = f"""
     PREFIX schema: <https://schema.org/>
     PREFIX schema_http: <http://schema.org/>
     SELECT DISTINCT ?dataset WHERE {{
       {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
       {{ ?dataset schema:description ?desc }} UNION {{ ?dataset schema_http:description ?desc }}
-      FILTER (CONTAINS(LCASE(STR(?desc)), "{q_lower}"))
+      FILTER ({desc_filters})
     }} LIMIT 5000
     """
     
