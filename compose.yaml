@@ -17,6 +17,9 @@ services:
     image: ghcr.io/zazukoians/qlever-server:latest
     user: "65534:0"
     stop_grace_period: 0s
+    depends_on:
+      init-croissant-live:
+        condition: service_completed_successfully
     ports:
       - "7011:7011"
     env_file:
