@@ -24,6 +24,9 @@ services:
       - "7011:7011"
     env_file:
       - ./croissant-live.env
+    environment:
+      - INDEXING=true
+      - FORCE_INDEXING=true
     volumes:
       - ${VOLUME_DIR:-./qlever-tests/volumes}/croissant-live/server:/data
       - ${DATA_DIR:-./qlever-tests/data}:/raw_data:ro
