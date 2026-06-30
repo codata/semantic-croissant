@@ -95,78 +95,51 @@ def search_datasets(q: str):
     q_lower = q.lower()
     terms = q_lower.split()
     
-    name_filters = " && ".join([f'CONTAINS(LCASE(STR(?name)), "{t}")' for t in terms])
-    q1 = f"""
-    PREFIX schema: <https://schema.org/>
-    PREFIX schema_http: <http://schema.org/>
-    SELECT DISTINCT ?dataset ?name WHERE {{
-      {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
-      {{ ?dataset schema:name ?name }} UNION {{ ?dataset schema_http:name ?name }}
-      FILTER ({name_filters})
-    }} LIMIT 5000
-    """
+    filters = []
+    for t in terms:
+        filters.append(f"""
+        FILTER (
+          (bound(?name) && CONTAINS(LCASE(STR(?name)), "{t}")) ||
+          (bound(?desc) && CONTAINS(LCASE(STR(?desc)), "{t}")) ||
+          (bound(?keyword) && CONTAINS(LCASE(STR(?keyword)), "{t}"))
+        )
+        """)
+        
+    filter_block = "\n".join(filters)
     
-    keyword_filters = " && ".join([f'CONTAINS(LCASE(STR(?keyword)), "{t}")' for t in terms])
-    q2 = f"""
-    PREFIX schema: <https://schema.org/>
-    PREFIX schema_http: <http://schema.org/>
-    SELECT DISTINCT ?dataset WHERE {{
-      {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
-      {{ ?dataset schema:keywords ?keyword }} UNION {{ ?dataset schema_http:keywords ?keyword }}
-      FILTER ({keyword_filters})
-    }} LIMIT 5000
-    """
-    
-    desc_filters = " && ".join([f'CONTAINS(LCASE(STR(?desc)), "{t}")' for t in terms])
-    q3 = f"""
+    query = f"""
     PREFIX schema: <https://schema.org/>
     PREFIX schema_http: <http://schema.org/>
     SELECT DISTINCT ?dataset WHERE {{
       {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
-      {{ ?dataset schema:description ?desc }} UNION {{ ?dataset schema_http:description ?desc }}
-      FILTER ({desc_filters})
+      
+      OPTIONAL {{ {{ ?dataset schema:name ?name }} UNION {{ ?dataset schema_http:name ?name }} }}
+      OPTIONAL {{ {{ ?dataset schema:description ?desc }} UNION {{ ?dataset schema_http:description ?desc }} }}
+      OPTIONAL {{ {{ ?dataset schema:keywords ?keyword }} UNION {{ ?dataset schema_http:keywords ?keyword }} }}
+      
+      {filter_block}
     }} LIMIT 5000
     """
     
-    def run_query(query):
-        encoded = urllib.parse.urlencode({"query": query})
-        url = f"http://server-croissant-live:7011/?{encoded}"
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        try:
-            with urllib.request.urlopen(req) as response:
-                return json.loads(response.read().decode()).get("results", {}).get("bindings", [])
-        except Exception:
-            return []
-            
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        f1 = executor.submit(run_query, q1)
-        f2 = executor.submit(run_query, q2)
-        f3 = executor.submit(run_query, q3)
-        b1, b2, b3 = f1.result(), f2.result(), f3.result()
-        
-    scores = {}
-    
-    for b in b1:
-        ds = b["dataset"]["value"]
-        name = b["name"]["value"]
-        scores.setdefault(ds, 0)
-        if name.lower() == q_lower:
-            scores[ds] += 100
-        else:
-            scores[ds] += 50
-            
-    for b in b2:
-        ds = b["dataset"]["value"]
-        scores.setdefault(ds, 0)
-        scores[ds] += 25
-        
-    for b in b3:
-        ds = b["dataset"]["value"]
-        scores.setdefault(ds, 0)
-        scores[ds] += 10
-        
-    sorted_datasets = sorted(scores.keys(), key=lambda k: scores[k], reverse=True)
-    return sorted_datasets
+    encoded = urllib.parse.urlencode({"query": query}).encode("utf-8")
+    url = "http://server-croissant-live:7011/"
+    req = urllib.request.Request(
+        url, 
+        data=encoded,
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+    )
+    try:
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode())
+            bindings = data.get("results", {}).get("bindings", [])
+            # Return dataset IDs
+            return [b["dataset"]["value"] for b in bindings]
+    except Exception as e:
+        print(f"Search datasets query failed: {e}")
+        return []
 
 def get_datasets_properties(dataset_ids):
     if not dataset_ids:
@@ -177,7 +150,8 @@ def get_datasets_properties(dataset_ids):
     sparql = f"""
     PREFIX schema: <https://schema.org/>
     PREFIX schema_http: <http://schema.org/>
-    SELECT DISTINCT ?dataset ?name ?description ?keyword ?url WHERE {{
+    PREFIX cr: <http://mlcommons.org/croissant/>
+    SELECT DISTINCT ?dataset ?name ?description ?keyword ?url ?creator_name ?citation ?identifier WHERE {{
       {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
       FILTER(STR(?dataset) IN ({in_values}))
       
@@ -192,6 +166,16 @@ def get_datasets_properties(dataset_ids):
       }}
       OPTIONAL {{
         {{ ?dataset schema:url ?url }} UNION {{ ?dataset schema_http:url ?url }}
+      }}
+      OPTIONAL {{
+        {{ ?dataset schema:creator ?creator_node }} UNION {{ ?dataset schema_http:creator ?creator_node }}
+        {{ ?creator_node schema:name ?creator_name }} UNION {{ ?creator_node schema_http:name ?creator_name }}
+      }}
+      OPTIONAL {{
+        ?dataset cr:citeAs ?citation
+      }}
+      OPTIONAL {{
+        {{ ?dataset schema:identifier ?identifier }} UNION {{ ?dataset schema_http:identifier ?identifier }}
       }}
     }}
     """
@@ -235,6 +219,9 @@ def search_keyword(q: str, limit: int = 100, page: int = 1):
                     "name": b.get("name"),
                     "description": b.get("description"),
                     "url": b.get("url"),
+                    "creator_name": b.get("creator_name"),
+                    "citation": b.get("citation"),
+                    "identifier": b.get("identifier"),
                     "keywords": set()
                 }
             if "keyword" in b:
@@ -249,6 +236,9 @@ def search_keyword(q: str, limit: int = 100, page: int = 1):
                 if g["name"]: item["name"] = g["name"]
                 if g["description"]: item["description"] = g["description"]
                 if g["url"]: item["url"] = g["url"]
+                if g["creator_name"]: item["creator_name"] = g["creator_name"]
+                if g["citation"]: item["citation"] = g["citation"]
+                if g["identifier"]: item["identifier"] = g["identifier"]
                 if g["keywords"]: 
                     item["keyword"] = {"type": "literal", "value": list(g["keywords"])[0]} # Search returns first keyword
                 results.append(item)
@@ -262,8 +252,10 @@ def search_keyword(q: str, limit: int = 100, page: int = 1):
     except Exception as e:
         return {"error": f"Failed to perform search: {str(e)}"}, 500
 
+from fastapi.responses import PlainTextResponse
+
 @app.get("/croissant")
-def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page: int = 1):
+def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page: int = 1, format: str = "json-ld"):
     if id:
         # User requested a specific dataset ID
         filter_str = f"_:{id}" if id.startswith("bn") else id
@@ -411,8 +403,9 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
                 sparql = f"""
                 PREFIX schema: <https://schema.org/>
                 PREFIX schema_http: <http://schema.org/>
+                PREFIX cr: <http://mlcommons.org/croissant/>
                 
-                SELECT DISTINCT ?dataset ?name ?description ?keyword
+                SELECT DISTINCT ?dataset ?name ?description ?keyword ?url ?creator_name ?citation ?identifier
                 WHERE {{
                   {{ ?dataset a schema:Dataset . }}
                   UNION
@@ -429,6 +422,16 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
                   }}
                   OPTIONAL {{
                     {{ ?dataset schema:url ?url }} UNION {{ ?dataset schema_http:url ?url }}
+                  }}
+                  OPTIONAL {{
+                    {{ ?dataset schema:creator ?creator_node }} UNION {{ ?dataset schema_http:creator ?creator_node }}
+                    {{ ?creator_node schema:name ?creator_name }} UNION {{ ?creator_node schema_http:name ?creator_name }}
+                  }}
+                  OPTIONAL {{
+                    ?dataset cr:citeAs ?citation
+                  }}
+                  OPTIONAL {{
+                    {{ ?dataset schema:identifier ?identifier }} UNION {{ ?dataset schema_http:identifier ?identifier }}
                   }}
                 }}
                 ORDER BY ?dataset
@@ -465,6 +468,12 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
                     }
                     if "url" in b:
                         datasets[ds_id]["schema:url"] = b["url"]["value"]
+                    if "creator_name" in b:
+                        datasets[ds_id]["schema:creator_name"] = b["creator_name"]["value"]
+                    if "citation" in b:
+                        datasets[ds_id]["cr:citeAs"] = b["citation"]["value"]
+                    if "identifier" in b:
+                        datasets[ds_id]["schema:identifier"] = b["identifier"]["value"]
                 
                 keyword = b.get("keyword", {}).get("value", "")
                 if keyword and keyword not in datasets[ds_id]["schema:keywords"]:
@@ -479,6 +488,30 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
             else:
                 dataset_list = list(datasets.values())
             
+            if format == "markdown":
+                md = ["# Search Results\n"]
+                for ds in dataset_list:
+                    name = ds.get("schema:name", "Unknown Dataset")
+                    desc = ds.get("schema:description", "No description provided.")
+                    url = ds.get("schema:url", "No URL")
+                    ds_id = ds.get("@id", "")
+                    
+                    # Extract persistent identifier (prefer schema:identifier over url if it looks like a DOI)
+                    identifier = ds.get("schema:identifier")
+                    if not identifier:
+                        identifier = url
+                        
+                    author = ds.get("schema:creator_name", "Unknown Author")
+                    citation = ds.get("cr:citeAs", "No citation provided.")
+                    
+                    md.append(f"## {name}")
+                    md.append(f"**Dataset ID:** `{ds_id}`")
+                    md.append(f"**Identifier/DOI:** {identifier}")
+                    md.append(f"**Author:** {author}")
+                    md.append(f"**Description:** {desc}\n")
+                    md.append(f"**Citation:**\n```\n{citation}\n```\n")
+                return PlainTextResponse("\n".join(md))
+                
             croissant_export = {
                 "@context": {
                     "schema": "https://schema.org/",
@@ -501,3 +534,29 @@ def health():
     return {"status": "ok"}
 
 
+
+@app.get("/hazard-info")
+async def hazard_info(q: str = None):
+    """Returns the full HIPs Croissant content with all links and instructions for LLMs. Can filter by HIPs code or description."""
+    hips_path = "/app/hips/semantic_croissant.json"
+    if not os.path.exists(hips_path):
+        raise HTTPException(status_code=404, detail="Hazard Info Profiles not found on server.")
+    with open(hips_path, "r") as f:
+        data = json.load(f)
+        
+    if q:
+        q_lower = q.lower()
+        filtered_datasets = []
+        for d in data.get("dataset", []):
+            hips_code = d.get("cr:hasPart", {}).get("hipsCode", "").lower()
+            name = d.get("name", "").lower()
+            desc = d.get("description", "").lower()
+            
+            if q_lower in hips_code or q_lower in name or q_lower in desc:
+                filtered_datasets.append(d)
+                
+        data["dataset"] = filtered_datasets
+        if "cr:recordSet" in data:
+            data["cr:recordSet"]["description"] = f"Filtered index of HIPS datasets. Total datasets matching '{q}': {len(filtered_datasets)}."
+            
+    return data
