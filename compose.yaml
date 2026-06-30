@@ -1,0 +1,47 @@
+services:
+  init-croissant-live:
+    profiles:
+      - croissant-live
+    image: docker.io/library/busybox
+    command:
+      ["sh", "-c", "chown -R 65534:0 /data/server && chown -R 65534:0 /data/ui"]
+    stop_grace_period: 0s
+    restart: "no"
+    volumes:
+      - ${VOLUME_DIR:-/mediaquantum/qlever/qlever-tests/volumes}/croissant-live/server:/data/server
+      - ${VOLUME_DIR:-/mediaquantum/qlever/qlever-tests/volumes}/croissant-live/ui:/data/ui
+
+  server-croissant-live:
+    profiles:
+      - croissant-live
+    image: ghcr.io/zazukoians/qlever-server:latest
+    build:
+      context: ./qlever-tests/docker/
+      dockerfile: ./server.Dockerfile
+    user: "65534:0"
+    stop_grace_period: 0s
+    ports:
+      - "7011:7011"
+    env_file:
+      - ./croissant-live.env
+    volumes:
+      - ${VOLUME_DIR:-/mediaquantum/qlever/qlever-tests/volumes}/croissant-live/server:/data
+      - ${DATA_DIR:-/mediaquantum/qlever/qlever-tests/data}:/data/data:ro
+
+  ui-croissant-live:
+    profiles:
+      - croissant-live
+    image: ghcr.io/zazukoians/qlever-ui:latest
+    build:
+      context: ./qlever-tests/docker/
+      dockerfile: ./ui.Dockerfile
+    user: "65534:0"
+    stop_grace_period: 0s
+    ports:
+      - "7012:7012"
+    env_file:
+      - ./croissant-live.env
+    volumes:
+      - ${VOLUME_DIR:-/mediaquantum/qlever/qlever-tests/volumes}/croissant-live/ui:/app/db
+    depends_on:
+      - server-croissant-live

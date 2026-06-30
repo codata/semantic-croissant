@@ -1,0 +1,3 @@
+[submodule "qlever-tests"]
+	path = qlever-tests
+	url = https://github.com/zazukoians/qlever-tests.git
