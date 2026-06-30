@@ -74,3 +74,47 @@ If you already possess the pre-built QLever index files (such as `croissant.inde
    *(If you customized `$VOLUME_DIR`, place them in `$VOLUME_DIR/croissant-live/server/`)*
 3. Ensure the files are named correctly (e.g., prefixed with `croissant.`) and belong to the correct permissions (the QLever Docker container reads them as user `65534:0`).
 4. Run `docker compose --profile croissant-live up -d`. The server will instantly detect the existing index and load the graph into memory.
+
+## Model Context Protocol (MCP) Server
+
+The repository includes a dedicated MCP service (`mcp-croissant-live`) that exposes the Semantic Croissant index to AI assistants like Claude Desktop or Cursor. 
+
+This enables you to ask AI assistants to "search for datasets about X" or "extract the full JSON-LD for dataset Y", and they will seamlessly execute these tasks against your live QLever instance.
+
+### Running the MCP Service
+The MCP service is automatically included when you start the `croissant-live` profile. By default, it runs as an HTTP Server-Sent Events (SSE) server exposed on port `7070`.
+
+```bash
+docker compose --profile croissant-live up -d
+```
+You can connect remote MCP clients directly to `http://localhost:7070/sse`.
+
+### Connecting to Claude Desktop
+
+Claude Desktop natively connects to local MCP servers via standard input/output. You can bypass the SSE server and directly invoke the script via `docker exec`, which overrides the transport to `stdio` by default:
+
+To allow Claude Desktop to interface with your datasets, edit your Claude Desktop configuration file:
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux:** `~/.config/Claude/claude_desktop_config.json`
+
+Add the following JSON configuration:
+
+```json
+{
+  "mcpServers": {
+    "croissant-mcp": {
+      "command": "docker",
+      "args": [
+        "exec",
+        "-i",
+        "semantic-croissant-mcp-croissant-live-1",
+        "python",
+        "/app/mcp_server.py"
+      ]
+    }
+  }
+}
+```
+
+Restart Claude Desktop. You will see a "hammer" icon indicating the tools are loaded, enabling conversational queries directly against your local datasets!
