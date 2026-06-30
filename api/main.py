@@ -39,29 +39,24 @@ def rebuild_index():
     # Copy data.nt to INDEX_DIR so qlever-index container can see it
     shutil.copy(DATA_FILE, os.path.join(INDEX_DIR, "data.nt"))
     
-    print("Starting QLever index rebuild...")
+    print("Starting QLever index rebuild...", flush=True)
     try:
-        # Change ownership so server-croissant-live (user 65534) can access them
-        os.chown(QLEVER_FILE, 65534, 0)
-        dest_data = os.path.join(INDEX_DIR, "data.nt")
-        os.chown(dest_data, 65534, 0)
-        os.chown(DATA_FILE, 65534, 0)
-    except Exception as e:
-        print(f"Warning: Could not change ownership: {e}")
-
-    try:
-        # We run the command in the DATA_DIR where Qleverfile is located
+        # 1. Delete existing index files
+        for f in os.listdir(INDEX_DIR):
+            if f.startswith("croissant."):
+                os.remove(os.path.join(INDEX_DIR, f))
+        
+        # 2. Restart QLever Server
         subprocess.run(
-            ["qlever", "rebuild-index", "--restart-when-finished"],
-            cwd=INDEX_DIR,
+            ["docker", "restart", "semantic-croissant-server-croissant-live-1"],
             check=True
         )
-        print("Index rebuild completed and server restarted.")
-    except subprocess.CalledProcessError as e:
-        print(f"Error rebuilding index: {e}")
+        print("Index rebuild completed and server restarted.", flush=True)
+    except Exception as e:
+        print(f"Error rebuilding index: {e}", flush=True)
 
 @app.post("/add_record")
-async def add_record(request: Request, background_tasks: BackgroundTasks):
+async def add_record(request: Request, background_tasks: BackgroundTasks, rebuild: bool = True):
     payload = await request.body()
     
     # 1. Convert JSON-LD to NTriples
@@ -83,9 +78,16 @@ async def add_record(request: Request, background_tasks: BackgroundTasks):
         return {"error": f"Failed to write to {DATA_FILE}: {str(e)}"}, 500
 
     # 3. Trigger rebuild in background
-    background_tasks.add_task(rebuild_index)
+    if rebuild:
+        background_tasks.add_task(rebuild_index)
+        return {"status": "success", "message": "Record added and index rebuild scheduled."}
     
-    return {"status": "success", "message": "Record added and index rebuild scheduled."}
+    return {"status": "success", "message": "Record added without triggering index rebuild."}
+
+@app.post("/rebuild")
+async def trigger_rebuild(background_tasks: BackgroundTasks):
+    background_tasks.add_task(rebuild_index)
+    return {"status": "success", "message": "Index rebuild scheduled."}
 
 import concurrent.futures
 
