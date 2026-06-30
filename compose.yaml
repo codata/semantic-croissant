@@ -15,9 +15,6 @@ services:
     profiles:
       - croissant-live
     image: ghcr.io/zazukoians/qlever-server:latest
-    build:
-      context: ./qlever-tests/docker/
-      dockerfile: ./server.Dockerfile
     user: "65534:0"
     stop_grace_period: 0s
     ports:
@@ -32,9 +29,6 @@ services:
     profiles:
       - croissant-live
     image: ghcr.io/zazukoians/qlever-ui:latest
-    build:
-      context: ./qlever-tests/docker/
-      dockerfile: ./ui.Dockerfile
     user: "65534:0"
     stop_grace_period: 0s
     ports:
@@ -49,8 +43,7 @@ services:
   api-croissant-live:
     profiles:
       - croissant-live
-    build:
-      context: ./api
+    image: api-croissant-live
     ports:
       - "7013:8000"
     env_file:
