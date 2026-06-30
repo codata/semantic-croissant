@@ -58,3 +58,16 @@ services:
       - ${VOLUME_DIR:-./qlever-tests/volumes}/croissant-live/server:/volumes/server
     depends_on:
       - server-croissant-live
+
+  mcp-croissant-live:
+    profiles:
+      - croissant-live
+    image: api-croissant-live
+    pull_policy: never
+    command: ["tail", "-f", "/dev/null"]
+    env_file:
+      - ./croissant-live.env
+    environment:
+      - API_BASE=http://api-croissant-live:8000
+    depends_on:
+      - api-croissant-live
