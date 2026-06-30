@@ -19,10 +19,46 @@ This repository contains the deployment infrastructure for the `croissant-live` 
    ```
 
 ### Volume Parameterization
-By default, the Docker compose configuration uses volumes located at `/mediaquantum/qlever/qlever-tests/volumes` and raw data from `/mediaquantum/qlever/qlever-tests/data`.
+By default, the Docker compose configuration uses volumes located at `./qlever-tests/volumes` and raw data from `./qlever-tests/data`.
 
 You can override these directories by providing environment variables before running docker-compose:
 
 ```bash
 VOLUME_DIR=/path/to/my/volumes DATA_DIR=/path/to/my/data docker compose --profile croissant-live up -d
 ```
+
+## Data Conversion Pipeline
+
+Before the `croissant-live` index can be built, the raw Croissant JSON-LD files must be converted into a continuous NTriples format (`.nt`) suitable for QLever ingestion.
+
+The conversion pipeline script `convert_all.py` (located in the `pipeline/` directory) uses multiprocessing to quickly transform the source JSON-LD files. 
+
+### Running the Conversion
+If you have a directory of raw Croissant JSON-LD files (e.g., in `../croissant`), you can run the pipeline to generate a consolidated `data.nt` file ready for ingestion:
+
+```bash
+python3 pipeline/convert_all.py ../croissant ./qlever-tests/data/data.nt
+```
+
+This will produce `data/data.nt`, which is automatically mounted and read by the `server-croissant-live` container when indexing begins.
+
+### Managing Volumes and Rebuilding the Index
+If you run the pipeline again to produce a new or updated `data.nt` file, you must force QLever to rebuild the internal graph index. QLever will not automatically re-index if the old index cache files still exist in the server volume.
+
+To update the data and restart the services:
+
+1. Ensure your updated `data.nt` file is placed in the configured data directory (by default, `./qlever-tests/data/data.nt`).
+2. Bring down the currently running services:
+   ```bash
+   docker compose --profile croissant-live down
+   ```
+3. Remove the old QLever index cache files. Because these files are created by the Docker root user, you can use a transient Alpine container to delete them cleanly from the volume folder:
+   ```bash
+   docker run --rm -v $(pwd)/qlever-tests/volumes/croissant-live/server:/server alpine sh -c "rm -f /server/croissant.*"
+   ```
+4. Restart the services:
+   ```bash
+   docker compose --profile croissant-live up -d
+   ```
+
+Upon startup, the server will detect that the index files are missing and automatically parse the new `data/data.nt` file to rebuild the index from scratch.
