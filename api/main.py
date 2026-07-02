@@ -301,6 +301,33 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
         }}
         """
         
+        # Level 4
+        q4 = f"""
+        PREFIX schema: <https://schema.org/>
+        PREFIX schema_http: <http://schema.org/>
+        SELECT ?dataset ?p1 ?o1 ?p2 ?o2 ?p3 ?o3 ?p4 ?o4 WHERE {{
+          {{ {base_subquery} }}
+          ?dataset ?p1 ?o1 .
+          ?o1 ?p2 ?o2 .
+          ?o2 ?p3 ?o3 .
+          ?o3 ?p4 ?o4 .
+        }}
+        """
+        
+        # Level 5
+        q5 = f"""
+        PREFIX schema: <https://schema.org/>
+        PREFIX schema_http: <http://schema.org/>
+        SELECT ?dataset ?p1 ?o1 ?p2 ?o2 ?p3 ?o3 ?p4 ?o4 ?p5 ?o5 WHERE {{
+          {{ {base_subquery} }}
+          ?dataset ?p1 ?o1 .
+          ?o1 ?p2 ?o2 .
+          ?o2 ?p3 ?o3 .
+          ?o3 ?p4 ?o4 .
+          ?o4 ?p5 ?o5 .
+        }}
+        """
+        
         def run_q(query):
             encoded = urllib.parse.urlencode({"query": query})
             url = f"http://server-croissant-live:7011/?{encoded}"
@@ -315,6 +342,8 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
                 
             b2 = run_q(q2)
             b3 = run_q(q3)
+            b4 = run_q(q4)
+            b5 = run_q(q5)
             
             # Reconstruct the JSON-LD tree
             nodes = {}
@@ -353,6 +382,14 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
             for b in b3:
                 o2 = b["o2"]["value"]
                 add_prop(o2, b["p3"]["value"], b["o3"]["value"], b["o3"]["type"])
+                
+            for b in b4:
+                o3 = b["o3"]["value"]
+                add_prop(o3, b["p4"]["value"], b["o4"]["value"], b["o4"]["type"])
+                
+            for b in b5:
+                o4 = b["o4"]["value"]
+                add_prop(o4, b["p5"]["value"], b["o5"]["value"], b["o5"]["type"])
                 
             # Expand nested nodes
             def expand(node_id):
@@ -504,9 +541,12 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
                     author = ds.get("schema:creator_name", "Unknown Author")
                     citation = ds.get("cr:citeAs", "No citation provided.")
                     
+                    primary_id = identifier if (identifier and identifier != "No URL") else ds_id
+                    
                     md.append(f"## {name}")
-                    md.append(f"**Dataset ID:** `{ds_id}`")
-                    md.append(f"**Identifier/DOI:** {identifier}")
+                    md.append(f"**Dataset ID:** `{primary_id}`")
+                    if primary_id != ds_id:
+                        md.append(f"*(Internal ID: {ds_id})*")
                     md.append(f"**Author:** {author}")
                     md.append(f"**Description:** {desc}\n")
                     md.append(f"**Citation:**\n```\n{citation}\n```\n")
@@ -560,3 +600,207 @@ async def hazard_info(q: str = None):
             data["cr:recordSet"]["description"] = f"Filtered index of HIPS datasets. Total datasets matching '{q}': {len(filtered_datasets)}."
             
     return data
+
+@app.get("/variables/sparql")
+def get_variables_sparql(id: str):
+    import urllib.parse
+    
+    # Unquote in case the LLM sent urlencoded (e.g. doi%3A...)
+    id = urllib.parse.unquote(id)
+    
+    # Handle bnode ids formatting for QLever
+    filter_str = f"_:{id}" if id.startswith("bn") else id
+    
+    query = f"""
+    PREFIX schema: <https://schema.org/>
+    PREFIX schema_http: <http://schema.org/>
+    PREFIX cr: <http://mlcommons.org/croissant/>
+
+    SELECT ?dataset ?identifier ?name ?desc ?dataType ?column ?fileObject WHERE {{
+      {{
+        {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
+        FILTER(STR(?dataset) = "{filter_str}")
+      }} UNION {{
+        {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
+        ?dataset schema:identifier|schema_http:identifier ?id .
+        FILTER(STR(?id) = "{filter_str}")
+      }}
+      
+      OPTIONAL {{ ?dataset schema:identifier|schema_http:identifier ?identifier }}
+      
+      {{
+        ?dataset schema:distribution|schema_http:distribution ?dist .
+        ?dist schema:hasPart|schema_http:hasPart|cr:recordSet ?rs .
+        ?rs cr:field|cr:hasPart ?field .
+      }} UNION {{
+        ?dataset schema:hasPart|schema_http:hasPart|cr:recordSet ?rs .
+        ?rs cr:field|cr:hasPart ?field .
+      }} UNION {{
+        ?dataset cr:recordSet ?rs .
+        ?rs cr:field ?field .
+      }}
+      
+      ?field a cr:Field .
+      
+      ?field schema:name|schema_http:name|cr:name ?name .
+      
+      OPTIONAL {{ ?field schema:description|schema_http:description|cr:description ?desc }}
+      OPTIONAL {{ ?field cr:dataType ?dataType }}
+      OPTIONAL {{ 
+        ?field cr:source ?source .
+        ?source cr:extract ?extract .
+        ?extract cr:column ?column .
+      }}
+      OPTIONAL {{ 
+        ?field cr:source ?source2 .
+        ?source2 cr:fileObject ?fileObjNode .
+        ?fileObjNode schema:name|schema_http:name|cr:name ?fileObject .
+      }}
+    }} LIMIT 5000
+    """
+    
+    encoded = urllib.parse.urlencode({"query": query}).encode("utf-8")
+    url = "http://server-croissant-live:7011/"
+    req = urllib.request.Request(
+        url, 
+        data=encoded,
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+    )
+    
+    try:
+        with urllib.request.urlopen(req) as response:
+            bindings = json.loads(response.read().decode()).get("results", {}).get("bindings", [])
+            variables = []
+            dataset_id = ""
+            identifier = ""
+            unique_fields = {}
+            for b in bindings:
+                if not dataset_id and "dataset" in b:
+                    dataset_id = b["dataset"]["value"]
+                if not identifier and "identifier" in b:
+                    identifier = b["identifier"]["value"]
+                    
+                name = b.get("name", {}).get("value", "")
+                desc = b.get("desc", {}).get("value", "")
+                col = b.get("column", {}).get("value", "")
+                fileObj = b.get("fileObject", {}).get("value", "")
+                
+                key = f"{name}|{col}|{fileObj}"
+                if name and key not in unique_fields:
+                    v = {
+                        "name": name,
+                        "description": desc
+                    }
+                    if col: v["column"] = col
+                    if fileObj: v["fileObject"] = fileObj
+                    unique_fields[key] = v
+                    variables.append(v)
+            
+            return {
+                "dataset_id": dataset_id,
+                "identifier": identifier,
+                "variables": variables
+            }
+    except Exception as e:
+        return {"error": str(e), "variables": []}
+
+@app.get("/variables/croissant")
+def get_variables_croissant(url: str):
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req) as response:
+            content = response.read().decode()
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError:
+                return {"error": "URL did not return valid JSON. Ensure you are pointing to a JSON-LD file or API endpoint, not an HTML landing page.", "variables": []}
+            
+        fields = []
+        def extract_field_data(f_obj):
+            source = f_obj.get("source") or f_obj.get("cr:source") or {}
+            extract = source.get("extract") or source.get("cr:extract") or {}
+            file_obj = source.get("fileObject") or source.get("cr:fileObject") or {}
+            
+            return {
+                "name": f_obj.get("schema:name") or f_obj.get("name") or extract.get("column") or extract.get("cr:column") or "",
+                "description": f_obj.get("schema:description") or f_obj.get("description") or "",
+                "column": extract.get("column") or extract.get("cr:column") or "",
+                "fileObject": file_obj.get("@id") or ""
+            }
+
+        def walk(obj):
+            if isinstance(obj, dict):
+                t = obj.get("@type", "")
+                if t == "cr:Field" or t == "Field" or (isinstance(t, list) and ("cr:Field" in t or "Field" in t)):
+                    fields.append(extract_field_data(obj))
+                # Check for "field" or "cr:field" arrays containing fields directly
+                elif "field" in obj and isinstance(obj["field"], list):
+                    for f in obj["field"]:
+                        if isinstance(f, dict):
+                            fields.append(extract_field_data(f))
+                elif "cr:field" in obj and isinstance(obj["cr:field"], list):
+                    for f in obj["cr:field"]:
+                        if isinstance(f, dict):
+                            fields.append(extract_field_data(f))
+                for k, v in obj.items():
+                    walk(v)
+            elif isinstance(obj, list):
+                for item in obj:
+                    walk(item)
+                    
+        walk(data)
+        
+        # Deduplicate fields by name
+        unique_fields = {}
+        for f in fields:
+            key = f"{f['name']}|{f['column']}|{f['fileObject']}"
+            if f["name"] and key not in unique_fields:
+                unique_fields[key] = f
+                
+        return {"variables": list(unique_fields.values())}
+    except Exception as e:
+        return {"error": str(e), "variables": []}
+
+@app.get("/variables/oai")
+def get_variables_oai(url: str):
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req) as response:
+            content = response.read().decode()
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError:
+                return {"error": "URL did not return valid JSON. Ensure you are pointing to a JSON-LD file or API endpoint, not an HTML landing page.", "questions": [], "variables": []}
+            
+        questions = []
+        variables = []
+        
+        def walk(obj):
+            if isinstance(obj, dict):
+                if "questionInformation:questionName" in obj:
+                    questions.append({
+                        "name": obj.get("questionInformation:questionName", ""),
+                        "text": obj.get("questionInformation:questionText", "")
+                    })
+                if "variableInformation:variableName" in obj:
+                    variables.append({
+                        "name": obj.get("variableInformation:variableName", ""),
+                        "label": obj.get("variableInformation:variableLabel", "")
+                    })
+                for k, v in obj.items():
+                    walk(v)
+            elif isinstance(obj, list):
+                for item in obj:
+                    walk(item)
+                    
+        walk(data)
+        
+        return {
+            "questions": questions,
+            "variables": variables
+        }
+    except Exception as e:
+        return {"error": str(e), "questions": [], "variables": []}

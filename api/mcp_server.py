@@ -93,9 +93,12 @@ def search_croissant_datasets(q: str, limit: int = 10, page: int = 1, format: st
             author = r.get("creator_name", {}).get("value", "Unknown Author")
             citation = r.get("citation", {}).get("value", "No citation provided.")
             
+            primary_id = identifier if (identifier and identifier != "No URL") else ds_id
+            
             md.append(f"## {name}")
-            md.append(f"**Dataset ID:** `{ds_id}`")
-            md.append(f"**Identifier/DOI:** {identifier}")
+            md.append(f"**Dataset ID:** `{primary_id}`")
+            if primary_id != ds_id:
+                md.append(f"*(Internal ID: {ds_id})*")
             md.append(f"**Author:** {author}")
             md.append(f"**Description:** {desc}\n")
             md.append(f"**Citation:**\n```\n{citation}\n```\n")
@@ -193,6 +196,53 @@ def get_hazard_translation(hips_code: str, lang_code: str) -> str:
     except Exception as e:
         return f"Failed to fetch linked translation resource: {str(e)}"
 
+@mcp.tool()
+def extract_variables_from_croissant(dataset_id_or_url: str) -> str:
+    """
+    Extracts column names and descriptions from a Croissant dataset.
+    You can provide a dataset ID (e.g., a DOI like doi:10.17026/DANS-27D-QW68, or a local QLever bnode like bn36) OR an external JSON-LD URL.
+    """
+    try:
+        # First try SPARQL if it's a known identifier in QLever
+        response = httpx.get(f"{API_BASE}/variables/sparql", params={"id": dataset_id_or_url}, timeout=30.0)
+        response.raise_for_status()
+        data = response.json()
+        variables = data.get("variables", [])
+        
+        if variables:
+            return json.dumps(data, indent=2)
+            
+        # Fallback to direct HTTP fetch if it looks like a URL
+        if dataset_id_or_url.startswith("http"):
+            response = httpx.get(f"{API_BASE}/variables/croissant", params={"url": dataset_id_or_url}, timeout=30.0)
+            response.raise_for_status()
+            data = response.json()
+            if "error" in data and not data.get("variables"):
+                return f"Error: {data['error']}"
+            return json.dumps(data.get("variables", []), indent=2)
+            
+        # If it's not a URL and SPARQL returned empty, it simply means no variables were found
+        return "[]"
+    except Exception as e:
+        return f"Failed to extract Croissant variables: {str(e)}"
+
+@mcp.tool()
+def extract_variables_from_oai(url: str) -> str:
+    """
+    Extracts variables and questions from an OAI_ORE export (like Dataverse exports).
+    Use this when you have an OAI_ORE export URL (e.g. https://portal.odissei.nl/api/datasets/export?exporter=OAI_ORE&persistentId=<DOI>).
+    """
+    try:
+        response = httpx.get(f"{API_BASE}/variables/oai", params={"url": url}, timeout=30.0)
+        response.raise_for_status()
+        data = response.json()
+        if "error" in data and not data.get("questions") and not data.get("variables"):
+            return f"Error: {data['error']}"
+        return json.dumps({"questions": data.get("questions", []), "variables": data.get("variables", [])}, indent=2)
+    except Exception as e:
+        return f"Failed to extract OAI variables: {str(e)}"
+
+
 @mcp.tool(name="planner")
 def get_planner(query: str = None) -> str:
     """
@@ -213,6 +263,11 @@ SYSTEM INSTRUCTION FOR LLM - Navigation Guide:
    
 3. If the user wants full metadata details for a specific dataset ID (e.g., 'bn36'):
    - Use the 'get_croissant_dataset' tool.
+   
+4. If the user wants to get column names or variables from a dataset:
+   - For an OAI_ORE export (Dataverse), construct the URL: https://portal.odissei.nl/api/datasets/export?exporter=OAI_ORE&persistentId=<DOI> and use 'extract_variables_from_oai'.
+   - For a local dataset ID (e.g., bn36) or a DOI (e.g. doi:10.17026/DANS-27D-QW68), pass the identifier directly to 'extract_variables_from_croissant'.
+   - NEVER pass an HTML page or a raw DOI link (like https://doi.org/...) directly to these tools, as they only accept JSON endpoints.
 """
 
 if __name__ == "__main__":
