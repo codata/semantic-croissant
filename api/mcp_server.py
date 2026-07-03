@@ -201,6 +201,8 @@ def extract_variables_from_croissant(dataset_id_or_url: str) -> str:
     """
     Extracts column names and descriptions from a Croissant dataset.
     You can provide a dataset ID (e.g., a DOI like doi:10.17026/DANS-27D-QW68, or a local QLever bnode like bn36) OR an external JSON-LD URL.
+    
+    CRITICAL INSTRUCTION FOR LLM: When returning the variables to the user, ALWAYS prominently display the `identifier` (e.g. the full DOI URL like https://doi.org/10.7910/DVN/...) returned in the JSON payload so the user knows which dataset the variables belong to.
     """
     try:
         # First try SPARQL if it's a known identifier in QLever

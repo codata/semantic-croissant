@@ -57,6 +57,7 @@ services:
       - ./croissant-live.env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./hips:/app/hips:ro
       - ${DATA_DIR:-./qlever-tests/data}:/data
       - ${VOLUME_DIR:-./qlever-tests/volumes}/croissant-live/server:/volumes/server
     depends_on:

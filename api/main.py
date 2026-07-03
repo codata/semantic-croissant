@@ -608,7 +608,24 @@ def get_variables_sparql(id: str):
     # Unquote in case the LLM sent urlencoded (e.g. doi%3A...)
     id = urllib.parse.unquote(id)
     
-    # Handle bnode ids formatting for QLever
+    if not id.startswith("bn"):
+        # Resolve identifier/URL to a bnode dataset ID first using CONTAINS
+        resolve_query = f"""
+        SELECT ?dataset WHERE {{
+          ?dataset <https://schema.org/identifier>|<http://schema.org/identifier>|<https://schema.org/url>|<http://schema.org/url> ?id .
+          FILTER(CONTAINS(STR(?id), "{id}"))
+        }} LIMIT 1
+        """
+        enc_res = urllib.parse.urlencode({"query": resolve_query}).encode("utf-8")
+        req_res = urllib.request.Request("http://server-croissant-live:7011/", data=enc_res, headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"})
+        try:
+            with urllib.request.urlopen(req_res) as response_res:
+                res_bindings = json.loads(response_res.read().decode()).get("results", {}).get("bindings", [])
+                if res_bindings and "dataset" in res_bindings[0]:
+                    id = res_bindings[0]["dataset"]["value"]
+        except:
+            pass
+            
     filter_str = f"_:{id}" if id.startswith("bn") else id
     
     query = f"""
@@ -616,17 +633,15 @@ def get_variables_sparql(id: str):
     PREFIX schema_http: <http://schema.org/>
     PREFIX cr: <http://mlcommons.org/croissant/>
 
-    SELECT ?dataset ?identifier ?name ?desc ?dataType ?column ?fileObject WHERE {{
+    SELECT ?dataset ?identifier ?url ?name ?desc ?dataType ?column ?fileObject WHERE {{
       {{
-        {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
-        FILTER(STR(?dataset) = "{filter_str}")
-      }} UNION {{
-        {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
-        ?dataset schema:identifier|schema_http:identifier ?id .
-        FILTER(STR(?id) = "{filter_str}")
+        SELECT ?dataset ?identifier ?url WHERE {{
+          {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
+          FILTER(STR(?dataset) = "{filter_str}")
+          OPTIONAL {{ ?dataset schema:identifier|schema_http:identifier ?identifier }}
+          OPTIONAL {{ ?dataset schema:url|schema_http:url ?url }}
+        }} LIMIT 1
       }}
-      
-      OPTIONAL {{ ?dataset schema:identifier|schema_http:identifier ?identifier }}
       
       {{
         ?dataset schema:distribution|schema_http:distribution ?dist .
@@ -680,8 +695,11 @@ def get_variables_sparql(id: str):
             for b in bindings:
                 if not dataset_id and "dataset" in b:
                     dataset_id = b["dataset"]["value"]
-                if not identifier and "identifier" in b:
-                    identifier = b["identifier"]["value"]
+                if not identifier:
+                    if "identifier" in b:
+                        identifier = b["identifier"]["value"]
+                    elif "url" in b:
+                        identifier = b["url"]["value"]
                     
                 name = b.get("name", {}).get("value", "")
                 desc = b.get("desc", {}).get("value", "")
