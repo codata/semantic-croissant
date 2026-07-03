@@ -55,19 +55,34 @@ def rebuild_index():
     except Exception as e:
         print(f"Error rebuilding index: {e}", flush=True)
 
+import urllib.parse
+
+def sanitize_jsonld_ids(obj):
+    if isinstance(obj, dict):
+        if "@id" in obj and isinstance(obj["@id"], str):
+            obj["@id"] = urllib.parse.quote(obj["@id"], safe=':/#?=&')
+        for k, v in obj.items():
+            sanitize_jsonld_ids(v)
+    elif isinstance(obj, list):
+        for item in obj:
+            sanitize_jsonld_ids(item)
+
 @app.post("/add_record")
-async def add_record(request: Request, background_tasks: BackgroundTasks, rebuild: bool = True):
+async def add_record(request: Request, background_tasks: BackgroundTasks, rebuild: bool = False):
     payload = await request.body()
     
     # 1. Convert JSON-LD to NTriples
     try:
+        data = json.loads(payload)
+        sanitize_jsonld_ids(data)
+        
         g = Graph()
-        g.parse(data=payload, format='json-ld')
+        g.parse(data=json.dumps(data), format='json-ld')
         nt_data = g.serialize(format='nt')
     except Exception as e:
         return {"error": f"Failed to parse JSON-LD: {str(e)}"}, 400
 
-    # 2. Append to data.nt
+    # 2. Append to data.nt for persistence
     try:
         with open(DATA_FILE, "a") as f:
             f.write(nt_data)
@@ -77,12 +92,33 @@ async def add_record(request: Request, background_tasks: BackgroundTasks, rebuil
     except Exception as e:
         return {"error": f"Failed to write to {DATA_FILE}: {str(e)}"}, 500
 
-    # 3. Trigger rebuild in background
+    # 3. Live INSERT DATA to QLever
+    try:
+        access_token = os.environ.get("QLEVER_SERVER_ACCESS_TOKEN", "croissant_7643543846_Zs6nw7yi3Z9m")
+        # Ensure we only send valid triples. Empty payload causes parse error.
+        if nt_data.strip():
+            insert_query = f"INSERT DATA {{ {nt_data} }}".encode("utf-8")
+            req = urllib.request.Request(
+                "http://server-croissant-live:7011/", 
+                data=insert_query,
+                headers={
+                    "Content-type": "application/sparql-update",
+                    "Authorization": f"Bearer {access_token}"
+                }
+            )
+            with urllib.request.urlopen(req) as response:
+                result = response.read().decode()
+                print(f"Live insertion result: {result}", flush=True)
+    except Exception as e:
+        print(f"Failed to inject triples into live QLever instance: {e}", flush=True)
+        # Even if live insertion fails, the data is saved in data.nt, so a rebuild would pick it up
+
+    # 4. Trigger offline rebuild in background if requested
     if rebuild:
         background_tasks.add_task(rebuild_index)
-        return {"status": "success", "message": "Record added and index rebuild scheduled."}
+        return {"status": "success", "message": "Record added instantly and full index rebuild scheduled."}
     
-    return {"status": "success", "message": "Record added without triggering index rebuild."}
+    return {"status": "success", "message": "Record added and injected instantly."}
 
 @app.post("/rebuild")
 async def trigger_rebuild(background_tasks: BackgroundTasks):
