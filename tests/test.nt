@@ -1,0 +1,4 @@
+_:Na911b6fa70974d01a346a007383828af <https://schema.org/url> "https://doi.org/10.0000/DUMMY" .
+_:Na911b6fa70974d01a346a007383828af <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://schema.org/Dataset> .
+_:Na911b6fa70974d01a346a007383828af <https://schema.org/name> "Dummy Dataset" .
+_:Na911b6fa70974d01a346a007383828af <https://schema.org/identifier> "https://doi.org/10.0000/DUMMY" .
