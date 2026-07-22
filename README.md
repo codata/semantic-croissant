@@ -89,21 +89,86 @@ docker compose --profile croissant-live up -d
 ```
 You can connect remote MCP clients directly to `http://localhost:7070/sse`.
 
-### Connecting to Claude Desktop
+### Connecting AI Assistants (IDEs & Desktop)
 
-Claude Desktop natively connects to local MCP servers via standard input/output. You can bypass the SSE server and directly invoke the script via `docker exec`, which overrides the transport to `stdio` by default:
+You can connect your IDEs to the public endpoint at `https://mcp.dev.codata.org/mcp` using the configurations below.
 
-To allow Claude Desktop to interface with your datasets, edit your Claude Desktop configuration file:
-- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
-- **Linux:** `~/.config/Claude/claude_desktop_config.json`
+<details><summary><b>Cursor</b></summary>
 
-Add the following JSON configuration:
+Create or edit your MCP configuration file at `~/.cursor/mcp.json` or configure it directly through the Cursor Settings UI:
 
 ```json
 {
   "mcpServers": {
     "croissant-mcp": {
+      "type": "sse",
+      "url": "https://mcp.dev.codata.org/mcp"
+    }
+  }
+}
+```
+</details>
+
+<details><summary><b>Windsurf</b></summary>
+
+Edit your configuration file at `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "croissant-mcp": {
+      "serverUrl": "https://mcp.dev.codata.org/mcp"
+    }
+  }
+}
+```
+</details>
+
+<details><summary><b>Zed</b></summary>
+
+Because Zed natively expects `stdio` for context servers, it requires the `mcp-remote` proxy bridge to connect to remote SSE servers. Add this to your Zed `settings.json`:
+
+```json
+{
+  "context_servers": {
+    "croissant-mcp": {
+      "command": {
+        "path": "npx",
+        "args": ["-y", "mcp-remote", "https://mcp.dev.codata.org/mcp"],
+        "env": null
+      }
+    }
+  }
+}
+```
+</details>
+
+<details><summary><b>Claude Desktop (Remote)</b></summary>
+
+Claude Desktop also defaults to `stdio` connections. You can use the `mcp-remote` proxy bridge in your `claude_desktop_config.json` to connect to the remote server:
+
+```json
+{
+  "mcpServers": {
+    "croissant-mcp": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://mcp.dev.codata.org/mcp"]
+    }
+  }
+}
+```
+</details>
+
+### Local Docker Connection (Stdio)
+
+If you are running the `semantic-croissant` stack locally via Docker, clients like Claude Desktop or Zed can bypass the network entirely and connect directly to the running container via standard input/output (`stdio`).
+
+To do this, use the following `stdio` execution command in your client's configuration:
+
+```json
+{
+  "mcpServers": {
+    "croissant-local": {
       "command": "docker",
       "args": [
         "exec",
@@ -117,4 +182,4 @@ Add the following JSON configuration:
 }
 ```
 
-Restart Claude Desktop. You will see a "hammer" icon indicating the tools are loaded, enabling conversational queries directly against your local datasets!
+Restart your IDE or Claude Desktop. You should see an icon or status indicating the tools are loaded, enabling conversational queries directly against the Croissant datasets!
