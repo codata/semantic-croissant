@@ -75,6 +75,36 @@ If you already possess the pre-built QLever index files (such as `croissant.inde
 3. Ensure the files are named correctly (e.g., prefixed with `croissant.`) and belong to the correct permissions (the QLever Docker container reads them as user `65534:0`).
 4. Run `docker compose --profile croissant-live up -d`. The server will instantly detect the existing index and load the graph into memory.
 
+## Data Ingestion (API)
+
+The Semantic Croissant stack includes a FastAPI service that exposes endpoints for dynamically ingesting new Croissant JSON-LD data into the QLever triple store. The API runs by default on port `7013`.
+
+### Adding a New Dataset
+
+You can add a new Croissant JSON-LD dataset using the `/add_record` POST endpoint. By default, this will append the converted data to the persistent `data.nt` file and attempt a live `INSERT DATA` query to the running QLever instance, making the data instantly queryable without downtime.
+
+```bash
+curl -X POST "http://localhost:7013/add_record" \
+     -H "Content-Type: application/json" \
+     -d @my_dataset.json
+```
+
+### Triggering an Offline Rebuild
+
+If you want to additionally trigger a full offline index rebuild (which is useful if the live insertion fails or you want to ensure total consistency), you can pass the `rebuild=true` query parameter:
+
+```bash
+curl -X POST "http://localhost:7013/add_record?rebuild=true" \
+     -H "Content-Type: application/json" \
+     -d @my_dataset.json
+```
+
+You can also trigger a manual index rebuild directly without adding new data using the `/rebuild` endpoint:
+
+```bash
+curl -X POST "http://localhost:7013/rebuild"
+```
+
 ## Model Context Protocol (MCP) Server
 
 The repository includes a dedicated MCP service (`mcp-croissant-live`) that exposes the Semantic Croissant index to AI assistants like Claude Desktop or Cursor. 
