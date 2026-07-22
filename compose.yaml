@@ -68,7 +68,7 @@ services:
       - croissant-live
     image: api-croissant-live
     pull_policy: never
-    command: ["python", "/app/mcp_server.py"]
+    command: ["python", "/app/mcp_server.py", "--transport", "sse"]
     ports:
       - "7070:7070"
     env_file:

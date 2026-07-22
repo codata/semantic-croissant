@@ -1,83 +1,29 @@
-import json
-from mcp.server.fastmcp import FastMCP
+import anyio
+import click
 import httpx
+import json
 import os
+import mcp.types as types
+from mcp.server.lowlevel import Server
 from starlette.responses import HTMLResponse
-
-# Initialize FastMCP server
-mcp = FastMCP("Croissant MCP", host="0.0.0.0", port=7070)
-
-@mcp.custom_route(path="/", methods=["GET"])
-def index(request=None, *args, **kwargs):
-    html_content = """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Semantic Croissant MCP Server</title>
-        <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 2rem; color: #333; }
-            h1 { color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; }
-            .card { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
-            code { background: #eef1f5; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.9em; }
-            .endpoint { font-weight: bold; color: #0056b3; }
-        </style>
-    </head>
-    <body>
-        <h1>🥐 Semantic Croissant MCP Server</h1>
-        <p>Welcome! This is a Model Context Protocol (MCP) server that exposes the internal Semantic Croissant dataset catalog.</p>
-        
-        <div class="card">
-            <h2>Available Tools</h2>
-            <ul>
-                <li><code>search_croissant_datasets(q, limit, page)</code>: Search for datasets using natural language keywords (e.g. "climate change vietnam"). It leverages QLever's internal ranking system to find the most relevant datasets.</li>
-                <li><code>get_croissant_dataset(id)</code>: Retrieve the full, detailed JSON-LD Metadata catalog for a specific dataset ID.</li>
-            </ul>
-        </div>
-        
-        <div class="card">
-            <h2>Connection Details</h2>
-            <p>This server provides an SSE (Server-Sent Events) transport for MCP.</p>
-            <p><strong>SSE Endpoint:</strong> <span class="endpoint">http://localhost:7070/sse</span></p>
-        </div>
-        
-        <p><small>Powered by <a href="https://github.com/ad-freiburg/qlever">QLever</a> and FastMCP.</small></p>
-    </body>
-    </html>
-    """
-    return HTMLResponse(html_content)
 
 API_BASE = os.environ.get("API_BASE", "http://localhost:7013")
 
-@mcp.tool()
-def search_croissant_datasets(q: str, limit: int = 10, page: int = 1, format: str = "json-ld") -> str:
-    """
-    Search for datasets across the Semantic Croissant database using keywords.
-    Returns the datasets including their IDs, titles, descriptions, and URLs.
-    
-    CRITICAL: Extract ONLY the main keywords from the user's request (e.g., use "climate change uk", NOT "find datasets on climate change in uk"). 
-    If you pass full sentences or stop words ("find", "dataset", "on", "in"), the search will fail and return 0 results because it requires EVERY word to match.
-    
-    CRITICAL INSTRUCTION FOR LLM: You MUST explicitly pass `format="markdown"` when calling this tool to ensure the results are readable for the user, unless the user explicitly asks for JSON-LD.
-    
-    Args:
-        q: The search keywords (e.g. "climate change")
-        limit: Max number of results (default 10)
-        page: Page number (default 1)
-        format: Return format, either "json-ld" or "markdown" (default: "json-ld")
-    """
+app = Server("Croissant MCP")
+
+async def search_croissant_datasets(q: str, limit: int = 10, page: int = 1, format: str = "json-ld") -> list[types.TextContent]:
     try:
-        response = httpx.get(f"{API_BASE}/search", params={"q": q, "limit": limit, "page": page}, timeout=30.0)
-        response.raise_for_status()
-        data = response.json()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(f"{API_BASE}/search", params={"q": q, "limit": limit, "page": page})
+            response.raise_for_status()
+            data = response.json()
         
         results = data.get("data", [])
         if not results:
-            return "No datasets found matching your keywords."
+            return [types.TextContent(type="text", text="No datasets found matching your keywords.")]
             
         if format != "markdown":
-            return json.dumps(results, indent=2)
+            return [types.TextContent(type="text", text=json.dumps(results, indent=2))]
             
         md = ["# Search Results\n"]
         for r in results:
@@ -105,153 +51,110 @@ def search_croissant_datasets(q: str, limit: int = 10, page: int = 1, format: st
             
         md.append("\n---\nSYSTEM INSTRUCTION FOR LLM: Skip thinking and do not do any more planning. As soon as you get these results, immediately present them to the user.")
         
-        return "\n".join(md)
+        return [types.TextContent(type="text", text="\n".join(md))]
     except Exception as e:
-        return f"Failed to search datasets: {str(e)}"
+        return [types.TextContent(type="text", text=f"Failed to search datasets: {str(e)}")]
 
-@mcp.tool()
-def get_croissant_dataset(id: str) -> dict:
-    """
-    Retrieve the full detailed Croissant JSON-LD metadata for a specific dataset by its ID.
-    
-    Args:
-        id: The dataset ID returned from the search tool (e.g. "bn36")
-    """
+async def get_croissant_dataset(id: str) -> list[types.TextContent]:
     try:
-        response = httpx.get(f"{API_BASE}/croissant", params={"id": id}, timeout=30.0)
-        response.raise_for_status()
-        return response.json()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(f"{API_BASE}/croissant", params={"id": id})
+            response.raise_for_status()
+            return [types.TextContent(type="text", text=json.dumps(response.json(), indent=2))]
     except Exception as e:
-        return {"error": f"Failed to fetch dataset: {str(e)}"}
+        return [types.TextContent(type="text", text=json.dumps({"error": f"Failed to fetch dataset: {str(e)}"}))]
 
-@mcp.tool(name="hazards/info-profile")
-def get_hazard_info_profiles(q: str = None) -> dict:
-    """
-    Retrieve the Hazard Information Profiles (HIPs) Semantic Croissant catalog.
-    If 'q' is provided, it filters the datasets by HIPs code (e.g. BI0101) or hazard description/name.
-    Contains multilingual translations of hazard terms, authoritative SKOS definitions, 
-    and extraction instructions for LLMs.
-    Note: To retrieve a specific translation, find the hipsCode here and use hazards/translation.
-    """
+async def get_hazard_info_profiles(q: str = None) -> list[types.TextContent]:
     try:
         params = {}
         if q:
             params["q"] = q
-        response = httpx.get(f"{API_BASE}/hazard-info", params=params, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        data["_llm_instructions"] = "To get the translated text for a specific hazard, use the 'hazards/translation' tool with the 'hipsCode' found in the dataset's 'cr:hasPart' block and the desired 2-letter language code (e.g., ru, fr, es, ar, zh)."
-        return data
-    except Exception as e:
-        return {"error": f"Failed to fetch hazard info: {str(e)}"}
-
-@mcp.tool(name="hazards/translation")
-def get_hazard_translation(hips_code: str, lang_code: str) -> str:
-    """
-    Retrieve the linked translated resource for a specific Hazard Information Profile.
-    
-    Args:
-        hips_code: The UNDRR HIPS code (e.g., 'BI0101'). Can be found using hazards/info-profile.
-        lang_code: The 2-letter language code (e.g., 'ru' for Russian, 'fr' for French, 'es' for Spanish, 'ar' for Arabic, 'zh' for Chinese).
-    """
-    try:
-        # Get the dataset info from the internal API
-        info_resp = httpx.get(f"{API_BASE}/hazard-info", params={"q": hips_code}, timeout=30)
-        info_resp.raise_for_status()
-        data = info_resp.json()
-        
-        datasets = data.get("dataset", [])
-        if not datasets:
-            return f"Dataset for HIPs code {hips_code} not found."
-            
-        dataset = datasets[0]
-        linked_url = None
-        
-        # Search isBasedOn resources for the translation
-        for resource in dataset.get("isBasedOn", []):
-            url = resource.get("contentUrl", "")
-            if f"/{lang_code}/" in url or f"_{lang_code}." in url or f"_{lang_code}_" in url:
-                linked_url = url
-                break
-                
-        # Fallback to the target template if not explicitly linked in isBasedOn
-        if not linked_url:
-            potential_action = data.get("potentialAction", {})
-            target_template = potential_action.get("target")
-            if target_template:
-                linked_url = target_template.replace("{hips_code}", hips_code).replace("{lang_code}", lang_code)
-            else:
-                linked_url = f"https://raw.githubusercontent.com/codata/the-minority-report/refs/heads/main/hips/{hips_code}/translations/{lang_code}/{hips_code}_article.md"
-
-        # Fetch and return exactly the content
-        response = httpx.get(linked_url, timeout=30)
-        if response.status_code == 404:
-            return f"Translation resource not found at URL {linked_url} (404)."
-        response.raise_for_status()
-        
-        result_text = response.text
-        llm_prompt = "\n\n---\nSYSTEM INSTRUCTION FOR LLM: Please output the translation resource exactly as provided above. Do NOT add any interpretations, summaries, conversational text, or modifications."
-        
-        return result_text + llm_prompt
-    except Exception as e:
-        return f"Failed to fetch linked translation resource: {str(e)}"
-
-@mcp.tool()
-def extract_variables_from_croissant(dataset_id_or_url: str) -> str:
-    """
-    Extracts column names and descriptions from a Croissant dataset.
-    You can provide a dataset ID (e.g., a DOI like doi:10.17026/DANS-27D-QW68, or a local QLever bnode like bn36) OR an external JSON-LD URL.
-    
-    CRITICAL INSTRUCTION FOR LLM: When returning the variables to the user, ALWAYS prominently display the `identifier` (e.g. the full DOI URL like https://doi.org/10.7910/DVN/...) returned in the JSON payload so the user knows which dataset the variables belong to.
-    """
-    try:
-        # First try SPARQL if it's a known identifier in QLever
-        response = httpx.get(f"{API_BASE}/variables/sparql", params={"id": dataset_id_or_url}, timeout=30.0)
-        response.raise_for_status()
-        data = response.json()
-        variables = data.get("variables", [])
-        
-        if variables:
-            return json.dumps(data, indent=2)
-            
-        # Fallback to direct HTTP fetch if it looks like a URL
-        if dataset_id_or_url.startswith("http"):
-            response = httpx.get(f"{API_BASE}/variables/croissant", params={"url": dataset_id_or_url}, timeout=30.0)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(f"{API_BASE}/hazard-info", params=params)
             response.raise_for_status()
             data = response.json()
-            if "error" in data and not data.get("variables"):
-                return f"Error: {data['error']}"
-            return json.dumps(data.get("variables", []), indent=2)
-            
-        # If it's not a URL and SPARQL returned empty, it simply means no variables were found
-        return "[]"
+            data["_llm_instructions"] = "To get the translated text for a specific hazard, use the 'hazards/translation' tool with the 'hipsCode' found in the dataset's 'cr:hasPart' block and the desired 2-letter language code (e.g., ru, fr, es, ar, zh)."
+            return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
     except Exception as e:
-        return f"Failed to extract Croissant variables: {str(e)}"
+        return [types.TextContent(type="text", text=json.dumps({"error": f"Failed to fetch hazard info: {str(e)}"}))]
 
-@mcp.tool()
-def extract_variables_from_oai(url: str) -> str:
-    """
-    Extracts variables and questions from an OAI_ORE export (like Dataverse exports).
-    Use this when you have an OAI_ORE export URL (e.g. https://portal.odissei.nl/api/datasets/export?exporter=OAI_ORE&persistentId=<DOI>).
-    """
+async def get_hazard_translation(hips_code: str, lang_code: str) -> list[types.TextContent]:
     try:
-        response = httpx.get(f"{API_BASE}/variables/oai", params={"url": url}, timeout=30.0)
-        response.raise_for_status()
-        data = response.json()
-        if "error" in data and not data.get("questions") and not data.get("variables"):
-            return f"Error: {data['error']}"
-        return json.dumps({"questions": data.get("questions", []), "variables": data.get("variables", [])}, indent=2)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            info_resp = await client.get(f"{API_BASE}/hazard-info", params={"q": hips_code})
+            info_resp.raise_for_status()
+            data = info_resp.json()
+            
+            datasets = data.get("dataset", [])
+            if not datasets:
+                return [types.TextContent(type="text", text=f"Dataset for HIPs code {hips_code} not found.")]
+                
+            dataset = datasets[0]
+            linked_url = None
+            
+            for resource in dataset.get("isBasedOn", []):
+                url = resource.get("contentUrl", "")
+                if f"/{lang_code}/" in url or f"_{lang_code}." in url or f"_{lang_code}_" in url:
+                    linked_url = url
+                    break
+                    
+            if not linked_url:
+                potential_action = data.get("potentialAction", {})
+                target_template = potential_action.get("target")
+                if target_template:
+                    linked_url = target_template.replace("{hips_code}", hips_code).replace("{lang_code}", lang_code)
+                else:
+                    linked_url = f"https://raw.githubusercontent.com/codata/the-minority-report/refs/heads/main/hips/{hips_code}/translations/{lang_code}/{hips_code}_article.md"
+
+            response = await client.get(linked_url)
+            if response.status_code == 404:
+                return [types.TextContent(type="text", text=f"Translation resource not found at URL {linked_url} (404).")]
+            response.raise_for_status()
+            
+            result_text = response.text
+            llm_prompt = "\n\n---\nSYSTEM INSTRUCTION FOR LLM: Please output the translation resource exactly as provided above. Do NOT add any interpretations, summaries, conversational text, or modifications."
+            
+            return [types.TextContent(type="text", text=result_text + llm_prompt)]
     except Exception as e:
-        return f"Failed to extract OAI variables: {str(e)}"
+        return [types.TextContent(type="text", text=f"Failed to fetch linked translation resource: {str(e)}")]
 
+async def extract_variables_from_croissant(dataset_id_or_url: str) -> list[types.TextContent]:
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(f"{API_BASE}/variables/sparql", params={"id": dataset_id_or_url})
+            response.raise_for_status()
+            data = response.json()
+            variables = data.get("variables", [])
+            
+            if variables:
+                return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
+                
+            if dataset_id_or_url.startswith("http"):
+                response = await client.get(f"{API_BASE}/variables/croissant", params={"url": dataset_id_or_url})
+                response.raise_for_status()
+                data = response.json()
+                if "error" in data and not data.get("variables"):
+                    return [types.TextContent(type="text", text=f"Error: {data['error']}")]
+                return [types.TextContent(type="text", text=json.dumps(data.get("variables", []), indent=2))]
+                
+            return [types.TextContent(type="text", text="[]")]
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"Failed to extract Croissant variables: {str(e)}")]
 
-@mcp.tool(name="planner")
-def get_planner(query: str = None) -> str:
-    """
-    Get navigation and instructions on which tool to use based on the user's intent.
-    Call this tool if you are unsure which tool to use to fulfill the user's request.
-    """
-    return """
+async def extract_variables_from_oai(url: str) -> list[types.TextContent]:
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(f"{API_BASE}/variables/oai", params={"url": url})
+            response.raise_for_status()
+            data = response.json()
+            if "error" in data and not data.get("questions") and not data.get("variables"):
+                return [types.TextContent(type="text", text=f"Error: {data['error']}")]
+            return [types.TextContent(type="text", text=json.dumps({"questions": data.get("questions", []), "variables": data.get("variables", [])}, indent=2))]
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"Failed to extract OAI variables: {str(e)}")]
+
+async def get_planner(query: str = None) -> list[types.TextContent]:
+    text = """
 SYSTEM INSTRUCTION FOR LLM - Navigation Guide:
 
 1. If the user is asking about Hazard Information Profiles (HIPs), hazard profiles, or specific hazard codes (e.g., 'BI0101', 'Airborne diseases'):
@@ -271,7 +174,247 @@ SYSTEM INSTRUCTION FOR LLM - Navigation Guide:
    - For a local dataset ID (e.g., bn36) or a DOI (e.g. doi:10.17026/DANS-27D-QW68), pass the identifier directly to 'extract_variables_from_croissant'.
    - NEVER pass an HTML page or a raw DOI link (like https://doi.org/...) directly to these tools, as they only accept JSON endpoints.
 """
+    return [types.TextContent(type="text", text=text)]
+
+@app.call_tool()
+async def call_tool(name: str, arguments: dict) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    if name == "search_croissant_datasets":
+        return await search_croissant_datasets(
+            q=arguments.get("q"),
+            limit=arguments.get("limit", 10),
+            page=arguments.get("page", 1),
+            format=arguments.get("format", "json-ld")
+        )
+    elif name == "get_croissant_dataset":
+        return await get_croissant_dataset(id=arguments.get("id"))
+    elif name == "hazards/info-profile":
+        return await get_hazard_info_profiles(q=arguments.get("q"))
+    elif name == "hazards/translation":
+        return await get_hazard_translation(hips_code=arguments.get("hips_code"), lang_code=arguments.get("lang_code"))
+    elif name == "extract_variables_from_croissant":
+        return await extract_variables_from_croissant(dataset_id_or_url=arguments.get("dataset_id_or_url"))
+    elif name == "extract_variables_from_oai":
+        return await extract_variables_from_oai(url=arguments.get("url"))
+    elif name == "planner":
+        return await get_planner(query=arguments.get("query"))
+    else:
+        raise ValueError(f"Unknown tool: {name}")
+
+@app.list_tools()
+async def list_tools() -> list[types.Tool]:
+    return [
+        types.Tool(
+            name="search_croissant_datasets",
+            description="Search for datasets across the Semantic Croissant database using keywords.",
+            inputSchema={
+                "type": "object",
+                "required": ["q"],
+                "properties": {
+                    "q": {"type": "string", "description": "The search keywords (e.g. 'climate change')"},
+                    "limit": {"type": "integer", "description": "Max number of results (default 10)", "default": 10},
+                    "page": {"type": "integer", "description": "Page number (default 1)", "default": 1},
+                    "format": {"type": "string", "description": "Return format, either 'json-ld' or 'markdown'", "default": "json-ld"}
+                }
+            }
+        ),
+        types.Tool(
+            name="get_croissant_dataset",
+            description="Retrieve the full detailed Croissant JSON-LD metadata for a specific dataset by its ID.",
+            inputSchema={
+                "type": "object",
+                "required": ["id"],
+                "properties": {
+                    "id": {"type": "string", "description": "The dataset ID returned from the search tool (e.g. 'bn36')"}
+                }
+            }
+        ),
+        types.Tool(
+            name="hazards/info-profile",
+            description="Retrieve the Hazard Information Profiles (HIPs) Semantic Croissant catalog.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "q": {"type": "string", "description": "Optional HIPs code (e.g. BI0101) or hazard description/name."}
+                }
+            }
+        ),
+        types.Tool(
+            name="hazards/translation",
+            description="Retrieve the linked translated resource for a specific Hazard Information Profile.",
+            inputSchema={
+                "type": "object",
+                "required": ["hips_code", "lang_code"],
+                "properties": {
+                    "hips_code": {"type": "string", "description": "The UNDRR HIPS code (e.g., 'BI0101')."},
+                    "lang_code": {"type": "string", "description": "The 2-letter language code (e.g., 'ru', 'fr', 'es', 'ar', 'zh')."}
+                }
+            }
+        ),
+        types.Tool(
+            name="extract_variables_from_croissant",
+            description="Extracts column names and descriptions from a Croissant dataset.",
+            inputSchema={
+                "type": "object",
+                "required": ["dataset_id_or_url"],
+                "properties": {
+                    "dataset_id_or_url": {"type": "string", "description": "Dataset ID (e.g. DOI or local QLever bnode) or external JSON-LD URL."}
+                }
+            }
+        ),
+        types.Tool(
+            name="extract_variables_from_oai",
+            description="Extracts variables and questions from an OAI_ORE export (like Dataverse exports).",
+            inputSchema={
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                    "url": {"type": "string", "description": "OAI_ORE export URL."}
+                }
+            }
+        ),
+        types.Tool(
+            name="planner",
+            description="Get navigation and instructions on which tool to use based on the user's intent.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Optional query."}
+                }
+            }
+        )
+    ]
+
+@click.command()
+@click.option("--port", default=7070, help="Port to listen on for SSE")
+@click.option(
+    "--transport",
+    type=click.Choice(["stdio", "sse"]),
+    default="stdio",
+    help="Transport type. Always defaults to stdio; pass --transport sse to start the HTTP/SSE server.",
+)
+def main(port: int, transport: str) -> int:
+    if transport == "sse":
+        from mcp.server.sse import SseServerTransport
+        from starlette.applications import Starlette
+        from starlette.routing import Mount, Route
+        from starlette.middleware import Middleware
+        import uvicorn
+        import contextlib
+
+        class StripCharsetMiddleware:
+            def __init__(self, app) -> None:
+                self.app = app
+
+            async def __call__(self, scope, receive, send) -> None:
+                if scope["type"] != "http":
+                    return await self.app(scope, receive, send)
+
+                async def send_wrapper(message: dict) -> None:
+                    if message["type"] == "http.response.start":
+                        headers = message.get("headers", [])
+                        for i, (key, value) in enumerate(headers):
+                            if key.lower() == b"content-type" and b"text/event-stream" in value:
+                                headers[i] = (key, b"text/event-stream")
+                    await send(message)
+
+                await self.app(scope, receive, send_wrapper)
+
+        sse = SseServerTransport("/mcp/messages/")
+
+        from starlette.responses import Response
+
+        from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+        session_manager = StreamableHTTPSessionManager(app=app, json_response=True)
+        
+        class StreamableHTTPASGIApp:
+            async def __call__(self, scope, receive, send):
+                await session_manager.handle_request(scope, receive, send)
+                
+        handle_streamable_http = StreamableHTTPASGIApp()
+        
+        @contextlib.asynccontextmanager
+        async def lifespan(starlette_app):
+            async with session_manager.run():
+                yield
+
+        async def handle_sse(request):
+            async with sse.connect_sse(
+                request.scope, request.receive, request._send
+            ) as streams:
+                await app.run(
+                    streams[0], streams[1], app.create_initialization_options()
+                )
+            return Response()
+                
+        async def index(request):
+            html_content = """
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Semantic Croissant MCP Server</title>
+                <style>
+                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 2rem; color: #333; }
+                    h1 { color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+                    .card { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+                    code { background: #eef1f5; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.9em; }
+                    .endpoint { font-weight: bold; color: #0056b3; }
+                </style>
+            </head>
+            <body>
+                <h1>🥐 Semantic Croissant MCP Server</h1>
+                <p>Welcome! This is a Model Context Protocol (MCP) server that exposes the internal Semantic Croissant dataset catalog.</p>
+                
+                <div class="card">
+                    <h2>Available Tools</h2>
+                    <ul>
+                        <li><code>search_croissant_datasets(q, limit, page)</code>: Search for datasets using natural language keywords (e.g. "climate change vietnam"). It leverages QLever's internal ranking system to find the most relevant datasets.</li>
+                        <li><code>get_croissant_dataset(id)</code>: Retrieve the full, detailed JSON-LD Metadata catalog for a specific dataset ID.</li>
+                    </ul>
+                </div>
+                
+                <div class="card">
+                    <h2>Connection Details</h2>
+                    <p>This server provides an SSE (Server-Sent Events) transport for MCP.</p>
+                    <p><strong>SSE Endpoint:</strong> <span class="endpoint">https://mcp.dev.codata.org/mcp/sse</span></p>
+                </div>
+                
+                <p><small>Powered by <a href="https://github.com/ad-freiburg/qlever">QLever</a> and the standard python MCP SDK.</small></p>
+            </body>
+            </html>
+            """
+            from starlette.responses import HTMLResponse
+            return HTMLResponse(html_content)
+
+        starlette_app = Starlette(
+            debug=True,
+            lifespan=lifespan,
+            middleware=[Middleware(StripCharsetMiddleware)],
+            routes=[
+                Route("/", endpoint=index),
+                Route("/sse", endpoint=handle_sse),
+                Mount("/messages/", app=sse.handle_post_message),
+                Route("/mcp", endpoint=handle_streamable_http, methods=["GET", "POST", "DELETE"]),
+                Route("/mcp/", endpoint=handle_streamable_http, methods=["GET", "POST", "DELETE"]),
+                Route("/mcp/sse", endpoint=handle_sse),
+                Mount("/mcp/messages/", app=sse.handle_post_message),
+            ],
+        )
+
+        uvicorn.run(starlette_app, host="0.0.0.0", port=port)
+    else:
+        from mcp.server.stdio import stdio_server
+
+        async def arun():
+            async with stdio_server() as streams:
+                await app.run(
+                    streams[0], streams[1], app.create_initialization_options()
+                )
+
+        anyio.run(arun)
+
+    return 0
 
 if __name__ == "__main__":
-    transport = os.environ.get("MCP_TRANSPORT", "stdio")
-    mcp.run(transport=transport)
+    main()
