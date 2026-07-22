@@ -105,6 +105,25 @@ You can also trigger a manual index rebuild directly without adding new data usi
 curl -X POST "http://localhost:7013/rebuild"
 ```
 
+## Croissant Toolkit Integration
+
+The repository includes the [Croissant Toolkit](https://github.com/codata/croissant-toolkit) as a git submodule. This Gemini-powered toolkit can automatically generate, enrich, and translate Croissant metadata from raw data or web pages.
+
+### Automated Generation & Ingestion Workflow
+You can use the toolkit to generate a dataset and instantly ingest it into QLever:
+
+1. **Generate Metadata:** Use the toolkit's Wizard or Croissant Expert to generate a `.jsonld` file.
+   ```bash
+   export GEMINI_API_KEY="your-api-key"
+   python3 croissant-toolkit/.gemini/skills/wizard/scripts/wizard.py "https://example.com/dataset" "My Dataset"
+   ```
+2. **Ingest into QLever:** Once the toolkit generates the `dataset.jsonld`, use the Semantic Croissant API to ingest it:
+   ```bash
+   curl -X POST "http://localhost:7013/add_record" \
+        -H "Content-Type: application/json" \
+        -d @croissant-toolkit/data/croissant/dataset.jsonld
+   ```
+
 ## Model Context Protocol (MCP) Server
 
 The repository includes a dedicated MCP service (`mcp-croissant-live`) that exposes the Semantic Croissant index to AI assistants like Claude Desktop or Cursor. 

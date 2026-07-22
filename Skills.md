@@ -29,3 +29,9 @@ The repository contains custom agent skills (located in `.agents/skills/`) to he
 Agents can ingest and manage data dynamically using the FastAPI service (running by default on Port 7013):
 - **Live Ingestion (`POST /add_record`)**: Add a new JSON-LD dataset. The API automatically converts it, appends it to `data.nt`, and injects it into the live QLever store without downtime.
 - **Index Rebuild (`POST /rebuild`)**: Trigger a background task to rebuild the full QLever index from the persistent `data.nt` file and restart the server container.
+
+## 4. Croissant Toolkit Submodule Skills
+The repository embeds the [Croissant Toolkit](https://github.com/codata/croissant-toolkit), a powerful Gemini 3-powered orchestration engine. AI Agents and users can utilize the scripts in `croissant-toolkit/.gemini/skills/` to generate rich metadata before ingesting it.
+- **`wizard`**: Automatically navigates, transcribes, translates, and structures raw web content or data into perfect Croissant JSON-LD.
+- **`nlp-expert`**: Extracts named entities (people, places, organizations) and injects them semantically into the dataset metadata.
+- **`croissant-expert`**: Enforces strict MLCommons Croissant schema constraints during generation.
