@@ -1,3 +1,6 @@
 [submodule "qlever-tests"]
 	path = qlever-tests
 	url = https://github.com/zazukoians/qlever-tests.git
+[submodule "croissant-toolkit"]
+	path = croissant-toolkit
+	url = https://github.com/codata/croissant-toolkit
