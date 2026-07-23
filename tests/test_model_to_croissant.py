@@ -5,17 +5,32 @@ import subprocess
 import argparse
 import xml.etree.ElementTree as ET
 import concurrent.futures
+import time
+import random
 
-def fetch_hf_model(model_id, token):
+def fetch_hf_model(model_id, token, max_retries=5):
     url = f"https://huggingface.co/api/models/{model_id}"
     headers = {"Authorization": f"Bearer {token}"} if token else {}
-    print(f"Fetching {url}...")
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        print(f"Failed to fetch {model_id}: {response.status_code} {response.text}")
-        return None
+    
+    for attempt in range(max_retries):
+        print(f"Fetching {url}...")
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            return response.json()
+        elif response.status_code == 429:
+            # Rate limit hit
+            retry_after = int(response.headers.get("Retry-After", 60))
+            # Add jitter to prevent all threads from waking up at the exact same millisecond
+            sleep_time = retry_after + random.uniform(1, 10)
+            print(f"Rate limited (429) for {model_id}. Sleeping for {sleep_time:.1f}s before retry {attempt+1}/{max_retries}...")
+            time.sleep(sleep_time)
+        else:
+            print(f"Failed to fetch {model_id}: {response.status_code} {response.text}")
+            return None
+            
+    print(f"Failed to fetch {model_id} after {max_retries} retries.")
+    return None
 
 def convert_to_intermediate_metadata(model_data):
     """

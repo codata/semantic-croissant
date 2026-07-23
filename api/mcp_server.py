@@ -158,8 +158,8 @@ async def get_planner(query: str = None) -> list[types.TextContent]:
 SYSTEM INSTRUCTION FOR LLM - Navigation Guide:
 
 1. If the user is asking about Hazard Information Profiles (HIPs), hazard profiles, or specific hazard codes (e.g., 'BI0101', 'Airborne diseases'):
-   - First use the 'hazards/info-profile' tool to search for the hazard and obtain its metadata and hipsCode.
-   - If the user explicitly asks for a translation, use the 'hazards/translation' tool with the hipsCode and desired language code.
+   - First use the 'hazards_info_profile' tool to search for the hazard and obtain its metadata and hipsCode.
+   - If the user explicitly asks for a translation, use the 'hazards_translation' tool with the hipsCode and desired language code.
    
 2. If the user is looking for some data or dataset, or searching for general topics (e.g., 'climate change vietnam'):
    - Use the 'search_croissant_datasets' tool to query the semantic graph and Dataverse API.
@@ -187,9 +187,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
         )
     elif name == "get_croissant_dataset":
         return await get_croissant_dataset(id=arguments.get("id"))
-    elif name == "hazards/info-profile":
+    elif name == "hazards_info_profile":
         return await get_hazard_info_profiles(q=arguments.get("q"))
-    elif name == "hazards/translation":
+    elif name == "hazards_translation":
         return await get_hazard_translation(hips_code=arguments.get("hips_code"), lang_code=arguments.get("lang_code"))
     elif name == "extract_variables_from_croissant":
         return await extract_variables_from_croissant(dataset_id_or_url=arguments.get("dataset_id_or_url"))
@@ -229,7 +229,7 @@ async def list_tools() -> list[types.Tool]:
             }
         ),
         types.Tool(
-            name="hazards/info-profile",
+            name="hazards_info_profile",
             description="Retrieve the Hazard Information Profiles (HIPs) Semantic Croissant catalog.",
             inputSchema={
                 "type": "object",
@@ -239,7 +239,7 @@ async def list_tools() -> list[types.Tool]:
             }
         ),
         types.Tool(
-            name="hazards/translation",
+            name="hazards_translation",
             description="Retrieve the linked translated resource for a specific Hazard Information Profile.",
             inputSchema={
                 "type": "object",
@@ -324,7 +324,7 @@ def main(port: int, transport: str) -> int:
         from starlette.responses import Response
 
         from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
-        session_manager = StreamableHTTPSessionManager(app=app, json_response=True)
+        session_manager = StreamableHTTPSessionManager(app=app, json_response=True, stateless=True)
         
         class StreamableHTTPASGIApp:
             async def __call__(self, scope, receive, send):
@@ -387,6 +387,11 @@ def main(port: int, transport: str) -> int:
             from starlette.responses import HTMLResponse
             return HTMLResponse(html_content)
 
+        async def well_known_oauth(request):
+            # Return empty JSON to satisfy Claude Desktop's OAuth probes
+            from starlette.responses import JSONResponse
+            return JSONResponse({}, status_code=200)
+
         starlette_app = Starlette(
             debug=True,
             lifespan=lifespan,
@@ -399,6 +404,9 @@ def main(port: int, transport: str) -> int:
                 Route("/mcp/", endpoint=handle_streamable_http, methods=["GET", "POST", "DELETE"]),
                 Route("/mcp/sse", endpoint=handle_sse),
                 Mount("/mcp/messages/", app=sse.handle_post_message),
+                Route("/.well-known/oauth-protected-resource", endpoint=well_known_oauth),
+                Route("/.well-known/oauth-protected-resource/mcp", endpoint=well_known_oauth),
+                Route("/.well-known/oauth-authorization-server", endpoint=well_known_oauth),
             ],
         )
 

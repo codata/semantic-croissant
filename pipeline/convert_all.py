@@ -13,12 +13,16 @@ def process_file(filepath):
         return f"# ERROR parsing {filepath}: {e}\n"
 
 def main():
-    folder = "/mediaquantum/qlever/croissant"
-    output_file = "/mediaquantum/qlever/qlever-tests/data/data.nt"
+    folder = sys.argv[1] if len(sys.argv) > 1 else "/mediaquantum/qlever/croissant"
+    output_file = sys.argv[2] if len(sys.argv) > 2 else "/mediaquantum/qlever/qlever-tests/data/data.nt"
+    limit = int(sys.argv[3]) if len(sys.argv) > 3 else 0
     
-    files = [os.path.join(folder, f) for f in os.listdir(folder) if f.endswith('.json')]
+    files = [os.path.join(folder, f) for f in os.listdir(folder) if f.endswith('.json') or f.endswith('.jsonld')]
+    if limit > 0:
+        files = files[:limit]
+        
     total_files = len(files)
-    print(f"Found {total_files} JSON files to process.")
+    print(f"Found {total_files} JSON files to process in {folder}.")
     
     start_time = time.time()
     
