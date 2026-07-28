@@ -118,11 +118,33 @@ You can use the toolkit to generate a dataset and instantly ingest it into QLeve
    python3 croissant-toolkit/.gemini/skills/wizard/scripts/wizard.py "https://example.com/dataset" "My Dataset"
    ```
 2. **Ingest into QLever:** Once the toolkit generates the `dataset.jsonld`, use the Semantic Croissant API to ingest it:
-   ```bash
-   curl -X POST "http://localhost:7013/add_record" \
-        -H "Content-Type: application/json" \
-        -d @croissant-toolkit/data/croissant/dataset.jsonld
-   ```
+    ```bash
+    curl -X POST "http://localhost:7013/add_record" \
+         -H "Content-Type: application/json" \
+         -d @croissant-toolkit/data/croissant/dataset.jsonld
+    ```
+
+## Usage Guide: URL Ingestion and Q&A
+
+You can directly ingest content from a URL (such as a YouTube video transcript or a web article), convert it into Croissant format, and test the semantic accuracy using our built-in scripts.
+
+### 1. Ingesting a URL
+Use the `url_to_croissant.py` converter to download content, generate metadata, slice it into manageable chunks, and perform a dry-run ingestion into the Ollama model.
+
+```bash
+# Example: Ingesting a YouTube Video
+OLLAMA_HOST="http://10.147.18.37:11434" python convertors/url_to_croissant.py "https://www.youtube.com/watch?v=OcufTCr3RQs" --slice
+```
+This script will produce a `_croissant.jsonld` file containing all the sliced semantic chunks, along with their text content and generated summaries.
+
+### 2. Asking Questions (Q&A Evaluation)
+Once the dataset is converted, you can run the QA accuracy script to automatically ask questions about the text segments and evaluate the answers (with precise provenance).
+
+```bash
+# Example: Running the QA evaluator
+OLLAMA_HOST="http://10.147.18.37:11434" python scripts/test_qa_accuracy.py my_dataset__croissant.jsonld
+```
+The script will loop through the ingested chunks, generate contextual questions, answer them, and evaluate the response's Accuracy and Precision on a 1-5 scale.
 
 ## Model Context Protocol (MCP) Server
 
