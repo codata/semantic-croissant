@@ -5,3 +5,5 @@ qlever==0.5.47
 pydantic==2.7.4
 mcp
 httpx
+markdownify
+langdetect
