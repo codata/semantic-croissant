@@ -367,8 +367,8 @@ async def list_tools() -> list[types.Tool]:
                 "required": ["url"],
                 "properties": {
                     "url": {"type": "string", "description": "URL to extract from."},
-                    "slice": {"type": "boolean", "description": "Enable slice mode.", "default": False},
-                    "traverse": {"type": "boolean", "description": "Extract same-level URLs.", "default": False}
+                    "slice": {"type": "boolean", "description": "Enable slice mode."},
+                    "traverse": {"type": "boolean", "description": "Extract same-level URLs."}
                 }
             }
         ),
@@ -380,7 +380,7 @@ async def list_tools() -> list[types.Tool]:
                 "properties": {
                     "jsonld_payload": {"type": "string", "description": "Raw JSON-LD string payload."},
                     "file_path": {"type": "string", "description": "Path to the JSON-LD file on the server (alternative to jsonld_payload)."},
-                    "rebuild": {"type": "boolean", "description": "Trigger full offline QLever index rebuild.", "default": False}
+                    "rebuild": {"type": "boolean", "description": "Trigger full offline QLever index rebuild."}
                 }
             }
         )
