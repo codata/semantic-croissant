@@ -165,11 +165,19 @@ async def url_to_croissant(url: str, slice: bool = False, traverse: bool = False
         env = os.environ.copy()
         env["OLLAMA_HOST"] = "http://10.147.18.37:11434"
         
+        # In Docker, __file__ is /app/mcp_server.py and we mount convertors to /app/convertors
+        # Locally, __file__ is api/mcp_server.py and convertors is in ..
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        if os.path.exists(os.path.join(current_dir, "convertors")):
+            exec_cwd = current_dir
+        else:
+            exec_cwd = os.path.abspath(os.path.join(current_dir, ".."))
+            
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
+            cwd=exec_cwd,
             env=env
         )
         stdout, stderr = await process.communicate()
@@ -181,6 +189,34 @@ async def url_to_croissant(url: str, slice: bool = False, traverse: bool = False
         return [types.TextContent(type="text", text=f"Script executed.\n\nOutput:\n{output}")]
     except Exception as e:
         return [types.TextContent(type="text", text=f"Failed to execute url_to_croissant: {str(e)}")]
+
+async def ingest_to_qlever(jsonld_payload: str = None, file_path: str = None, rebuild: bool = False) -> list[types.TextContent]:
+    try:
+        if file_path:
+            if not os.path.isabs(file_path):
+                # Try relative to app root
+                file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), file_path)
+            if not os.path.exists(file_path):
+                # Try relative to workspace root if different
+                alt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", file_path)
+                if os.path.exists(alt_path):
+                    file_path = alt_path
+            
+            with open(file_path, "r") as f:
+                payload = f.read()
+        elif jsonld_payload:
+            payload = jsonld_payload
+        else:
+            return [types.TextContent(type="text", text="Error: Must provide either jsonld_payload or file_path")]
+            
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(f"{API_BASE}/add_record", params={"rebuild": str(rebuild).lower()}, content=payload)
+            response.raise_for_status()
+            data = response.json()
+            return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"Failed to ingest to QLever: {str(e)}")]
+
 
 async def get_planner(query: str = None) -> list[types.TextContent]:
     text = """
@@ -229,6 +265,12 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
             url=arguments.get("url"),
             slice=arguments.get("slice", False),
             traverse=arguments.get("traverse", False)
+        )
+    elif name == "ingest_to_qlever":
+        return await ingest_to_qlever(
+            jsonld_payload=arguments.get("jsonld_payload"),
+            file_path=arguments.get("file_path"),
+            rebuild=arguments.get("rebuild", False)
         )
     elif name == "planner":
         return await get_planner(query=arguments.get("query"))
@@ -327,6 +369,18 @@ async def list_tools() -> list[types.Tool]:
                     "url": {"type": "string", "description": "URL to extract from."},
                     "slice": {"type": "boolean", "description": "Enable slice mode.", "default": False},
                     "traverse": {"type": "boolean", "description": "Extract same-level URLs.", "default": False}
+                }
+            }
+        ),
+        types.Tool(
+            name="ingest_to_qlever",
+            description="Ingest JSON-LD Croissant metadata into the QLever database.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "jsonld_payload": {"type": "string", "description": "Raw JSON-LD string payload."},
+                    "file_path": {"type": "string", "description": "Path to the JSON-LD file on the server (alternative to jsonld_payload)."},
+                    "rebuild": {"type": "boolean", "description": "Trigger full offline QLever index rebuild.", "default": False}
                 }
             }
         )
