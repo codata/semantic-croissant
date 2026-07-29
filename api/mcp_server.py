@@ -153,6 +153,35 @@ async def extract_variables_from_oai(url: str) -> list[types.TextContent]:
     except Exception as e:
         return [types.TextContent(type="text", text=f"Failed to extract OAI variables: {str(e)}")]
 
+async def url_to_croissant(url: str, slice: bool = False, traverse: bool = False) -> list[types.TextContent]:
+    try:
+        import asyncio
+        cmd = ["python3", "convertors/url_to_croissant.py", url]
+        if slice:
+            cmd.append("--slice")
+        if traverse:
+            cmd.append("--traverse")
+            
+        env = os.environ.copy()
+        env["OLLAMA_HOST"] = "http://10.147.18.37:11434"
+        
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
+            env=env
+        )
+        stdout, stderr = await process.communicate()
+        
+        output = stdout.decode()
+        if stderr:
+            output += "\nErrors:\n" + stderr.decode()
+            
+        return [types.TextContent(type="text", text=f"Script executed.\n\nOutput:\n{output}")]
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"Failed to execute url_to_croissant: {str(e)}")]
+
 async def get_planner(query: str = None) -> list[types.TextContent]:
     text = """
 SYSTEM INSTRUCTION FOR LLM - Navigation Guide:
@@ -195,6 +224,12 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
         return await extract_variables_from_croissant(dataset_id_or_url=arguments.get("dataset_id_or_url"))
     elif name == "extract_variables_from_oai":
         return await extract_variables_from_oai(url=arguments.get("url"))
+    elif name == "url_to_croissant":
+        return await url_to_croissant(
+            url=arguments.get("url"),
+            slice=arguments.get("slice", False),
+            traverse=arguments.get("traverse", False)
+        )
     elif name == "planner":
         return await get_planner(query=arguments.get("query"))
     else:
@@ -279,6 +314,19 @@ async def list_tools() -> list[types.Tool]:
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Optional query."}
+                }
+            }
+        ),
+        types.Tool(
+            name="url_to_croissant",
+            description="Extract markdown and JSON-LD Croissant metadata from a URL.",
+            inputSchema={
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                    "url": {"type": "string", "description": "URL to extract from."},
+                    "slice": {"type": "boolean", "description": "Enable slice mode.", "default": False},
+                    "traverse": {"type": "boolean", "description": "Extract same-level URLs.", "default": False}
                 }
             }
         )
