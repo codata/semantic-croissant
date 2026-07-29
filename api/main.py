@@ -131,27 +131,22 @@ def search_datasets(q: str):
     q_lower = q.lower()
     terms = q_lower.split()
     
-    filters = []
-    for t in terms:
-        filters.append(f"""
-        FILTER (
-          (bound(?name) && CONTAINS(LCASE(STR(?name)), "{t}")) ||
-          (bound(?desc) && CONTAINS(LCASE(STR(?desc)), "{t}")) ||
-          (bound(?keyword) && CONTAINS(LCASE(STR(?keyword)), "{t}"))
-        )
+    term_blocks = []
+    for i, t in enumerate(terms):
+        term_blocks.append(f"""
+        {{
+            ?dataset ?prop{i} ?val{i} .
+            FILTER(CONTAINS(LCASE(STR(?val{i})), "{t}"))
+        }}
         """)
         
-    filter_block = "\n".join(filters)
+    filter_block = "\n".join(term_blocks)
     
     query = f"""
     PREFIX schema: <https://schema.org/>
     PREFIX schema_http: <http://schema.org/>
     SELECT DISTINCT ?dataset WHERE {{
       {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
-      
-      OPTIONAL {{ {{ ?dataset schema:name ?name }} UNION {{ ?dataset schema_http:name ?name }} }}
-      OPTIONAL {{ {{ ?dataset schema:description ?desc }} UNION {{ ?dataset schema_http:description ?desc }} }}
-      OPTIONAL {{ {{ ?dataset schema:keywords ?keyword }} UNION {{ ?dataset schema_http:keywords ?keyword }} }}
       
       {filter_block}
     }} LIMIT 5000
