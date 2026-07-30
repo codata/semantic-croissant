@@ -133,11 +133,19 @@ Use the `url_to_croissant.py` converter to download content, generate metadata, 
 
 ```bash
 # Example: Ingesting a YouTube Video
-OLLAMA_HOST="http://10.147.18.37:11434" python convertors/url_to_croissant.py "https://www.youtube.com/watch?v=OcufTCr3RQs" --slice
+OLLAMA_HOST="http://10.147.18.37:11434" python3 convertors/url_to_croissant.py "https://www.youtube.com/watch?v=OcufTCr3RQs" --slice
 ```
 This script will produce a `_croissant.jsonld` file containing all the sliced semantic chunks, along with their text content and generated summaries.
 
-### 2. Asking Questions (Q&A Evaluation)
+### 2. Batch Ingesting from Google Sheets
+You can also pass a Google Sheets URL containing a list of URLs to ingest them in bulk. The script will fetch the spreadsheet, extract all valid links, and process them in parallel using the `--workers` flag.
+
+```bash
+# Example: Batch ingesting URLs from a Google Sheet using 10 concurrent workers
+OLLAMA_HOST="http://10.147.18.37:11434" python3 convertors/url_to_croissant.py --workers 10 "https://docs.google.com/spreadsheets/d/1g8rqbLssGL7lDOGj5nwgXlyDqxrWOQim/edit?gid=573917078#gid=573917078"
+```
+
+### 3. Asking Questions (Q&A Evaluation)
 Once the dataset is converted, you can run the QA accuracy script to automatically ask questions about the text segments and evaluate the answers (with precise provenance).
 
 ```bash
