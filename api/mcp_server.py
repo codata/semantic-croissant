@@ -315,12 +315,12 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="get_croissant_dataset",
-            description="Retrieve the full detailed Croissant JSON-LD metadata for a specific dataset by its ID.",
+            description="Retrieve the full detailed Croissant JSON-LD metadata for a specific dataset. You can pass either its internal ID or its exact source/content URL.",
             inputSchema={
                 "type": "object",
                 "required": ["id"],
                 "properties": {
-                    "id": {"type": "string", "description": "The dataset ID returned from the search tool (e.g. 'bn36')"}
+                    "id": {"type": "string", "description": "The internal dataset ID (e.g. 'bn36') or the full URL (e.g. 'https://data.marine.copernicus.eu/...')"}
                 }
             }
         ),

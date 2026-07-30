@@ -76,6 +76,16 @@ async def add_record(request: Request, background_tasks: BackgroundTasks, rebuil
         data = json.loads(payload)
         sanitize_jsonld_ids(data)
         
+        # Inject cr:Dataset type to differentiate live records
+        if "@type" in data:
+            if isinstance(data["@type"], list):
+                if "cr:Dataset" not in data["@type"] and "http://mlcommons.org/croissant/Dataset" not in data["@type"]:
+                    data["@type"].append("http://mlcommons.org/croissant/Dataset")
+            elif isinstance(data["@type"], str):
+                data["@type"] = [data["@type"], "http://mlcommons.org/croissant/Dataset"]
+        else:
+            data["@type"] = "http://mlcommons.org/croissant/Dataset"
+            
         g = Graph()
         g.parse(data=json.dumps(data), format='json-ld')
         nt_data = g.serialize(format='nt')
@@ -131,51 +141,51 @@ def search_datasets(q: str):
     q_lower = q.lower()
     terms = q_lower.split()
     
-    term_blocks = []
+    dataset_sets = []
+    
     for i, t in enumerate(terms):
-        term_blocks.append(f"""
-        {{
-            {{ ?dataset schema:name ?val{i} }} 
-            UNION {{ ?dataset schema_http:name ?val{i} }}
-            UNION {{ ?dataset schema:description ?val{i} }}
-            UNION {{ ?dataset schema_http:description ?val{i} }}
-            UNION {{ ?dataset schema:keywords ?val{i} }}
-            UNION {{ ?dataset schema_http:keywords ?val{i} }}
-            FILTER(CONTAINS(LCASE(STR(?val{i})), "{t}"))
-        }}
-        """)
+        if len(t) <= 2:
+            continue
         
-    filter_block = "\n".join(term_blocks)
-    
-    query = f"""
-    PREFIX schema: <https://schema.org/>
-    PREFIX schema_http: <http://schema.org/>
-    SELECT DISTINCT ?dataset WHERE {{
-      {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
-      
-      {filter_block}
-    }} LIMIT 5000
-    """
-    
-    encoded = urllib.parse.urlencode({"query": query}).encode("utf-8")
-    url = "http://server-croissant-live:7011/"
-    req = urllib.request.Request(
-        url, 
-        data=encoded,
-        headers={
-            "Accept": "application/json",
-            "Content-Type": "application/x-www-form-urlencoded"
-        }
-    )
-    try:
-        with urllib.request.urlopen(req) as response:
-            data = json.loads(response.read().decode())
-            bindings = data.get("results", {}).get("bindings", [])
-            # Return dataset IDs
-            return [b["dataset"]["value"] for b in bindings]
-    except Exception as e:
-        print(f"Search datasets query failed: {e}")
+        query = f"""
+        PREFIX schema: <https://schema.org/>
+        PREFIX schema_http: <http://schema.org/>
+        PREFIX cr: <http://mlcommons.org/croissant/>
+        SELECT DISTINCT ?dataset WHERE {{
+          {{
+            {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
+            ?dataset ?p ?val .
+            FILTER(?p IN (schema:name, schema_http:name, schema:description, schema_http:description, schema:keywords, schema_http:keywords))
+            FILTER(CONTAINS(?val, "{t}"))
+          }}
+          UNION
+          {{
+            ?dataset a cr:Dataset .
+            ?dataset ?p_live ?val_live .
+            FILTER(?p_live IN (schema:name, schema_http:name, schema:description, schema_http:description, schema:keywords, schema_http:keywords))
+            FILTER(CONTAINS(LCASE(STR(?val_live)), "{t}"))
+          }}
+        }} LIMIT 5000
+        """
+        
+        url = "http://server-croissant-live:7011/"
+        data = urllib.parse.urlencode({"query": query}).encode('ascii')
+        req = urllib.request.Request(url, data=data, headers={"User-Agent": "Mozilla/5.0"})
+        try:
+            with urllib.request.urlopen(req) as response:
+                res_data = json.loads(response.read().decode())
+                bindings = res_data.get("results", {}).get("bindings", [])
+                dataset_ids = set(b["dataset"]["value"] for b in bindings)
+                dataset_sets.append(dataset_ids)
+        except Exception as e:
+            print(f"Search dataset query failed for term '{t}': {e}")
+            return []
+
+    if not dataset_sets:
         return []
+        
+    final_datasets = list(set.intersection(*dataset_sets))
+    return final_datasets
 
 def get_datasets_properties(dataset_ids):
     if not dataset_ids:
@@ -187,8 +197,9 @@ def get_datasets_properties(dataset_ids):
     PREFIX schema: <https://schema.org/>
     PREFIX schema_http: <http://schema.org/>
     PREFIX cr: <http://mlcommons.org/croissant/>
+    PREFIX sc: <https://schema.org/>
     SELECT DISTINCT ?dataset ?name ?description ?keyword ?url ?creator_name ?citation ?identifier WHERE {{
-      {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
+      {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }} UNION {{ ?dataset a cr:Dataset }}
       FILTER(STR(?dataset) IN ({in_values}))
       
       OPTIONAL {{
@@ -295,14 +306,14 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
     if id:
         # User requested a specific dataset ID
         filter_str = f"_:{id}" if id.startswith("bn") else id
+        filter_str_alt = filter_str.replace("https://", "http://") if "https://" in filter_str else filter_str.replace("http://", "https://")
         
-        # We will build the full graph of the dataset by running 3 levels of depth queries
         base_subquery = f"""
         SELECT ?dataset WHERE {{
-          {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
+          {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }} UNION {{ ?dataset a cr:Dataset }}
           OPTIONAL {{ ?dataset schema:url|schema_http:url ?u1 }}
           OPTIONAL {{ ?dataset schema:contentUrl|schema_http:contentUrl ?u2 }}
-          FILTER(STR(?dataset) = "{filter_str}" || STR(?u1) = "{filter_str}" || STR(?u2) = "{filter_str}")
+          FILTER(STR(?dataset) = "{filter_str}" || STR(?u1) = "{filter_str}" || STR(?u2) = "{filter_str}" || STR(?dataset) = "{filter_str_alt}" || STR(?u1) = "{filter_str_alt}" || STR(?u2) = "{filter_str_alt}")
         }}
         """
         
@@ -310,6 +321,7 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
         q1 = f"""
         PREFIX schema: <https://schema.org/>
         PREFIX schema_http: <http://schema.org/>
+        PREFIX cr: <http://mlcommons.org/croissant/>
         SELECT ?dataset ?p1 ?o1 WHERE {{
           {{ {base_subquery} }}
           ?dataset ?p1 ?o1 .
@@ -320,6 +332,7 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
         q2 = f"""
         PREFIX schema: <https://schema.org/>
         PREFIX schema_http: <http://schema.org/>
+        PREFIX cr: <http://mlcommons.org/croissant/>
         SELECT ?dataset ?p1 ?o1 ?p2 ?o2 WHERE {{
           {{ {base_subquery} }}
           ?dataset ?p1 ?o1 .
@@ -331,6 +344,7 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
         q3 = f"""
         PREFIX schema: <https://schema.org/>
         PREFIX schema_http: <http://schema.org/>
+        PREFIX cr: <http://mlcommons.org/croissant/>
         SELECT ?dataset ?p1 ?o1 ?p2 ?o2 ?p3 ?o3 WHERE {{
           {{ {base_subquery} }}
           ?dataset ?p1 ?o1 .
@@ -343,6 +357,7 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
         q4 = f"""
         PREFIX schema: <https://schema.org/>
         PREFIX schema_http: <http://schema.org/>
+        PREFIX cr: <http://mlcommons.org/croissant/>
         SELECT ?dataset ?p1 ?o1 ?p2 ?o2 ?p3 ?o3 ?p4 ?o4 WHERE {{
           {{ {base_subquery} }}
           ?dataset ?p1 ?o1 .
@@ -356,6 +371,7 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
         q5 = f"""
         PREFIX schema: <https://schema.org/>
         PREFIX schema_http: <http://schema.org/>
+        PREFIX cr: <http://mlcommons.org/croissant/>
         SELECT ?dataset ?p1 ?o1 ?p2 ?o2 ?p3 ?o3 ?p4 ?o4 ?p5 ?o5 WHERE {{
           {{ {base_subquery} }}
           ?dataset ?p1 ?o1 .
@@ -374,7 +390,9 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
                 return json.loads(response.read().decode()).get("results", {}).get("bindings", [])
                 
         try:
+            print(q1, flush=True)
             b1 = run_q(q1)
+            print(f"b1: {b1}", flush=True)
             if not b1:
                 return {"error": "Dataset not found"}
                 
@@ -485,6 +503,8 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
                   {{ ?dataset a schema:Dataset . }}
                   UNION
                   {{ ?dataset a schema_http:Dataset . }}
+                  UNION
+                  {{ ?dataset a cr:Dataset . }}
                   
                   OPTIONAL {{
                     {{ ?dataset schema:name ?name }} UNION {{ ?dataset schema_http:name ?name }}
@@ -665,6 +685,7 @@ def get_variables_sparql(id: str):
             pass
             
     filter_str = f"_:{id}" if id.startswith("bn") else id
+    filter_str_alt = filter_str.replace("https://", "http://") if "https://" in filter_str else filter_str.replace("http://", "https://")
     
     query = f"""
     PREFIX schema: <https://schema.org/>
@@ -674,11 +695,13 @@ def get_variables_sparql(id: str):
     SELECT ?dataset ?identifier ?url ?name ?desc ?dataType ?column ?fileObject WHERE {{
       {{
         SELECT ?dataset ?identifier ?url WHERE {{
-          {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
-          FILTER(STR(?dataset) = "{filter_str}")
-          OPTIONAL {{ ?dataset schema:identifier|schema_http:identifier ?identifier }}
-          OPTIONAL {{ ?dataset schema:url|schema_http:url ?url }}
-        }} LIMIT 1
+          {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }} UNION {{ ?dataset a cr:Dataset }}
+          OPTIONAL {{ ?dataset schema:url|schema_http:url ?u1 }}
+          OPTIONAL {{ ?dataset schema:contentUrl|schema_http:contentUrl ?u2 }}
+          FILTER(STR(?dataset) = "{filter_str}" || STR(?u1) = "{filter_str}" || STR(?u2) = "{filter_str}" || STR(?dataset) = "{filter_str_alt}" || STR(?u1) = "{filter_str_alt}" || STR(?u2) = "{filter_str_alt}")
+        }}
+        OPTIONAL {{ ?dataset schema:identifier|schema_http:identifier ?identifier }}
+        OPTIONAL {{ ?dataset schema:url|schema_http:url ?url }}
       }}
       
       {{

@@ -1,4 +1,14 @@
 import requests
+import cloudscraper
+
+# Global cloudscraper instance to bypass Cloudflare
+scraper = cloudscraper.create_scraper(
+    browser={
+        'browser': 'chrome',
+        'platform': 'windows',
+        'desktop': True
+    }
+)
 import json
 import time
 import argparse
@@ -36,7 +46,7 @@ def fetch_youtube_transcript(url):
         channel = ""
         date = ""
         try:
-            res = requests.get(url, timeout=10)
+            res = scraper.get(url, timeout=10)
             if res.status_code == 200:
                 soup = BeautifulSoup(res.text, 'html.parser')
                 title_tag = soup.find("meta", property="og:title")
@@ -101,7 +111,7 @@ def fetch_url_markdown(url, traverse=False):
         
     print(f"Fetching {url}...")
     try:
-        response = requests.get(url, timeout=30)
+        response = scraper.get(url, timeout=30)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
         
@@ -153,7 +163,7 @@ def fetch_url_markdown(url, traverse=False):
                     sub_url = urllib.parse.urljoin(url, sub_link)
                     print(f"  -> Fetching sibling page {sub_url}...")
                     try:
-                        sub_res = requests.get(sub_url, timeout=30)
+                        sub_res = scraper.get(sub_url, timeout=30)
                         if sub_res.status_code == 200:
                             sub_soup = BeautifulSoup(sub_res.text, 'html.parser')
                             sub_title = link_text
@@ -178,7 +188,7 @@ def fetch_url_markdown(url, traverse=False):
                     sub_url = urllib.parse.urljoin(url, sub_link)
                     print(f"  -> Fetching subpage {sub_url}...")
                     try:
-                        sub_res = requests.get(sub_url, timeout=30)
+                        sub_res = scraper.get(sub_url, timeout=30)
                         if sub_res.status_code == 200:
                             sub_soup = BeautifulSoup(sub_res.text, 'html.parser')
                             sub_content = sub_soup.find(class_='entry-content') or sub_soup.find('article') or sub_soup.find('main') or sub_soup.find('body')
@@ -204,7 +214,15 @@ def fetch_url_markdown(url, traverse=False):
             return None, None, []
     except Exception as e:
         print(f"Failed to fetch {url}: {e}")
-        return None, None, []
+        try:
+            print(f"Attempting fallback to Jina Reader API for {url}...")
+            jina_url = f"https://r.jina.ai/{url}"
+            fallback_res = requests.get(jina_url, timeout=60)
+            fallback_res.raise_for_status()
+            return fallback_res.text, {"contentUrl": url}, []
+        except Exception as jina_e:
+            print(f"Jina Reader fallback also failed: {jina_e}")
+            return None, None, []
 
 def translate_to_english(text):
     print("Translating content to English using Ollama...")
@@ -423,170 +441,201 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
 
     print(f"\n--- Processing {url} using {MODEL_NAME} ---")
     
+    # Truncate to first 5,000 characters to prevent context window overflow which causes hallucinated JSON
     llm_context_data = markdown_data
+    if len(llm_context_data) > 5000:
+        print(f"Warning: Markdown is too large ({len(llm_context_data)} chars). Truncating to 5,000 chars.")
+        llm_context_data = llm_context_data[:5000]
 
     prompt = f"Create Croissant JSON-LD metadata for a machine learning model or dataset. The source URL is {url}."
     if lang != 'en':
         prompt += f" The source documentation is in language code '{lang}'. Please translate the relevant metadata to English and output the Croissant JSON-LD entirely in English."
     prompt += f" Here is the documentation and description extracted from its official page:\n\n{llm_context_data}\n\nExtract relevant information such as the description, authors, license, keywords, tags, or any dataset dependencies into the Croissant metadata if available. Map keywords/tags to the standard schema:keywords property, and extract them EXACTLY as they appear in the text (do not change casing or invent new tags). Ensure 'keywords' is formatted as a JSON array of strings, not a single comma-separated string. IMPORTANT: For any fields or data that do not have a standard mapping in Croissant, include them in the JSON-LD under a custom field called 'unmappedFields' as a list of key-value pairs.\n\nCRITICAL: Do NOT invent, hallucinate, or generate generic information. You MUST extract the name, description, and details directly from the provided text above.\n\nOutput ONLY a valid JSON object. "
     
-    payload = {
-        "model": MODEL_NAME,
-        "prompt": prompt,
-        "stream": False,
-        "options": {
-            "temperature": 0.1,
-            "repeat_penalty": 1.1,
-            "num_predict": 8192,
-            "num_ctx": 40960
-        }
-    }
-    
     start_time = time.time()
     try:
-        response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=600)
-        response.raise_for_status()
-        end_time = time.time()
-        
-        data = response.json()
-        print("Status: Success")
-        print(f"Total Request Time: {end_time - start_time:.2f} s")
-        print(f"Prompt Eval Tokens: {data.get('prompt_eval_count')} in {data.get('prompt_eval_duration', 0) / 1e9:.2f} s")
-        print(f"Tokens Generated: {data.get('eval_count')} in {data.get('eval_duration', 0) / 1e9:.2f} s")
-        if data.get('eval_duration', 0) > 0:
-            speed = data.get('eval_count', 0) / (data.get('eval_duration', 0) / 1e9)
-            print(f"Generation Speed: {speed:.2f} tokens/sec")
-        print("-" * 40)
-        
-        output = data.get('response', '')
-        
-        # Strip markdown formatting
-        if output.startswith("```json"):
-            output = output[7:]
-        if output.startswith("```"):
-            output = output[3:]
-        if output.endswith("```"):
-            output = output[:-3]
-        output = output.strip()
-        
-        # Validation
-        print("\n--- Validation ---")
-        try:
-            # Clean up common LLM trailing commas before parsing
-            import re
-            output = re.sub(r',\s*}', '}', output)
-            output = re.sub(r',\s*\]', ']', output)
-            
-            json_data = json.loads(output)
-            print("✓ JSON is well-formed")
-            
-            # Inject link to the generated markdown file(s)
-            md_abs_path = os.path.abspath(md_filename)
-            doc_links = [{
-                "@type": "CreativeWork",
-                "name": "Scraped Markdown Content",
-                "contentUrl": f"file://{os.path.abspath(original_md_filename)}",
-                "encodingFormat": "text/markdown"
-            }]
-            
-            if original_md_filename != md_filename:
-                doc_links.append({
-                    "@type": "CreativeWork",
-                    "name": "Translated Markdown Content (English)",
-                    "contentUrl": f"file://{md_abs_path}",
-                    "encodingFormat": "text/markdown"
-                })
+        MAX_RETRIES = 3
+        for attempt in range(1, MAX_RETRIES + 1):
+            # Increase temperature on retries to avoid repeating the exact same JSON syntax errors
+            current_temperature = 0.1 + ((attempt - 1) * 0.2)
+            # Inject attempt number into prompt to bypass Ollama cache
+            current_prompt = prompt
+            if attempt > 1:
+                current_prompt += f"\n\n[Attempt {attempt} - Previous attempt failed due to invalid JSON. Please ensure valid JSON formatting, avoid truncation, and do not repeat previous errors.]"
                 
-            if traverse and sibling_pages:
-                for sib in sibling_pages:
-                    sib_safe = re.sub(r'[^a-zA-Z0-9]', '_', sib['url']).strip('_')
-                    sib_md_filename = os.path.join("data", "ca4eosc", f"{sib_safe}_content.md")
-                    with open(sib_md_filename, "w", encoding='utf-8') as f:
-                        f.write(sib['markdown'])
-                    doc_links.append({
-                        "@type": "CreativeWork",
-                        "name": sib['title'],
-                        "contentUrl": f"file://{os.path.abspath(sib_md_filename)}",
-                        "encodingFormat": "text/markdown"
-                    })
-            
-            if slice_links:
-                doc_links.extend(slice_links)
-                
-            if extracted_meta:
-                json_data.update(extracted_meta)
-                
-            if "isBasedOn" in json_data:
-                if isinstance(json_data["isBasedOn"], list):
-                    json_data["isBasedOn"].extend(doc_links)
-                else:
-                    json_data["isBasedOn"] = [json_data["isBasedOn"]] + doc_links
-            else:
-                json_data["isBasedOn"] = doc_links
-                
-            if "unmappedFields" in json_data:
-                unmapped = json_data["unmappedFields"]
-                if isinstance(unmapped, list):
-                    print(f"⚠ Found {len(unmapped)} unmapped custom field(s):")
-                    for field in unmapped:
-                        key = field.get("@type", "Unknown")
-                        val = str(field.get("value", field))
-                        print(f"    - {key}: {val[:80]}{'...' if len(val) > 80 else ''}")
-                else:
-                    print(f"⚠ Found unmapped custom field(s): {unmapped}")
-                    
-            # Reorder dictionary to put @context and @type at the top
-            ordered_data = {}
-            
-            # Use full Croissant context
-            existing_ctx = json_data.pop("@context", None)
-            if not existing_ctx or existing_ctx == "https://schema.org":
-                ordered_data["@context"] = {
-                    "@vocab": "https://schema.org/",
-                    "cr": "http://mlcommons.org/croissant/"
+            payload = {
+                "model": MODEL_NAME,
+                "prompt": current_prompt,
+                "stream": False,
+                "options": {
+                    "temperature": current_temperature,
+                    "repeat_penalty": 1.1,
+                    "num_predict": 8192,
+                    "num_ctx": 40960
                 }
-            else:
-                ordered_data["@context"] = existing_ctx
-                
-            ordered_data["@type"] = json_data.pop("@type", "Dataset")
-            ordered_data.update(json_data)
-            json_data = ordered_data
+            }
             
-            # Write to temporary file for rdflib
-            if user_name or user_email:
-                creator = {"@type": "Person"}
-                if user_name:
-                    creator["name"] = user_name
-                if user_email:
-                    creator["email"] = user_email
-                json_data["creator"] = creator
-                
-            import tempfile
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonld', delete=False) as tf:
-                json.dump(json_data, tf)
-                temp_name = tf.name
+            response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=600)
+            response.raise_for_status()
+            end_time = time.time()
+            
+            data = response.json()
+            print(f"Status: Success (Attempt {attempt})")
+            print(f"Total Request Time: {end_time - start_time:.2f} s")
+            print(f"Prompt Eval Tokens: {data.get('prompt_eval_count')} in {data.get('prompt_eval_duration', 0) / 1e9:.2f} s")
+            print(f"Tokens Generated: {data.get('eval_count')} in {data.get('eval_duration', 0) / 1e9:.2f} s")
+            if data.get('eval_duration', 0) > 0:
+                speed = data.get('eval_count', 0) / (data.get('eval_duration', 0) / 1e9)
+                print(f"Generation Speed: {speed:.2f} tokens/sec")
+            print("-" * 40)
+            
+            output = data.get('response', '')
+            
+            # Strip markdown formatting
+            if output.startswith("```json"):
+                output = output[7:]
+            if output.startswith("```"):
+                output = output[3:]
+            if output.endswith("```"):
+                output = output[:-3]
+            output = output.strip()
+            
+            # Validation
+            if attempt > 1:
+                print(f"\n--- Validation (Attempt {attempt}) ---")
+            else:
+                print("\n--- Validation ---")
                 
             try:
-                g = Graph()
-                g.parse(temp_name, format="json-ld")
-                if len(g) == 0:
-                    print("✗ Invalid JSON-LD: Parsed 0 triples. The model generated an invalid schema structure.")
-                    print("Aborting conversion. Please retry or check the source content.")
-                    return
-                print(f"✓ Valid JSON-LD: Successfully loaded {len(g)} triples into RDF graph.")
-            except Exception as e:
-                print(f"✗ Invalid JSON-LD schema or namespaces: {e}")
-                return
-            finally:
-                os.remove(temp_name)
+                # Clean up common LLM trailing commas before parsing
+                import re
+                output = re.sub(r',\s*}', '}', output)
+                output = re.sub(r',\s*\]', ']', output)
                 
-            # Overwrite output with the modified json_data
-            output = json.dumps(json_data, indent=2)
-            
-        except json.JSONDecodeError as e:
-            print(f"✗ Invalid JSON structure: {e}")
-            print("Aborting conversion due to invalid JSON. Please retry.")
-            return
+                json_data = json.loads(output)
+                print("✓ JSON is well-formed")
+                
+                # Inject link to the generated markdown file(s)
+                md_abs_path = os.path.abspath(md_filename)
+                doc_links = [{
+                    "@type": "CreativeWork",
+                    "name": "Scraped Markdown Content",
+                    "contentUrl": f"file://{os.path.abspath(original_md_filename)}",
+                    "encodingFormat": "text/markdown"
+                }]
+                
+                if original_md_filename != md_filename:
+                    doc_links.append({
+                        "@type": "CreativeWork",
+                        "name": "Translated Markdown Content (English)",
+                        "contentUrl": f"file://{md_abs_path}",
+                        "encodingFormat": "text/markdown"
+                    })
+                    
+                if traverse and sibling_pages:
+                    for sib in sibling_pages:
+                        sib_safe = re.sub(r'[^a-zA-Z0-9]', '_', sib['url']).strip('_')
+                        sib_md_filename = os.path.join("data", "ca4eosc", f"{sib_safe}_content.md")
+                        with open(sib_md_filename, "w", encoding='utf-8') as f:
+                            f.write(sib['markdown'])
+                        doc_links.append({
+                            "@type": "CreativeWork",
+                            "name": sib['title'],
+                            "contentUrl": f"file://{os.path.abspath(sib_md_filename)}",
+                            "encodingFormat": "text/markdown"
+                        })
+                
+                if slice_links:
+                    doc_links.extend(slice_links)
+                    
+                if extracted_meta:
+                    json_data.update(extracted_meta)
+                    
+                if "isBasedOn" in json_data:
+                    if isinstance(json_data["isBasedOn"], list):
+                        json_data["isBasedOn"].extend(doc_links)
+                    else:
+                        json_data["isBasedOn"] = [json_data["isBasedOn"]] + doc_links
+                else:
+                    json_data["isBasedOn"] = doc_links
+                    
+                if "unmappedFields" in json_data:
+                    unmapped = json_data["unmappedFields"]
+                    if isinstance(unmapped, list):
+                        print(f"⚠ Found {len(unmapped)} unmapped custom field(s):")
+                        for field in unmapped:
+                            key = field.get("@type", "Unknown")
+                            val = str(field.get("value", field))
+                            print(f"    - {key}: {val[:80]}{'...' if len(val) > 80 else ''}")
+                    else:
+                        print(f"⚠ Found unmapped custom field(s): {unmapped}")
+                        
+                # Reorder dictionary to put @context and @type at the top
+                ordered_data = {}
+                
+                # Use full Croissant context
+                existing_ctx = json_data.pop("@context", None)
+                if not existing_ctx or existing_ctx == "https://schema.org":
+                    ordered_data["@context"] = {
+                        "@vocab": "https://schema.org/",
+                        "cr": "http://mlcommons.org/croissant/"
+                    }
+                else:
+                    ordered_data["@context"] = existing_ctx
+                    
+                ordered_data["@type"] = json_data.pop("@type", "Dataset")
+                ordered_data.update(json_data)
+                json_data = ordered_data
+                
+                # Write to temporary file for rdflib
+                if user_name or user_email:
+                    creator = {"@type": "Person"}
+                    if user_name:
+                        creator["name"] = user_name
+                    if user_email:
+                        creator["email"] = user_email
+                    json_data["creator"] = creator
+                    
+                import tempfile
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonld', delete=False) as tf:
+                    json.dump(json_data, tf)
+                    temp_name = tf.name
+                    
+                try:
+                    g = Graph()
+                    g.parse(temp_name, format="json-ld")
+                    if len(g) == 0:
+                        print("✗ Invalid JSON-LD: Parsed 0 triples. The model generated an invalid schema structure.")
+                        if attempt < MAX_RETRIES:
+                            print("Retrying...")
+                            continue
+                        else:
+                            print("Aborting conversion. Please retry or check the source content.")
+                            return
+                    print(f"✓ Valid JSON-LD: Successfully loaded {len(g)} triples into RDF graph.")
+                except Exception as e:
+                    print(f"✗ Invalid JSON-LD schema or namespaces: {e}")
+                    if attempt < MAX_RETRIES:
+                        print("Retrying...")
+                        continue
+                    else:
+                        return
+                finally:
+                    os.remove(temp_name)
+                    
+                # Overwrite output with the modified json_data
+                output = json.dumps(json_data, indent=2)
+                break
+                
+            except json.JSONDecodeError as e:
+                print(f"✗ Invalid JSON structure: {e}")
+                if attempt < MAX_RETRIES:
+                    print("Retrying conversion...")
+                    continue
+                else:
+                    print("Aborting conversion due to invalid JSON after max retries.")
+                    return
+
 
         output_filename = f"{safe_name}_croissant.jsonld"
         
@@ -613,9 +662,9 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
         if reingest:
             print("\n--- Ingesting into QLever ---")
             try:
-                api_base = os.environ.get("API_BASE", "http://localhost:8000")
+                api_base = os.environ.get("API_BASE", "http://localhost:7013")
                 print(f"Sending ingestion request to {api_base}/add_record...")
-                res_ql = requests.post(f"{api_base}/add_record", data=output, timeout=60)
+                res_ql = requests.post(f"{api_base}/add_record", json=json_data, timeout=10)
                 res_ql.raise_for_status()
                 print(f"✓ Successfully ingested into QLever! Response: {res_ql.text}")
             except Exception as e:
@@ -640,7 +689,7 @@ def process_spreadsheet(url, is_slice=False, traverse=False, reingest=False, use
             
     print(f"Fetching CSV from: {url}")
     try:
-        response = requests.get(url, timeout=30)
+        response = scraper.get(url, timeout=30)
         response.raise_for_status()
     except Exception as e:
         print(f"Failed to fetch spreadsheet: {e}")
