@@ -428,16 +428,17 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
     prompt = f"Create Croissant JSON-LD metadata for a machine learning model or dataset. The source URL is {url}."
     if lang != 'en':
         prompt += f" The source documentation is in language code '{lang}'. Please translate the relevant metadata to English and output the Croissant JSON-LD entirely in English."
-    prompt += f" Here is the documentation and description extracted from its official page:\n\n{llm_context_data}\n\nExtract relevant information such as the description, authors, license, keywords, tags, or any dataset dependencies into the Croissant metadata if available. Map keywords/tags to the standard schema:keywords property, and extract them EXACTLY as they appear in the text (do not change casing or invent new tags). Ensure 'keywords' is formatted as a JSON array of strings, not a single comma-separated string. IMPORTANT: For any fields or data that do not have a standard mapping in Croissant, include them in the JSON-LD under a custom field called 'unmappedFields' as a list of key-value pairs.\n\nCRITICAL: Do NOT invent, hallucinate, or generate generic information. You MUST extract the name, description, and details directly from the provided text above.\n\nOutput ONLY a valid JSON object."
+    prompt += f" Here is the documentation and description extracted from its official page:\n\n{llm_context_data}\n\nExtract relevant information such as the description, authors, license, keywords, tags, or any dataset dependencies into the Croissant metadata if available. Map keywords/tags to the standard schema:keywords property, and extract them EXACTLY as they appear in the text (do not change casing or invent new tags). Ensure 'keywords' is formatted as a JSON array of strings, not a single comma-separated string. IMPORTANT: For any fields or data that do not have a standard mapping in Croissant, include them in the JSON-LD under a custom field called 'unmappedFields' as a list of key-value pairs.\n\nCRITICAL: Do NOT invent, hallucinate, or generate generic information. You MUST extract the name, description, and details directly from the provided text above.\n\nOutput ONLY a valid JSON object. "
     
     payload = {
         "model": MODEL_NAME,
         "prompt": prompt,
         "stream": False,
         "options": {
-            "temperature": 0.0,
+            "temperature": 0.1,
             "repeat_penalty": 1.1,
-            "num_predict": 1024
+            "num_predict": 8192,
+            "num_ctx": 40960
         }
     }
     
