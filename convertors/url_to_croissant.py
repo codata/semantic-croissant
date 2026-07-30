@@ -252,8 +252,8 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
     if not safe_name:
         safe_name = "url_output"
         
-    os.makedirs("data", exist_ok=True)
-    safe_name = os.path.join("data", safe_name)
+    os.makedirs(os.path.join("data", "ca4eosc"), exist_ok=True)
+    safe_name = os.path.join("data", "ca4eosc", safe_name)
 
     md_filename = f"{safe_name}_content.md"
     with open(md_filename, "w", encoding='utf-8') as f:
@@ -499,7 +499,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
             if traverse and sibling_pages:
                 for sib in sibling_pages:
                     sib_safe = re.sub(r'[^a-zA-Z0-9]', '_', sib['url']).strip('_')
-                    sib_md_filename = os.path.join("data", f"{sib_safe}_content.md")
+                    sib_md_filename = os.path.join("data", "ca4eosc", f"{sib_safe}_content.md")
                     with open(sib_md_filename, "w", encoding='utf-8') as f:
                         f.write(sib['markdown'])
                     doc_links.append({
@@ -533,6 +533,23 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                         print(f"    - {key}: {val[:80]}{'...' if len(val) > 80 else ''}")
                 else:
                     print(f"⚠ Found unmapped custom field(s): {unmapped}")
+                    
+            # Reorder dictionary to put @context and @type at the top
+            ordered_data = {}
+            
+            # Use full Croissant context
+            existing_ctx = json_data.pop("@context", None)
+            if not existing_ctx or existing_ctx == "https://schema.org":
+                ordered_data["@context"] = {
+                    "@vocab": "https://schema.org/",
+                    "cr": "http://mlcommons.org/croissant/"
+                }
+            else:
+                ordered_data["@context"] = existing_ctx
+                
+            ordered_data["@type"] = json_data.pop("@type", "Dataset")
+            ordered_data.update(json_data)
+            json_data = ordered_data
             
             # Write to temporary file for rdflib
             if user_name or user_email:
@@ -551,9 +568,14 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
             try:
                 g = Graph()
                 g.parse(temp_name, format="json-ld")
+                if len(g) == 0:
+                    print("✗ Invalid JSON-LD: Parsed 0 triples. The model generated an invalid schema structure.")
+                    print("Aborting conversion. Please retry or check the source content.")
+                    return
                 print(f"✓ Valid JSON-LD: Successfully loaded {len(g)} triples into RDF graph.")
             except Exception as e:
                 print(f"✗ Invalid JSON-LD schema or namespaces: {e}")
+                return
             finally:
                 os.remove(temp_name)
                 
