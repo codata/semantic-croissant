@@ -9,3 +9,6 @@ markdownify
 langdetect
 youtube-transcript-api
 beautifulsoup4
+
+PyJWT
+cryptography

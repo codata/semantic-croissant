@@ -153,7 +153,12 @@ async def extract_variables_from_oai(url: str) -> list[types.TextContent]:
     except Exception as e:
         return [types.TextContent(type="text", text=f"Failed to extract OAI variables: {str(e)}")]
 
-async def url_to_croissant(url: str, slice: bool = False, traverse: bool = False) -> list[types.TextContent]:
+async def url_to_croissant(url: str, slice: bool = False, traverse: bool = False, reingest: bool = False) -> list[types.TextContent]:
+    if reingest:
+        auth_msg = await check_authentication()
+        if auth_msg:
+            return [types.TextContent(type="text", text=auth_msg)]
+
     try:
         import asyncio
         cmd = ["python3", "convertors/url_to_croissant.py", url]
@@ -161,7 +166,17 @@ async def url_to_croissant(url: str, slice: bool = False, traverse: bool = False
             cmd.append("--slice")
         if traverse:
             cmd.append("--traverse")
+        if reingest:
+            cmd.append("--reingest")
             
+        if SERVER_USER_INFO:
+            user_name = SERVER_USER_INFO.get("name")
+            user_email = SERVER_USER_INFO.get("email")
+            if user_name:
+                cmd.extend(["--user-name", user_name])
+            if user_email:
+                cmd.extend(["--user-email", user_email])
+                
         env = os.environ.copy()
         env["OLLAMA_HOST"] = "http://10.147.18.37:11434"
         
@@ -191,6 +206,10 @@ async def url_to_croissant(url: str, slice: bool = False, traverse: bool = False
         return [types.TextContent(type="text", text=f"Failed to execute url_to_croissant: {str(e)}")]
 
 async def ingest_to_qlever(jsonld_payload: str = None, file_path: str = None, rebuild: bool = False) -> list[types.TextContent]:
+    auth_msg = await check_authentication()
+    if auth_msg:
+        return [types.TextContent(type="text", text=auth_msg)]
+        
     try:
         if file_path:
             if not os.path.isabs(file_path):
@@ -361,15 +380,16 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="url_to_croissant",
-            description="Extract markdown and JSON-LD Croissant metadata from a URL.",
+            description="Scrapes a URL (like a dataset documentation page or YouTube video) and converts it to a Croissant JSON-LD. If you pass a Google Sheets URL, it will read the sheet and process every URL found in it in batch. Does NOT ingest into QLever unless reingest=True.",
             inputSchema={
                 "type": "object",
-                "required": ["url"],
                 "properties": {
-                    "url": {"type": "string", "description": "URL to extract from."},
-                    "slice": {"type": "boolean", "description": "Enable slice mode."},
-                    "traverse": {"type": "boolean", "description": "Extract same-level URLs."}
-                }
+                    "url": {"type": "string", "description": "The URL to scrape (e.g., https://huggingface.co/datasets/nyu-mll/glue) or a Google Sheets URL"},
+                    "slice": {"type": "boolean", "description": "Enable slice mode to split markdown into pieces for large documents (default False)"},
+                    "traverse": {"type": "boolean", "description": "Extract and link all URLs on the same level (default False)"},
+                    "reingest": {"type": "boolean", "description": "Automatically ingest the result into QLever database (default False)"}
+                },
+                "required": ["url"]
             }
         ),
         types.Tool(
@@ -385,6 +405,85 @@ async def list_tools() -> list[types.Tool]:
             }
         )
     ]
+
+SERVER_ACCESS_TOKEN = None
+SERVER_USER_INFO = None
+PENDING_DEVICE_CODE = None
+DEVICE_CODE_EXPIRES_AT = 0
+
+async def check_authentication() -> str | None:
+    global SERVER_ACCESS_TOKEN, SERVER_USER_INFO, PENDING_DEVICE_CODE, DEVICE_CODE_EXPIRES_AT
+    
+    issuer = os.environ.get("OAUTH_ISSUER")
+    client_id = os.environ.get("OAUTH_CLIENT_ID")
+    
+    if not issuer or not client_id:
+        return None
+        
+    issuer = issuer.rstrip("/")
+    
+    if SERVER_ACCESS_TOKEN:
+        return None
+        
+    import time
+    if PENDING_DEVICE_CODE:
+        if time.time() > DEVICE_CODE_EXPIRES_AT:
+            PENDING_DEVICE_CODE = None
+            return "Your previous authentication link expired. Please run the tool again to get a new link."
+            
+        token_url = f"{issuer}/oauth/token"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await client.post(token_url, data={
+                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                "device_code": PENDING_DEVICE_CODE,
+                "client_id": client_id
+            })
+            
+            if res.status_code == 200:
+                data = res.json()
+                SERVER_ACCESS_TOKEN = data.get("access_token")
+                PENDING_DEVICE_CODE = None
+                
+                # Fetch user info
+                userinfo_url = f"{issuer}/userinfo"
+                async with httpx.AsyncClient(timeout=10.0) as u_client:
+                    u_res = await u_client.get(userinfo_url, headers={"Authorization": f"Bearer {SERVER_ACCESS_TOKEN}"})
+                    if u_res.status_code == 200:
+                        SERVER_USER_INFO = u_res.json()
+                        
+                return None
+            else:
+                data = res.json()
+                error = data.get("error")
+                if error == "authorization_pending":
+                    return "You haven't finished authenticating yet. Please complete the login in your browser and run this tool again."
+                elif error == "slow_down":
+                    return "Please wait a moment and try running the tool again."
+                elif error == "expired_token":
+                    PENDING_DEVICE_CODE = None
+                    return "The authentication link expired. Please run the tool again for a new link."
+                else:
+                    PENDING_DEVICE_CODE = None
+                    return f"Authentication failed ({error}). Please run the tool again."
+                    
+    device_url = f"{issuer}/oauth/device/code"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        res = await client.post(device_url, data={
+            "client_id": client_id,
+            "scope": "openid profile email offline_access"
+        })
+        
+        if res.status_code == 200:
+            data = res.json()
+            PENDING_DEVICE_CODE = data.get("device_code")
+            DEVICE_CODE_EXPIRES_AT = time.time() + data.get("expires_in", 900)
+            
+            user_code = data.get("user_code")
+            verification_uri = data.get("verification_uri_complete")
+            
+            return f"This tool requires user authentication to proceed. Please provide the user with the following authorization link and ask them to open it in their browser to log in:\n\nURL: {verification_uri}\nCode: {user_code}\n\nOnce they confirm they have logged in, run this tool again."
+        else:
+            return f"Failed to initiate authentication: {res.text}"
 
 @click.command()
 @click.option("--port", default=7070, help="Port to listen on for SSE")
@@ -489,11 +588,6 @@ def main(port: int, transport: str) -> int:
             from starlette.responses import HTMLResponse
             return HTMLResponse(html_content)
 
-        async def well_known_oauth(request):
-            # Return empty JSON to satisfy Claude Desktop's OAuth probes
-            from starlette.responses import JSONResponse
-            return JSONResponse({}, status_code=200)
-
         starlette_app = Starlette(
             debug=True,
             lifespan=lifespan,
@@ -506,9 +600,6 @@ def main(port: int, transport: str) -> int:
                 Route("/mcp/", endpoint=handle_streamable_http, methods=["GET", "POST", "DELETE"]),
                 Route("/mcp/sse", endpoint=handle_sse),
                 Mount("/mcp/messages/", app=sse.handle_post_message),
-                Route("/.well-known/oauth-protected-resource", endpoint=well_known_oauth),
-                Route("/.well-known/oauth-protected-resource/mcp", endpoint=well_known_oauth),
-                Route("/.well-known/oauth-authorization-server", endpoint=well_known_oauth),
             ],
         )
 
@@ -528,3 +619,4 @@ def main(port: int, transport: str) -> int:
 
 if __name__ == "__main__":
     main()
+

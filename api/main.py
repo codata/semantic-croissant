@@ -135,7 +135,12 @@ def search_datasets(q: str):
     for i, t in enumerate(terms):
         term_blocks.append(f"""
         {{
-            ?dataset ?prop{i} ?val{i} .
+            {{ ?dataset schema:name ?val{i} }} 
+            UNION {{ ?dataset schema_http:name ?val{i} }}
+            UNION {{ ?dataset schema:description ?val{i} }}
+            UNION {{ ?dataset schema_http:description ?val{i} }}
+            UNION {{ ?dataset schema:keywords ?val{i} }}
+            UNION {{ ?dataset schema_http:keywords ?val{i} }}
             FILTER(CONTAINS(LCASE(STR(?val{i})), "{t}"))
         }}
         """)
