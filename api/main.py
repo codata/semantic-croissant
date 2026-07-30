@@ -300,7 +300,9 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
         base_subquery = f"""
         SELECT ?dataset WHERE {{
           {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }}
-          FILTER(STR(?dataset) = "{filter_str}")
+          OPTIONAL {{ ?dataset schema:url|schema_http:url ?u1 }}
+          OPTIONAL {{ ?dataset schema:contentUrl|schema_http:contentUrl ?u2 }}
+          FILTER(STR(?dataset) = "{filter_str}" || STR(?u1) = "{filter_str}" || STR(?u2) = "{filter_str}")
         }}
         """
         
