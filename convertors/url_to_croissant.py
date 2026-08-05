@@ -23,6 +23,7 @@ from rdflib import Graph
 from youtube_transcript_api import YouTubeTranscriptApi
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+ELASTICSEARCH_URL = os.environ.get("ELASTICSEARCH_URL", "http://localhost:9200")
 MODEL_NAME = "gemma4-croissant"
 
 def fetch_youtube_transcript(url):
@@ -102,6 +103,84 @@ def fetch_youtube_transcript(url):
         print(f"Failed to fetch YouTube transcript: {e}")
         return None, None
 
+def extract_page_meta(soup, url):
+    """Extract HTML-level metadata from a BeautifulSoup object.
+    
+    Returns a CreativeWork dict suitable for use in isBasedOn, containing
+    title, description, keywords, author, og:/twitter: tags, canonical URL,
+    and any structured JSON-LD found in <script type="application/ld+json">.
+    """
+    meta = {
+        "@type": "CreativeWork",
+        "name": "HTML Page Metadata",
+        "url": url,
+    }
+
+    # <title>
+    title_tag = soup.find('title')
+    if title_tag and title_tag.string:
+        meta["headline"] = title_tag.string.strip()
+
+    # Collect all <meta> tags into a flat dict keyed by name/property
+    meta_tags = {}
+    for tag in soup.find_all('meta'):
+        key = tag.get('name') or tag.get('property') or tag.get('http-equiv')
+        content = tag.get('content', '').strip()
+        if key and content:
+            meta_tags[key.lower()] = content
+
+    # Standard meta fields
+    mapping = {
+        'description':           'description',
+        'keywords':              'keywords',
+        'author':                'author',
+        'robots':                'accessibilityHazard',   # closest schema.org field
+        'og:title':              'alternativeHeadline',
+        'og:description':        'abstract',
+        'og:image':              'thumbnailUrl',
+        'og:url':                'sameAs',
+        'og:type':               'additionalType',
+        'og:site_name':          'publisher',
+        'article:published_time':'datePublished',
+        'article:modified_time': 'dateModified',
+        'article:author':        'creator',
+        'twitter:title':         'alternateName',
+        'twitter:description':   'disambiguatingDescription',
+        'twitter:image':         'image',
+        'twitter:site':          'accountablePerson',
+    }
+    for meta_key, schema_key in mapping.items():
+        if meta_key in meta_tags and meta_tags[meta_key]:
+            meta[schema_key] = meta_tags[meta_key]
+
+    # <link rel="canonical">
+    canonical = soup.find('link', rel='canonical')
+    if canonical and canonical.get('href'):
+        meta['canonicalUrl'] = canonical['href'].strip()
+
+    # <link rel="alternate" hreflang="..."> language variants
+    alternates = []
+    for link in soup.find_all('link', rel='alternate'):
+        hreflang = link.get('hreflang')
+        href = link.get('href')
+        if hreflang and href:
+            alternates.append({'hreflang': hreflang, 'href': href})
+    if alternates:
+        meta['inLanguage'] = alternates
+
+    # Embedded JSON-LD structured data
+    ld_scripts = []
+    for script in soup.find_all('script', type='application/ld+json'):
+        try:
+            ld = json.loads(script.string or '')
+            ld_scripts.append(ld)
+        except Exception:
+            pass
+    if ld_scripts:
+        meta['encodedIn'] = ld_scripts if len(ld_scripts) > 1 else ld_scripts[0]
+
+    return meta
+
 def fetch_url_markdown(url, traverse=False):
     if "youtube.com" in url or "youtu.be" in url:
         yt_text, yt_meta = fetch_youtube_transcript(url)
@@ -114,7 +193,10 @@ def fetch_url_markdown(url, traverse=False):
         response = scraper.get(url, timeout=30)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
-        
+
+        # Extract HTML-level metadata (title, meta tags, JSON-LD, etc.)
+        page_meta = extract_page_meta(soup, url)
+
         parsed_base = urllib.parse.urlparse(url)
         base_path = parsed_base.path
         if traverse:
@@ -208,10 +290,10 @@ def fetch_url_markdown(url, traverse=False):
                     except Exception as e:
                         print(f"  -> Failed to fetch subpage {sub_url}: {e}")
                     
-            return markdown_content, {"contentUrl": url}, sibling_pages
+            return markdown_content, {"contentUrl": url}, sibling_pages, page_meta
         else:
             print("No main or body content could be extracted.")
-            return None, None, []
+            return None, None, [], None
     except Exception as e:
         print(f"Failed to fetch {url}: {e}")
         try:
@@ -244,14 +326,255 @@ def translate_to_english(text):
         print(f"Translation failed: {e}")
     return text
 
-def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, user_name=None, user_email=None):
-    result = fetch_url_markdown(url, traverse)
+def get_elasticsearch_version(url, expert="/croissant"):
+    try:
+        import hashlib
+        url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
+        es_url = ELASTICSEARCH_URL.rstrip('/')
+        
+        # Extract index name from expert path (e.g., /expert/honduras -> honduras)
+        index_name = expert.strip('/').split('/')[-1]
+        if not index_name:
+            index_name = "croissant"
+            
+        resp = requests.get(f"{es_url}/{index_name}/_doc/{url_hash}", timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            source = data.get("_source", {})
+            version_str = source.get("version", "0.0")
+            try:
+                # Increment the minor version (e.g., 1.0 -> 1.1)
+                major, minor = version_str.split('.')
+                return f"{major}.{int(minor) + 1}"
+            except Exception:
+                return "1.1" # Fallback if not a simple decimal
+    except Exception as e:
+        print(f"Warning: Failed to check ES version: {e}")
+    return None
+
+def index_into_elasticsearch(url, json_data, markdown_data, expert="/croissant"):
+    # Extract index name from expert path (e.g., /expert/honduras -> honduras)
+    index_name = expert.strip('/').split('/')[-1]
+    if not index_name:
+        index_name = "croissant"
+        
+    print(f"\n--- Indexing into Elasticsearch (index: {index_name}) ---")
+    try:
+        import hashlib
+        url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
+        es_url = ELASTICSEARCH_URL.rstrip('/')
+
+        # Ensure index exists with full-text mapping
+        idx_check = requests.head(f"{es_url}/{index_name}", timeout=5)
+        if idx_check.status_code == 404:
+            mapping = {
+                "settings": {
+                    "index.mapping.total_fields.limit": 20000
+                },
+                "mappings": {
+                    "date_detection": False,
+                    "properties": {
+                        "_full_text":      {"type": "text", "analyzer": "english"},
+                        "_markdown_text":  {"type": "text", "analyzer": "english"},
+                        "_source_url":     {"type": "keyword"},
+                        "@context":        {"type": "object", "enabled": False},
+                        "@type":           {"type": "keyword"},
+                        "name":            {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                        "description":     {"type": "text", "analyzer": "english"},
+                        "keywords":        {"type": "keyword"},
+                        "contentUrl":      {"type": "keyword"},
+                        "url":             {"type": "keyword"},
+                        "conformsTo":      {"type": "keyword"},
+                        "datePublished":   {"type": "date", "ignore_malformed": True},
+                        "license":         {"type": "keyword"},
+                        "author":          {"type": "flattened"},
+                        "publisher":       {"type": "flattened"},
+                        "creator": {
+                            "properties": {
+                                "@type":   {"type": "keyword"},
+                                "name":    {"type": "text"},
+                                "email":   {"type": "keyword"}
+                            }
+                        },
+                        "distribution": {
+                            "type": "nested",
+                            "properties": {
+                                "@type":           {"type": "keyword"},
+                                "name":            {"type": "text"},
+                                "description":     {"type": "text", "analyzer": "english"},
+                                "contentUrl":      {"type": "keyword"},
+                                "encodingFormat":  {"type": "keyword"}
+                            }
+                        },
+                        "isBasedOn": {
+                            "type": "nested",
+                            "properties": {
+                                "@type":           {"type": "keyword"},
+                                "name":            {"type": "text"},
+                                "url":             {"type": "keyword"},
+                                "contentUrl":      {"type": "keyword"},
+                                "encodingFormat":  {"type": "keyword"},
+                                "headline":        {"type": "text"},
+                                "description":     {"type": "text", "analyzer": "english"},
+                                "alternativeHeadline": {"type": "text"},
+                                "abstract":        {"type": "text", "analyzer": "english"},
+                                "encodedIn":       {"type": "flattened"}
+                            }
+                        },
+                        "cr_recordSet": {
+                            "type": "nested",
+                            "properties": {
+                                "@type":           {"type": "keyword"},
+                                "@id":             {"type": "keyword"},
+                                "name":            {"type": "text"},
+                                "description":     {"type": "text", "analyzer": "english"}
+                            }
+                        },
+                        "unmappedFields": {
+                            "type": "nested",
+                            "properties": {
+                                "@type":  {"type": "keyword"},
+                                "value":  {"type": "text"}
+                            }
+                        }
+                    }
+                }
+            }
+            requests.put(f"{es_url}/{index_name}", json=mapping,
+                         headers={"Content-Type": "application/json"}, timeout=10)
+            print(f"  Created '{index_name}' index with comprehensive Croissant schema mapping.")
+
+        # Collect all string leaf values from the JSON-LD for full-text search
+        def collect_text(obj):
+            parts = []
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if not k.startswith('@'):
+                        parts.extend(collect_text(v))
+            elif isinstance(obj, list):
+                for item in obj:
+                    parts.extend(collect_text(item))
+            elif isinstance(obj, str) and obj.strip():
+                parts.append(obj.strip())
+            return parts
+
+        full_text_parts = collect_text(json_data)
+
+        es_doc = dict(json_data)
+        es_doc['_source_url']    = url
+        es_doc['_markdown_text'] = markdown_data or ''          # full markdown
+        es_doc['_full_text']     = '\n'.join(full_text_parts)   # all JSON-LD text values
+
+        resp = requests.put(
+            f"{es_url}/{index_name}/_doc/{url_hash}",
+            json=es_doc,
+            headers={'Content-Type': 'application/json'},
+            timeout=30
+        )
+        if resp.status_code in (200, 201):
+            chars = len(es_doc['_markdown_text'])
+            print(f"✓ Successfully indexed into Elasticsearch! "
+                  f"(result: {resp.json().get('result', '?')}, "
+                  f"markdown: {chars} chars, text fields: {len(full_text_parts)})")
+        else:
+            print(f"✗ Elasticsearch returned {resp.status_code}: {resp.text[:200]}")
+    except Exception as e:
+        print(f"✗ Failed to index into Elasticsearch: {e}")
+
+def check_dataverse_direct_export(url):
+    try:
+        # Resolve DOI redirects if it's a doi.org link
+        if "doi.org" in url:
+            res = requests.head(url, allow_redirects=True, timeout=10)
+            target_url = res.url
+        else:
+            target_url = url
+            
+        if "persistentId=doi:" in target_url:
+            parsed = urllib.parse.urlparse(target_url)
+            query = urllib.parse.parse_qs(parsed.query)
+            persistent_id = query.get("persistentId", [""])[0]
+            if persistent_id:
+                base_url = f"{parsed.scheme}://{parsed.netloc}"
+                export_url = f"{base_url}/api/datasets/export?exporter=croissant&persistentId={persistent_id}"
+                print(f"Dataverse URL detected. Trying direct Croissant export from {export_url}")
+                res = requests.get(export_url, timeout=15)
+                if res.status_code == 200:
+                    try:
+                        return res.json()
+                    except json.JSONDecodeError:
+                        pass
+    except Exception as e:
+        print(f"Direct export check failed: {e}")
+    return None
+
+def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, user_name=None, user_email=None, index=False, elastic=False, expert="/expert/croissant"):
+    direct_jsonld = check_dataverse_direct_export(url)
+    if direct_jsonld:
+        print("✓ Successfully retrieved Croissant JSON-LD directly from Dataverse API!")
+        json_data = direct_jsonld
+        
+        # Check Elasticsearch for existing version and increment if necessary
+        if "version" not in json_data:
+            json_data["version"] = "1.0"
+        es_version = get_elasticsearch_version(url, expert)
+        if es_version:
+            json_data["version"] = str(es_version)
+            print(f"  ✓ Resource already in Elasticsearch. Updating version to {es_version}")
+            
+        if expert:
+            if "isPartOf" not in json_data:
+                json_data["isPartOf"] = []
+            elif not isinstance(json_data["isPartOf"], list):
+                json_data["isPartOf"] = [json_data["isPartOf"]]
+            json_data["isPartOf"].append({"@type": "Collection", "name": expert})
+            
+        output = json.dumps(json_data, indent=2)
+        
+        parsed_url = urllib.parse.urlparse(url)
+        safe_name = parsed_url.netloc + parsed_url.path
+        safe_name = safe_name.replace("/", "_").replace(".", "_")
+        if parsed_url.query:
+            qs = urllib.parse.parse_qsl(parsed_url.query)
+            for k, v in qs:
+                safe_name += "_" + v
+        if not safe_name:
+            safe_name = "url_output"
+            
+        os.makedirs(os.path.join("data", "ca4eosc"), exist_ok=True)
+        safe_name = os.path.join("data", "ca4eosc", safe_name)
+        output_filename = f"{safe_name}_croissant.jsonld"
+        
+        with open(output_filename, "w", encoding='utf-8') as f:
+            f.write(output)
+        print(f"\nOutput saved to {output_filename}")
+        
+        if reingest:
+            print("\n--- Ingesting into QLever ---")
+            try:
+                api_base = os.environ.get("API_BASE", "http://localhost:7013")
+                res_ql = requests.post(f"{api_base}/add_record", json=json_data, timeout=10)
+                res_ql.raise_for_status()
+                print(f"✓ Successfully ingested into QLever! Response: {res_ql.text}")
+            except Exception as e:
+                print(f"✗ Failed to ingest into QLever: {e}")
+                
+        if elastic:
+            index_into_elasticsearch(url, json_data, "", expert)
+            
+        return
+
+    page_meta = None
+    sibling_pages = []
     
-    if len(result) == 3:
+    result = fetch_url_markdown(url, traverse)
+    if len(result) == 4:
+        markdown_data, extracted_meta, sibling_pages, page_meta = result
+    elif len(result) == 3:
         markdown_data, extracted_meta, sibling_pages = result
     else:
         markdown_data, extracted_meta = result
-        sibling_pages = []
+
 
     if not markdown_data:
         print("Error: Could not extract markdown.")
@@ -547,7 +870,12 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                 
                 if slice_links:
                     doc_links.extend(slice_links)
+
+                # Append HTML page metadata (title, meta tags, JSON-LD etc.) extracted by bs4
+                if page_meta:
+                    doc_links.append(page_meta)
                     
+
                 if extracted_meta:
                     json_data.update(extracted_meta)
                     
@@ -559,6 +887,13 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                 else:
                     json_data["isBasedOn"] = doc_links
                     
+                if expert:
+                    if "isPartOf" not in json_data:
+                        json_data["isPartOf"] = []
+                    elif not isinstance(json_data["isPartOf"], list):
+                        json_data["isPartOf"] = [json_data["isPartOf"]]
+                    json_data["isPartOf"].append({"@type": "Collection", "name": expert})
+                    
                 if "unmappedFields" in json_data:
                     unmapped = json_data["unmappedFields"]
                     if isinstance(unmapped, list):
@@ -569,7 +904,22 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                             print(f"    - {key}: {val[:80]}{'...' if len(val) > 80 else ''}")
                     else:
                         print(f"⚠ Found unmapped custom field(s): {unmapped}")
-                        
+
+                # Recursively sanitize ALL keys in the JSON-LD tree so that no key
+                # with spaces or special characters ends up as an invalid URI.
+                def sanitize_keys(obj):
+                    if isinstance(obj, dict):
+                        return {
+                            (k if k.startswith('@') else re.sub(r'[^A-Za-z0-9_\-.]', '_', k)): sanitize_keys(v)
+                            for k, v in obj.items()
+                        }
+                    elif isinstance(obj, list):
+                        return [sanitize_keys(item) for item in obj]
+                    return obj
+
+                json_data = sanitize_keys(json_data)
+
+    
                 # Reorder dictionary to put @context and @type at the top
                 ordered_data = {}
                 
@@ -623,6 +973,14 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                 finally:
                     os.remove(temp_name)
                     
+                # Check Elasticsearch for existing version and increment if necessary
+                if "version" not in json_data:
+                    json_data["version"] = "1.0"
+                es_version = get_elasticsearch_version(url, expert)
+                if es_version:
+                    json_data["version"] = str(es_version)
+                    print(f"  ✓ Resource already in Elasticsearch. Updating version to {es_version}")
+                
                 # Overwrite output with the modified json_data
                 output = json.dumps(json_data, indent=2)
                 break
@@ -643,21 +1001,22 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
             f.write(output)
         print(f"\nOutput saved to {output_filename}")
         
-        # --- Index into Ollama with Provenance ---
-        print("\n--- Indexing into Ollama ---")
-        index_payload = {
-            "model": MODEL_NAME,
-            "prompt": f"Store this document in your index for future queries.\n\n{markdown_data}",
-            "croissant": json_data,
-            "stream": False
-        }
-        try:
-            print("Sending indexing request with Croissant provenance...")
-            res_index = requests.post(f"{OLLAMA_HOST}/api/generate", json=index_payload, timeout=600)
-            res_index.raise_for_status()
-            print("✓ Successfully indexed document with provenance data!")
-        except Exception as e:
-            print(f"✗ Failed to index document: {e}")
+        # --- Index into Ollama with Provenance (only when --reingest or --index is set) ---
+        if reingest or index:
+            print("\n--- Indexing into Ollama ---")
+            index_payload = {
+                "model": MODEL_NAME,
+                "prompt": f"Store this document in your index for future queries.\n\n{markdown_data}",
+                "croissant": json_data,
+                "stream": False
+            }
+            try:
+                print("Sending indexing request with Croissant provenance...")
+                res_index = requests.post(f"{OLLAMA_HOST}/api/generate", json=index_payload, timeout=600)
+                res_index.raise_for_status()
+                print("✓ Successfully indexed document with provenance data!")
+            except Exception as e:
+                print(f"✗ Failed to index document: {e}")
             
         if reingest:
             print("\n--- Ingesting into QLever ---")
@@ -669,13 +1028,17 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                 print(f"✓ Successfully ingested into QLever! Response: {res_ql.text}")
             except Exception as e:
                 print(f"✗ Failed to ingest into QLever: {e}")
+
+        if elastic:
+            index_into_elasticsearch(url, json_data, markdown_data, expert)
+
             
     except requests.exceptions.Timeout:
         print(f"Failed to process {url}: Request timed out after 600s")
     except Exception as e:
         print(f"Failed to process {url}: {e}")
 
-def process_spreadsheet(url, is_slice=False, traverse=False, reingest=False, user_name=None, user_email=None):
+def process_spreadsheet(url, is_slice=False, traverse=False, reingest=False, user_name=None, user_email=None, index=False, elastic=False, expert="/expert/croissant"):
     print(f"Detected Google Spreadsheet URL: {url}")
     # Convert edit url to export url
     if "/edit" in url:
@@ -729,7 +1092,7 @@ def process_spreadsheet(url, is_slice=False, traverse=False, reingest=False, use
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {
-            executor.submit(convert_to_croissant, target_url, is_slice, traverse, reingest, user_name, user_email): target_url
+            executor.submit(convert_to_croissant, target_url, is_slice, traverse, reingest, user_name, user_email, index, elastic, expert): target_url
             for target_url in urls_to_process
         }
         
@@ -747,13 +1110,155 @@ if __name__ == "__main__":
     parser.add_argument("--slice", action="store_true", help="Enable slice mode to split markdown into pieces with LLM summaries")
     parser.add_argument("--traverse", action="store_true", help="Extract and link all URLs on the same level")
     parser.add_argument("--reingest", action="store_true", help="Automatically ingest the result into QLever database")
+    parser.add_argument("--index", action="store_true", help="Index the result into Ollama (provenance indexing). Implied by --reingest")
+    parser.add_argument("--elastic", action="store_true", help=f"Index JSON-LD into Elasticsearch (default: {ELASTICSEARCH_URL})")
     parser.add_argument("--user-name", type=str, help="Name of the authenticated user")
     parser.add_argument("--user-email", type=str, help="Email of the authenticated user")
     parser.add_argument("--limit", type=int, help="Limit the number of URLs to process when reading from a spreadsheet")
     parser.add_argument("--workers", type=int, default=4, help="Number of concurrent workers for processing spreadsheet URLs")
+    parser.add_argument("--expert", "-e", type=str, default="/expert/croissant", help="Selected collection for expert.")
     args = parser.parse_args()
     
-    if "docs.google.com/spreadsheets" in args.url:
-        process_spreadsheet(args.url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email)
+    import glob
+    
+    if os.path.isdir(args.url):
+        print(f"Reading Croissant JSON-LD files from directory: {args.url}")
+        files = glob.glob(os.path.join(args.url, "*_croissant.jsonld"))
+        if not files:
+            files = glob.glob(os.path.join(args.url, "*.jsonld"))
+        if not files:
+            files = glob.glob(os.path.join(args.url, "*.json"))
+
+        print(f"Found {len(files)} files to process.")
+        
+        for i, file_path in enumerate(files, 1):
+            print(f"\n[{i}/{len(files)}] Processing local file: {file_path}")
+            try:
+                if os.path.getsize(file_path) == 0:
+                    print(f"Skipping empty file: {file_path}")
+                    continue
+                    
+                with open(file_path, "r", encoding="utf-8") as f:
+                    json_data = json.load(f)
+
+                # Get URL
+                url_val = json_data.get("contentUrl") or json_data.get("url")
+                if not url_val:
+                    url_val = f"file://{os.path.abspath(file_path)}"
+
+                # Try to extract markdown data from isBasedOn or nearby file
+                markdown_data = ""
+                md_path = None
+                
+                # Check isBasedOn references
+                if "isBasedOn" in json_data:
+                    items = json_data["isBasedOn"] if isinstance(json_data["isBasedOn"], list) else [json_data["isBasedOn"]]
+                    for item in items:
+                        if isinstance(item, dict) and item.get("encodingFormat") == "text/markdown" and item.get("contentUrl"):
+                            url_ref = item["contentUrl"]
+                            if url_ref.startswith("file://"):
+                                candidate = url_ref.replace("file://", "")
+                                if os.path.exists(candidate):
+                                    md_path = candidate
+                                    break
+                
+                # Check nearby candidate if not found
+                if not md_path:
+                    candidate1 = file_path.replace("_croissant.jsonld", "_content.md").replace(".jsonld", "_content.md")
+                    candidate2 = file_path.replace("_croissant.jsonld", "_en_content.md").replace(".jsonld", "_en_content.md")
+                    if os.path.exists(candidate1):
+                        md_path = candidate1
+                    elif os.path.exists(candidate2):
+                        md_path = candidate2
+
+                if md_path and os.path.exists(md_path):
+                    with open(md_path, "r", encoding="utf-8") as f:
+                        markdown_data = f.read()
+                    print(f"  Loaded markdown content from: {md_path}")
+                else:
+                    print("  Warning: No markdown content file found.")
+
+                # Validate with Elasticsearch and update version if it exists
+                if "version" not in json_data:
+                    json_data["version"] = "1.0"
+                es_version = get_elasticsearch_version(url_val, args.expert)
+                if es_version:
+                    json_data["version"] = str(es_version)
+                    print(f"  ✓ Resource already in Elasticsearch. Updating version to {es_version}")
+                    # Rewrite the updated JSON-LD back to the local file
+                    with open(file_path, "w", encoding="utf-8") as f:
+                        json.dump(json_data, f, indent=2)
+
+                if args.reingest:
+                    print("\n--- Ingesting into QLever ---")
+                    api_base = os.environ.get("API_BASE", "http://localhost:7013")
+                    res_ql = requests.post(f"{api_base}/add_record", json=json_data, timeout=10)
+                    res_ql.raise_for_status()
+                    print(f"✓ Successfully ingested into QLever!")
+
+                if args.elastic:
+                    index_into_elasticsearch(url_val, json_data, markdown_data, args.expert)
+
+            except Exception as e:
+                print(f"✗ Failed to process file {file_path}: {e}")
+
+    elif os.path.isfile(args.url):
+        print(f"Reading URLs from file: {args.url}")
+        with open(args.url, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        urls_to_process = []
+
+        # JSON file: expect an array of {title, url} objects (or just strings)
+        if args.url.lower().endswith('.json'):
+            try:
+                data = json.loads(content)
+                if isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict) and 'url' in item:
+                            url_val = item['url'].strip()
+                            if url_val and url_val not in urls_to_process:
+                                urls_to_process.append(url_val)
+                        elif isinstance(item, str):
+                            url_val = item.strip()
+                            if url_val and url_val not in urls_to_process:
+                                urls_to_process.append(url_val)
+                elif isinstance(data, dict):
+                    # single object
+                    if 'url' in data:
+                        urls_to_process.append(data['url'].strip())
+                print(f"Parsed {len(urls_to_process)} URLs from JSON file.")
+            except json.JSONDecodeError as e:
+                print(f"Warning: could not parse as JSON ({e}), falling back to regex extraction.")
+                url_pattern = re.compile(r'https?://[^\s)\]]+')
+                for line in content.splitlines():
+                    for match in url_pattern.findall(line):
+                        url_val = match.strip()
+                        if url_val and url_val not in urls_to_process:
+                            urls_to_process.append(url_val)
+        else:
+            # Plain text / markdown file – extract URLs via regex
+            url_pattern = re.compile(r'https?://[^\s)\]]+')
+            for line in content.splitlines():
+                for match in url_pattern.findall(line):
+                    url_val = match.strip()
+                    if url_val and url_val not in urls_to_process:
+                        urls_to_process.append(url_val)
+
+        if args.limit and args.limit > 0:
+            urls_to_process = urls_to_process[:args.limit]
+
+        print(f"Found {len(urls_to_process)} URLs to process in file.")
+
+        for i, target_url in enumerate(urls_to_process, 1):
+            print(f"\n[{i}/{len(urls_to_process)}] Processing file URL: {target_url}")
+            try:
+                convert_to_croissant(target_url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index, args.elastic, args.expert)
+            except Exception as e:
+                print(f"Failed processing {target_url}: {e}")
+
+                
+    elif "docs.google.com/spreadsheets" in args.url:
+        process_spreadsheet(args.url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index, args.elastic, args.expert)
     else:
-        convert_to_croissant(args.url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email)
+        convert_to_croissant(args.url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index, args.elastic, args.expert)

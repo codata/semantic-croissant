@@ -13,3 +13,4 @@ beautifulsoup4
 PyJWT
 cryptography
 cloudscraper
+minio

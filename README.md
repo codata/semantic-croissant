@@ -168,6 +168,14 @@ docker compose --profile croissant-live up -d
 ```
 You can connect remote MCP clients directly to `http://localhost:7070/sse`.
 
+### Rebuilding and Restarting the MCP Service
+If you make changes to the MCP server code (`api/mcp_server.py`), you need to rebuild the API Docker image and restart the MCP container:
+
+```bash
+docker build -t api-croissant-live api/
+docker compose --profile croissant-live up -d --force-recreate mcp-croissant-live
+```
+
 ### Connecting AI Assistants (IDEs & Desktop)
 
 You can connect your IDEs to the public endpoint at `https://mcp.dev.codata.org/mcp` using the configurations below.
