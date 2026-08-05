@@ -270,3 +270,38 @@ To do this, use the following `stdio` execution command in your client's configu
 ```
 
 Restart your IDE or Claude Desktop. You should see an icon or status indicating the tools are loaded, enabling conversational queries directly against the Croissant datasets!
+
+## FAIR Signposting Protocol
+
+The Semantic Croissant stack implements the [FAIR Signposting Profile (Level 1)](https://signposting.org/FAIR/) to enhance the machine-actionability of all scholarly objects stored in the Vault.
+
+When retrieving documents from the Vault, the API automatically injects HTTP `Link` headers containing persistent identifiers, metadata endpoints, and object typing. This enables automated agents and bots to intelligently traverse the scholarly web without needing to scrape HTML or parse ad-hoc formats.
+
+### Example: Testing with cURL
+
+You can verify the presence of the Signposting headers using a simple `GET` request. The `Link` header acts as a map for machines:
+
+```bash
+curl -v http://localhost:7070/vault/honduras_president_charges_factual_summary.md > /dev/null
+```
+
+**Expected Output:**
+```http
+< HTTP/1.1 200 OK
+< link: <https://mcp.dev.codata.org/vault/...>; rel="cite-as", <https://mcp.dev.codata.org/vault/...jsonld>; rel="describedby" type="application/ld+json", <https://mcp.dev.codata.org/vault/...>; rel="item" type="text/markdown", <https://schema.org/Dataset>; rel="type", <https://creativecommons.org/licenses/by/4.0/>; rel="license"
+< x-fair-signposting: enabled
+< content-type: text/markdown; charset=utf-8
+```
+
+### Example: Testing via Model Context Protocol (MCP)
+
+Since the MCP server acts as an intelligent proxy to the vault, AI agents inherently leverage these endpoints when reading articles using the `read_vault_article` tool. You can test this locally by querying the tool directly via the docker container:
+
+```bash
+docker exec semantic-croissant-mcp-croissant-live-1 python3 -c "
+import asyncio, sys, os
+sys.path.append(os.path.join(os.getcwd(), 'api'))
+from mcp_server import call_tool
+asyncio.run(call_tool('read_vault_article', {'url_or_filename': 'honduras_president_charges_factual_summary.md'}))
+"
+```
