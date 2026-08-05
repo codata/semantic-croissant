@@ -874,10 +874,29 @@ def main(port: int, transport: str) -> int:
                     r = await client.get(minio_url)
                     if r.status_code == 200:
                         from starlette.responses import Response
+                        
+                        # Implement FAIR Signposting Profile Level 1 headers
+                        # Using MCP_DOMAIN for generating the canonical URIs
+                        base_url = f"https://{MCP_DOMAIN}"
+                        signposting_links = [
+                            f'<{base_url}/vault/{filename}>; rel="cite-as"',
+                            f'<{base_url}/vault/{filename}.jsonld>; rel="describedby" type="application/ld+json"',
+                            f'<{base_url}/vault/{filename}>; rel="item" type="text/markdown"',
+                            '<https://schema.org/Dataset>; rel="type"',
+                            '<https://creativecommons.org/licenses/by/4.0/>; rel="license"'
+                        ]
+                        
+                        headers = {
+                            "Content-Encoding": "gzip",
+                            "Link": ", ".join(signposting_links),
+                            "X-Fair-Signposting": "enabled"
+                        }
+                        
+                        print("DEBUG HEADERS: ", headers, flush=True)
                         return Response(
                             r.content, 
                             media_type="text/markdown; charset=utf-8", 
-                            headers={"Content-Encoding": "gzip"}
+                            headers=headers
                         )
                 except Exception as e:
                     print(f"Error proxying minio: {e}")
