@@ -65,7 +65,7 @@ async def elasticsearch_fulltext_search(q: str, limit: int = 10, format: str = "
             "query": {
                 "multi_match": {
                     "query": q,
-                    "fields": ["_full_text", "_markdown_text", "name", "description"]
+                    "fields": ["_full_text", "_markdown_text", "name", "description", "schema:name", "schema:description", "title", "dcterms:title", "dsDescription.dsDescriptionValue", "citation:dsDescriptionValue"]
                 }
             }
         }
@@ -97,9 +97,9 @@ async def elasticsearch_fulltext_search(q: str, limit: int = 10, format: str = "
             
         md = ["# Elasticsearch Search Results\n"]
         for r in results:
-            name = r.get("name", "Unknown Dataset")
-            desc = r.get("description", "No description provided.")
-            url = r.get("contentUrl") or r.get("url") or "No URL"
+            name = r.get("name") or r.get("schema:name") or r.get("title") or r.get("dcterms:title") or "Unknown Dataset"
+            desc = r.get("description") or r.get("schema:description") or "No description provided."
+            url = r.get("contentUrl") or r.get("url") or r.get("schema:url") or r.get("@id") or "No URL"
             keywords = ", ".join(r.get("keywords", [])) if isinstance(r.get("keywords"), list) else r.get("keywords", "None")
             
             md.append(f"## {name}")
@@ -120,7 +120,7 @@ async def ask_expert(index: str, q: str, limit: int = 10) -> list[types.TextCont
             "query": {
                 "multi_match": {
                     "query": q,
-                    "fields": ["_full_text", "_markdown_text", "name", "description"]
+                    "fields": ["_full_text", "_markdown_text", "name", "description", "schema:name", "schema:description", "title", "dcterms:title", "dsDescription.dsDescriptionValue", "citation:dsDescriptionValue"]
                 }
             }
         }
@@ -142,8 +142,8 @@ async def ask_expert(index: str, q: str, limit: int = 10) -> list[types.TextCont
         results = []
         for hit in hits:
             source = hit.get("_source", {})
-            name = source.get("name", "Unknown Dataset")
-            url = source.get("url", source.get("_source_url", "No URL"))
+            name = source.get("name") or source.get("schema:name") or source.get("title") or source.get("dcterms:title") or "Unknown Dataset"
+            url = source.get("url") or source.get("schema:url") or source.get("_source_url") or source.get("@id") or "No URL"
             score = hit.get("_score", 0)
             
             vault_url = None
@@ -478,14 +478,14 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
     elif name == "elasticsearch_fulltext_search":
         return await elasticsearch_fulltext_search(
             q=arguments.get("q"),
-            limit=arguments.get("limit", 10),
+            limit=int(arguments.get("limit", 10)),
             format=arguments.get("format", "json-ld")
         )
     elif name == "ask_expert":
         return await ask_expert(
             index=arguments.get("index"),
             q=arguments.get("q"),
-            limit=arguments.get("limit", 10)
+            limit=int(arguments.get("limit", 10))
         )
     elif name == "read_vault_article":
         return await read_vault_article(

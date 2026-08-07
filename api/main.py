@@ -170,7 +170,7 @@ def search_datasets(q: str):
         
         url = "http://server-croissant-live:7011/"
         data = urllib.parse.urlencode({"query": query}).encode('ascii')
-        req = urllib.request.Request(url, data=data, headers={"User-Agent": "Mozilla/5.0"})
+        req = urllib.request.Request(url, data=data, headers={"User-Agent": "curl/7.68.0"})
         try:
             with urllib.request.urlopen(req) as response:
                 res_data = json.loads(response.read().decode())
@@ -789,14 +789,46 @@ def get_variables_sparql(id: str):
 @app.get("/variables/croissant")
 def get_variables_croissant(url: str):
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req) as response:
-            content = response.read().decode()
-            try:
+        req = urllib.request.Request(url, headers={"User-Agent": "curl/7.68.0"})
+        data = None
+        
+        try:
+            with urllib.request.urlopen(req) as response:
+                content = response.read().decode()
                 data = json.loads(content)
-            except json.JSONDecodeError:
-                return {"error": "URL did not return valid JSON. Ensure you are pointing to a JSON-LD file or API endpoint, not an HTML landing page.", "variables": []}
-            
+        except Exception as e:
+            if "exporter=croissant" in url:
+                fallback_url = url.replace("exporter=croissant", "exporter=OAI_ORE")
+                try:
+                    req_fb = urllib.request.Request(fallback_url, headers={"User-Agent": "curl/7.68.0"})
+                    with urllib.request.urlopen(req_fb) as response_fb:
+                        oai_data = json.loads(response_fb.read().decode())
+                        
+                    data = {
+                        "@context": {
+                            "@language": "en",
+                            "@vocab": "https://schema.org/",
+                            "cr": "http://mlcommons.org/croissant/",
+                            "sc": "https://schema.org/",
+                            "dct": "http://purl.org/dc/terms/"
+                        },
+                        "@type": "sc:Dataset",
+                        "conformsTo": "http://mlcommons.org/croissant/1.0",
+                        "name": "Unknown Dataset",
+                        "description": "No description provided."
+                    }
+                    metadata = oai_data.get("ore:describes", oai_data)
+                    if "title" in metadata: data["name"] = metadata["title"]
+                    elif "schema:name" in metadata: data["name"] = metadata["schema:name"]
+                    elif "name" in metadata: data["name"] = metadata["name"]
+                except Exception as fb_e:
+                    return {"error": f"Failed fallback to OAI_ORE: {str(fb_e)} (Original error: {str(e)})", "variables": []}
+            else:
+                return {"error": f"URL fetch failed: {str(e)}", "variables": []}
+                
+        if not data:
+            return {"error": "URL did not return valid JSON. Ensure you are pointing to a JSON-LD file or API endpoint, not an HTML landing page.", "variables": []}
+
         fields = []
         def extract_field_data(f_obj):
             source = f_obj.get("source") or f_obj.get("cr:source") or {}
@@ -846,7 +878,7 @@ def get_variables_croissant(url: str):
 @app.get("/variables/oai")
 def get_variables_oai(url: str):
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "curl/7.68.0"})
         with urllib.request.urlopen(req) as response:
             content = response.read().decode()
             try:

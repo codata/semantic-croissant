@@ -352,6 +352,47 @@ def get_elasticsearch_version(url, expert="/croissant"):
         print(f"Warning: Failed to check ES version: {e}")
     return None
 
+def convert_oai_to_croissant(doc):
+    croissant = {
+        "@context": {
+            "@language": "en",
+            "@vocab": "https://schema.org/",
+            "cr": "http://mlcommons.org/croissant/",
+            "sc": "https://schema.org/",
+            "dct": "http://purl.org/dc/terms/"
+        },
+        "@type": "sc:Dataset",
+        "conformsTo": "http://mlcommons.org/croissant/1.0",
+        "name": "Unknown Dataset",
+        "description": "No description provided.",
+        "url": ""
+    }
+    if not isinstance(doc, dict): return None
+    metadata = doc.get("ore:describes", doc)
+    
+    if "title" in metadata: croissant["name"] = metadata["title"]
+    elif "schema:name" in metadata: croissant["name"] = metadata["schema:name"]
+    elif "name" in metadata: croissant["name"] = metadata["name"]
+    
+    # Handle Dataverse specific description field
+    if "citation:dsDescription" in metadata:
+        desc_obj = metadata["citation:dsDescription"]
+        if isinstance(desc_obj, list) and len(desc_obj) > 0:
+            if "citation:dsDescriptionValue" in desc_obj[0]:
+                croissant["description"] = desc_obj[0]["citation:dsDescriptionValue"]
+    elif "dsDescription" in metadata:
+        desc_obj = metadata["dsDescription"]
+        if isinstance(desc_obj, list) and len(desc_obj) > 0:
+            if "dsDescriptionValue" in desc_obj[0]:
+                croissant["description"] = desc_obj[0]["dsDescriptionValue"]
+    elif "schema:description" in metadata: croissant["description"] = metadata["schema:description"]
+    elif "description" in metadata: croissant["description"] = metadata["description"]
+    
+    if "url" in metadata: croissant["url"] = metadata["url"]
+    elif "@id" in metadata: croissant["url"] = metadata["@id"]
+    elif "@id" in doc: croissant["url"] = doc["@id"]
+    return croissant
+
 def index_into_elasticsearch(url, json_data, markdown_data, expert="/croissant"):
     # Extract index name from expert path (e.g., /expert/honduras -> honduras)
     index_name = expert.strip('/').split('/')[-1]
@@ -460,7 +501,16 @@ def index_into_elasticsearch(url, json_data, markdown_data, expert="/croissant")
 
         full_text_parts = collect_text(json_data)
 
-        es_doc = dict(json_data)
+        def normalize_jsonld(obj):
+            if isinstance(obj, dict):
+                if "@value" in obj and len(obj) <= 2:
+                    return obj["@value"]
+                return {k: normalize_jsonld(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [normalize_jsonld(x) for x in obj]
+            return obj
+
+        es_doc = normalize_jsonld(json_data)
         es_doc['_source_url']    = url
         es_doc['_markdown_text'] = markdown_data or ''          # full markdown
         es_doc['_full_text']     = '\n'.join(full_text_parts)   # all JSON-LD text values
@@ -1104,13 +1154,98 @@ def process_spreadsheet(url, is_slice=False, traverse=False, reingest=False, use
             except Exception as e:
                 print(f"\n[{i}/{len(urls_to_process)}] Failed processing: {target_url} - {e}")
 
+def process_local_file(file_path, args):
+    print(f"\nProcessing local file: {file_path}")
+    try:
+        if os.path.getsize(file_path) == 0:
+            print(f"Skipping empty file: {file_path}")
+            return
+            
+        with open(file_path, "r", encoding="utf-8") as f:
+            json_data = json.load(f)
+
+        if getattr(args, "format", "croissant") == "oai":
+            if isinstance(json_data, list):
+                if len(json_data) == 1:
+                    json_data = json_data[0]
+                else:
+                    json_data = {"items": json_data}
+            json_data = convert_oai_to_croissant(json_data)
+            if not json_data:
+                print("Could not convert OAI to Croissant, skipping...")
+                return
+
+        # Get URL
+        url_val = json_data.get("contentUrl") or json_data.get("url")
+        if not url_val:
+            url_val = f"file://{os.path.abspath(file_path)}"
+
+        # Try to extract markdown data from isBasedOn or nearby file
+        markdown_data = ""
+        md_path = None
+        
+        # Check isBasedOn references
+        if "isBasedOn" in json_data:
+            items = json_data["isBasedOn"] if isinstance(json_data["isBasedOn"], list) else [json_data["isBasedOn"]]
+            for item in items:
+                if isinstance(item, dict) and item.get("encodingFormat") == "text/markdown" and item.get("contentUrl"):
+                    url_ref = item["contentUrl"]
+                    if url_ref.startswith("file://"):
+                        candidate = url_ref.replace("file://", "")
+                        if os.path.exists(candidate):
+                            md_path = candidate
+                            break
+        
+        # Check nearby candidate if not found
+        if not md_path:
+            candidate1 = file_path.replace("_croissant.jsonld", "_content.md").replace(".jsonld", "_content.md")
+            candidate2 = file_path.replace("_croissant.jsonld", "_en_content.md").replace(".jsonld", "_en_content.md")
+            if os.path.exists(candidate1):
+                md_path = candidate1
+            elif os.path.exists(candidate2):
+                md_path = candidate2
+
+        if md_path and os.path.exists(md_path):
+            with open(md_path, "r", encoding="utf-8") as f:
+                markdown_data = f.read()
+            print(f"  Loaded markdown content from: {md_path}")
+        else:
+            print("  Warning: No markdown content file found.")
+
+        # Validate with Elasticsearch and update version if it exists
+        if "version" not in json_data:
+            json_data["version"] = "1.0"
+        es_version = get_elasticsearch_version(url_val, args.expert)
+        if es_version:
+            json_data["version"] = str(es_version)
+            print(f"  ✓ Resource already in Elasticsearch. Updating version to {es_version}")
+            # Rewrite the updated JSON-LD back to the local file
+            if getattr(args, "format", "croissant") != "oai":
+                with open(file_path, "w", encoding="utf-8") as f:
+                    json.dump(json_data, f, indent=2)
+
+        if args.reingest:
+            print("\n--- Ingesting into QLever ---")
+            api_base = os.environ.get("API_BASE", "http://localhost:7013")
+            res_ql = requests.post(f"{api_base}/add_record", json=json_data, timeout=10)
+            res_ql.raise_for_status()
+            print(f"✓ Successfully ingested into QLever!")
+
+        if args.elastic:
+            index_into_elasticsearch(url_val, json_data, markdown_data, args.expert)
+
+    except Exception as e:
+        print(f"✗ Failed to process file {file_path}: {e}")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert web pages to Croissant JSON-LD.")
     parser.add_argument("url", help="The URL to scrape (e.g. https://ollama.com/library/ornith/tags)")
     parser.add_argument("--slice", action="store_true", help="Enable slice mode to split markdown into pieces with LLM summaries")
     parser.add_argument("--traverse", action="store_true", help="Extract and link all URLs on the same level")
     parser.add_argument("--reingest", action="store_true", help="Automatically ingest the result into QLever database")
-    parser.add_argument("--index", action="store_true", help="Index the result into Ollama (provenance indexing). Implied by --reingest")
+    parser.add_argument("--index-ollama", action="store_true", help="Index the result into Ollama (provenance indexing). Implied by --reingest")
+    parser.add_argument("--index", type=str, help="Index name for Elasticsearch (e.g., expert/dataverse). Overrides --expert.")
+    parser.add_argument("--format", type=str, default="croissant", help="Input format (croissant or oai)")
     parser.add_argument("--elastic", action="store_true", help=f"Index JSON-LD into Elasticsearch (default: {ELASTICSEARCH_URL})")
     parser.add_argument("--user-name", type=str, help="Name of the authenticated user")
     parser.add_argument("--user-email", type=str, help="Email of the authenticated user")
@@ -1119,6 +1254,9 @@ if __name__ == "__main__":
     parser.add_argument("--expert", "-e", type=str, default="/expert/croissant", help="Selected collection for expert.")
     args = parser.parse_args()
     
+    if args.index:
+        args.expert = args.index
+        
     import glob
     
     if os.path.isdir(args.url):
@@ -1132,77 +1270,14 @@ if __name__ == "__main__":
         print(f"Found {len(files)} files to process.")
         
         for i, file_path in enumerate(files, 1):
-            print(f"\n[{i}/{len(files)}] Processing local file: {file_path}")
-            try:
-                if os.path.getsize(file_path) == 0:
-                    print(f"Skipping empty file: {file_path}")
-                    continue
-                    
-                with open(file_path, "r", encoding="utf-8") as f:
-                    json_data = json.load(f)
-
-                # Get URL
-                url_val = json_data.get("contentUrl") or json_data.get("url")
-                if not url_val:
-                    url_val = f"file://{os.path.abspath(file_path)}"
-
-                # Try to extract markdown data from isBasedOn or nearby file
-                markdown_data = ""
-                md_path = None
-                
-                # Check isBasedOn references
-                if "isBasedOn" in json_data:
-                    items = json_data["isBasedOn"] if isinstance(json_data["isBasedOn"], list) else [json_data["isBasedOn"]]
-                    for item in items:
-                        if isinstance(item, dict) and item.get("encodingFormat") == "text/markdown" and item.get("contentUrl"):
-                            url_ref = item["contentUrl"]
-                            if url_ref.startswith("file://"):
-                                candidate = url_ref.replace("file://", "")
-                                if os.path.exists(candidate):
-                                    md_path = candidate
-                                    break
-                
-                # Check nearby candidate if not found
-                if not md_path:
-                    candidate1 = file_path.replace("_croissant.jsonld", "_content.md").replace(".jsonld", "_content.md")
-                    candidate2 = file_path.replace("_croissant.jsonld", "_en_content.md").replace(".jsonld", "_en_content.md")
-                    if os.path.exists(candidate1):
-                        md_path = candidate1
-                    elif os.path.exists(candidate2):
-                        md_path = candidate2
-
-                if md_path and os.path.exists(md_path):
-                    with open(md_path, "r", encoding="utf-8") as f:
-                        markdown_data = f.read()
-                    print(f"  Loaded markdown content from: {md_path}")
-                else:
-                    print("  Warning: No markdown content file found.")
-
-                # Validate with Elasticsearch and update version if it exists
-                if "version" not in json_data:
-                    json_data["version"] = "1.0"
-                es_version = get_elasticsearch_version(url_val, args.expert)
-                if es_version:
-                    json_data["version"] = str(es_version)
-                    print(f"  ✓ Resource already in Elasticsearch. Updating version to {es_version}")
-                    # Rewrite the updated JSON-LD back to the local file
-                    with open(file_path, "w", encoding="utf-8") as f:
-                        json.dump(json_data, f, indent=2)
-
-                if args.reingest:
-                    print("\n--- Ingesting into QLever ---")
-                    api_base = os.environ.get("API_BASE", "http://localhost:7013")
-                    res_ql = requests.post(f"{api_base}/add_record", json=json_data, timeout=10)
-                    res_ql.raise_for_status()
-                    print(f"✓ Successfully ingested into QLever!")
-
-                if args.elastic:
-                    index_into_elasticsearch(url_val, json_data, markdown_data, args.expert)
-
-            except Exception as e:
-                print(f"✗ Failed to process file {file_path}: {e}")
+            process_local_file(file_path, args)
 
     elif os.path.isfile(args.url):
+        if getattr(args, "format", "croissant") == "oai":
+            process_local_file(args.url, args)
+            import sys
+            sys.exit(0)
+            
         print(f"Reading URLs from file: {args.url}")
         with open(args.url, 'r', encoding='utf-8') as f:
             content = f.read()
@@ -1253,12 +1328,12 @@ if __name__ == "__main__":
         for i, target_url in enumerate(urls_to_process, 1):
             print(f"\n[{i}/{len(urls_to_process)}] Processing file URL: {target_url}")
             try:
-                convert_to_croissant(target_url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index, args.elastic, args.expert)
+                convert_to_croissant(target_url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index_ollama, args.elastic, args.expert)
             except Exception as e:
                 print(f"Failed processing {target_url}: {e}")
 
                 
     elif "docs.google.com/spreadsheets" in args.url:
-        process_spreadsheet(args.url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index, args.elastic, args.expert)
+        process_spreadsheet(args.url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index_ollama, args.elastic, args.expert)
     else:
-        convert_to_croissant(args.url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index, args.elastic, args.expert)
+        convert_to_croissant(args.url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index_ollama, args.elastic, args.expert)
