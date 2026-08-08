@@ -728,6 +728,8 @@ SYSTEM INSTRUCTION FOR LLM - Navigation Guide:
 5. If the user is asking to "check the list of CODATA MCP tools" or similar:
    - Stop using tools. 
    - Tell the user: "Here are the available CODATA MCP tools: search_croissant_datasets, elasticsearch_fulltext_search, ask_expert, get_croissant_dataset, hazards_info_profile, hazards_translation, extract_variables_from_croissant, extract_variables_from_oai, planner, url_to_croissant, ingest_to_qlever, read_vault_article."
+   
+6. If you are saving numbers and figures to the vault (e.g., using save_to_vault), you MUST save them precisely and format them in markdown (e.g., as markdown tables).
 """
     return [types.TextContent(type="text", text=text)]
 
