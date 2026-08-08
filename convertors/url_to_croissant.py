@@ -647,6 +647,13 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
     safe_name = os.path.join("data", "ca4eosc", safe_name)
 
     md_filename = f"{safe_name}_content.md"
+    croissant_filename = os.path.basename(f"{safe_name}_croissant.jsonld")
+    header = f"# Document: {url}\n\n* **Croissant Metadata**: [{croissant_filename}](./{croissant_filename})\n\n"
+    
+    # Don't duplicate if already present
+    if not markdown_data.startswith(f"# Document: {url}"):
+        markdown_data = header + markdown_data
+        
     with open(md_filename, "w", encoding='utf-8') as f:
         f.write(markdown_data)
     print(f"Extracted markdown saved to {md_filename}")

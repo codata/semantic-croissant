@@ -394,6 +394,33 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
             b1 = run_q(q1)
             print(f"b1: {b1}", flush=True)
             if not b1:
+                # Fallback to Elasticsearch search
+                es_url = "http://elasticsearch:9200"
+                # Extract the most unique part (last 6 chars) for the query, if it looks like a DOI
+                short_id = id.split("/")[-1] if "/" in id else id
+                es_query = {
+                    "query": {
+                        "query_string": {
+                            "query": f"*{short_id}*",
+                            "fields": ["url", "schema:url", "identifier", "@id", "sameAs"]
+                        }
+                    }
+                }
+                try:
+                    req = urllib.request.Request(f"{es_url}/_search", data=json.dumps(es_query).encode(), headers={"Content-Type": "application/json"})
+                    with urllib.request.urlopen(req, timeout=5) as response:
+                        res_json = json.loads(response.read().decode())
+                        hits = res_json.get("hits", {}).get("hits", [])
+                        for hit in hits:
+                            src = hit["_source"]
+                            raw = src.get("_markdown_text", "")
+                            # Verify the actual full id is in the markdown source (e.g. url, identifier)
+                            if id in raw:
+                                parsed = json.loads(raw)
+                                return parsed
+                except Exception as e:
+                    print(f"ES fallback failed: {e}", flush=True)
+                
                 return {"error": "Dataset not found"}
                 
             b2 = run_q(q2)
@@ -692,7 +719,7 @@ def get_variables_sparql(id: str):
     PREFIX schema_http: <http://schema.org/>
     PREFIX cr: <http://mlcommons.org/croissant/>
 
-    SELECT ?dataset ?identifier ?url ?name ?desc ?dataType ?column ?fileObject WHERE {{
+    SELECT ?dataset ?identifier ?url ?name ?desc ?dataType ?column ?fileObject ?unit WHERE {{
       {{
         SELECT ?dataset ?identifier ?url WHERE {{
           {{ ?dataset a schema:Dataset }} UNION {{ ?dataset a schema_http:Dataset }} UNION {{ ?dataset a cr:Dataset }}
@@ -732,6 +759,7 @@ def get_variables_sparql(id: str):
         ?source2 cr:fileObject ?fileObjNode .
         ?fileObjNode schema:name|schema_http:name|cr:name ?fileObject .
       }}
+      OPTIONAL {{ ?field schema:unitText|schema_http:unitText|cr:unitText|schema:unitCode|schema_http:unitCode ?unit }}
     }} LIMIT 5000
     """
     
@@ -766,8 +794,9 @@ def get_variables_sparql(id: str):
                 desc = b.get("desc", {}).get("value", "")
                 col = b.get("column", {}).get("value", "")
                 fileObj = b.get("fileObject", {}).get("value", "")
+                unit = b.get("unit", {}).get("value", "")
                 
-                key = f"{name}|{col}|{fileObj}"
+                key = f"{name}|{col}|{fileObj}|{unit}"
                 if name and key not in unique_fields:
                     v = {
                         "name": name,
@@ -775,6 +804,7 @@ def get_variables_sparql(id: str):
                     }
                     if col: v["column"] = col
                     if fileObj: v["fileObject"] = fileObj
+                    if unit: v["unit"] = unit
                     unique_fields[key] = v
                     variables.append(v)
             
@@ -786,15 +816,93 @@ def get_variables_sparql(id: str):
     except Exception as e:
         return {"error": str(e), "variables": []}
 
+from pydantic import BaseModel
+
+class RawJsonLDPayload(BaseModel):
+    jsonld: dict
+
+def extract_variables_from_croissant_data(data: dict):
+    if not data:
+        return {"error": "Valid JSON-LD data was not provided.", "variables": [], "files": []}
+
+    fields = []
+    files = []
+    
+    def extract_field_data(f_obj):
+        source = f_obj.get("source") or f_obj.get("cr:source") or {}
+        extract = source.get("extract") or source.get("cr:extract") or {}
+        file_obj = source.get("fileObject") or source.get("cr:fileObject") or {}
+        
+        return {
+            "name": f_obj.get("schema:name") or f_obj.get("name") or extract.get("column") or extract.get("cr:column") or "",
+            "description": f_obj.get("schema:description") or f_obj.get("description") or "",
+            "column": extract.get("column") or extract.get("cr:column") or "",
+            "fileObject": file_obj.get("@id") or ""
+        }
+
+    def walk(obj):
+        if isinstance(obj, dict):
+            t = obj.get("@type", "")
+            if t == "cr:Field" or t == "Field" or (isinstance(t, list) and ("cr:Field" in t or "Field" in t)):
+                fields.append(extract_field_data(obj))
+            elif t == "cr:FileObject" or t == "FileObject" or (isinstance(t, list) and ("cr:FileObject" in t or "FileObject" in t)):
+                files.append({
+                    "name": obj.get("schema:name") or obj.get("name") or obj.get("cr:name") or "",
+                    "description": obj.get("schema:description") or obj.get("description") or obj.get("cr:description") or "",
+                    "contentUrl": obj.get("schema:contentUrl") or obj.get("contentUrl") or obj.get("cr:contentUrl") or "",
+                    "encodingFormat": obj.get("schema:encodingFormat") or obj.get("encodingFormat") or obj.get("cr:encodingFormat") or ""
+                })
+            elif "field" in obj and isinstance(obj["field"], list):
+                for f in obj["field"]:
+                    if isinstance(f, dict):
+                        fields.append(extract_field_data(f))
+            elif "cr:field" in obj and isinstance(obj["cr:field"], list):
+                for f in obj["cr:field"]:
+                    if isinstance(f, dict):
+                        fields.append(extract_field_data(f))
+            for k, v in obj.items():
+                walk(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                walk(item)
+                
+    walk(data)
+    
+    unique_fields = {}
+    for f in fields:
+        key = f"{f['name']}|{f['column']}|{f['fileObject']}"
+        if f["name"] and key not in unique_fields:
+            unique_fields[key] = f
+            
+    return {"variables": list(unique_fields.values()), "files": files}
+
+@app.post("/variables/croissant/raw")
+def get_variables_croissant_raw(payload: RawJsonLDPayload):
+    return extract_variables_from_croissant_data(payload.jsonld)
+
 @app.get("/variables/croissant")
 def get_variables_croissant(url: str):
+    import urllib.parse
+    import urllib.request
     try:
+        # Rewrite OpenML HTML URLs to OpenML Croissant API endpoints
+        if "openml.org/d/" in url:
+            did = url.split("openml.org/d/")[-1].split("?")[0].strip("/")
+            url = f"https://www.openml.org/croissant/dataset/{did}"
+        elif "openml.org/search?" in url and "id=" in url:
+            parsed = urllib.parse.urlparse(url)
+            qs = urllib.parse.parse_qs(parsed.query)
+            if "id" in qs:
+                url = f"https://www.openml.org/croissant/dataset/{qs['id'][0]}"
+
         req = urllib.request.Request(url, headers={"User-Agent": "curl/7.68.0"})
         data = None
         
         try:
+            print(f"DEBUG: Fetching URL: {url}")
             with urllib.request.urlopen(req) as response:
                 content = response.read().decode()
+                print(f"DEBUG: Fetched {len(content)} bytes. Snippet: {content[:100]}")
                 data = json.loads(content)
         except Exception as e:
             if "exporter=croissant" in url:
@@ -829,49 +937,7 @@ def get_variables_croissant(url: str):
         if not data:
             return {"error": "URL did not return valid JSON. Ensure you are pointing to a JSON-LD file or API endpoint, not an HTML landing page.", "variables": []}
 
-        fields = []
-        def extract_field_data(f_obj):
-            source = f_obj.get("source") or f_obj.get("cr:source") or {}
-            extract = source.get("extract") or source.get("cr:extract") or {}
-            file_obj = source.get("fileObject") or source.get("cr:fileObject") or {}
-            
-            return {
-                "name": f_obj.get("schema:name") or f_obj.get("name") or extract.get("column") or extract.get("cr:column") or "",
-                "description": f_obj.get("schema:description") or f_obj.get("description") or "",
-                "column": extract.get("column") or extract.get("cr:column") or "",
-                "fileObject": file_obj.get("@id") or ""
-            }
-
-        def walk(obj):
-            if isinstance(obj, dict):
-                t = obj.get("@type", "")
-                if t == "cr:Field" or t == "Field" or (isinstance(t, list) and ("cr:Field" in t or "Field" in t)):
-                    fields.append(extract_field_data(obj))
-                # Check for "field" or "cr:field" arrays containing fields directly
-                elif "field" in obj and isinstance(obj["field"], list):
-                    for f in obj["field"]:
-                        if isinstance(f, dict):
-                            fields.append(extract_field_data(f))
-                elif "cr:field" in obj and isinstance(obj["cr:field"], list):
-                    for f in obj["cr:field"]:
-                        if isinstance(f, dict):
-                            fields.append(extract_field_data(f))
-                for k, v in obj.items():
-                    walk(v)
-            elif isinstance(obj, list):
-                for item in obj:
-                    walk(item)
-                    
-        walk(data)
-        
-        # Deduplicate fields by name
-        unique_fields = {}
-        for f in fields:
-            key = f"{f['name']}|{f['column']}|{f['fileObject']}"
-            if f["name"] and key not in unique_fields:
-                unique_fields[key] = f
-                
-        return {"variables": list(unique_fields.values())}
+        return extract_variables_from_croissant_data(data)
     except Exception as e:
         return {"error": str(e), "variables": []}
 
@@ -897,10 +963,16 @@ def get_variables_oai(url: str):
                         "text": obj.get("questionInformation:questionText", "")
                     })
                 if "variableInformation:variableName" in obj:
-                    variables.append({
+                    var_info = {
                         "name": obj.get("variableInformation:variableName", ""),
-                        "label": obj.get("variableInformation:variableLabel", "")
-                    })
+                        "label": obj.get("variableInformation:variableLabel", ""),
+                    }
+                    if "variableInformation:variableDefinition" in obj:
+                        var_info["definition"] = obj.get("variableInformation:variableDefinition", "")
+                    if "variableInformation:variableUnit" in obj:
+                        var_info["unit"] = obj.get("variableInformation:variableUnit", "")
+                    
+                    variables.append(var_info)
                 for k, v in obj.items():
                     walk(v)
             elif isinstance(obj, list):

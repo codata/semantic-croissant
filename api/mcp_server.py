@@ -219,12 +219,56 @@ async def read_vault_article(url_or_filename: str) -> list[types.TextContent]:
         except Exception as e:
             return [types.TextContent(type="text", text=f"Error reading from vault: {str(e)}")]
 
-async def store_in_vault(content: str, prefix: str = "claude_chat") -> list[types.TextContent]:
-    import datetime, io, os
+async def list_vault_documents(prefix: str = "") -> list[types.TextContent]:
+    import os
     from minio import Minio
     
+    minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
+    endpoint = minio_base.replace("http://", "").replace("https://", "")
+    
+    try:
+        client = Minio(
+            endpoint,
+            access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"),
+            secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"),
+            secure=False
+        )
+        
+        if not client.bucket_exists("vault"):
+            return [types.TextContent(type="text", text="Vault bucket does not exist yet.")]
+            
+        objects = client.list_objects("vault", prefix=prefix, recursive=True)
+        file_list = []
+        for obj in objects:
+            if obj.is_dir or not (obj.object_name.endswith(".md") or obj.object_name.endswith(".md.gz")):
+                continue
+            file_list.append(obj.object_name)
+            
+        if not file_list:
+            return [types.TextContent(type="text", text=f"No documents found in vault with prefix '{prefix}'.")]
+            
+        return [types.TextContent(type="text", text="Documents in vault:\n" + "\n".join(f"- {f}" for f in file_list))]
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"Error listing vault documents: {str(e)}")]
+
+async def store_in_vault(content: str, prefix: str = "claude_chat", jsonld_payload: str = None) -> list[types.TextContent]:
+    import datetime, io, os
+    from minio import Minio
+    global SERVER_USER_INFO
+    
+    username = "anonymous"
+    if SERVER_USER_INFO:
+        username = SERVER_USER_INFO.get("preferred_username", SERVER_USER_INFO.get("name", "anonymous"))
+    # Sanitize username for filename
+    safe_username = "".join(c if c.isalnum() else "_" for c in username).lower()
+    
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{prefix}_{timestamp}.md"
+    filename = f"{prefix}_{safe_username}_{timestamp}.md"
+    json_filename = f"{prefix}_{safe_username}_{timestamp}.jsonld"
+    
+    if "dataset" in prefix.lower() and not jsonld_payload:
+        return [types.TextContent(type="text", text="CRITICAL SYSTEM ERROR: You attempted to save a dataset summary without providing the 'jsonld_payload' parameter. You MUST generate the Croissant JSON-LD metadata and provide it in this parameter. YOU MUST IMMEDIATELY CALL THIS TOOL AGAIN with the JSON-LD included! DO NOT ASK THE USER FOR PERMISSION to generate it, JUST DO IT AUTOMATICALLY NOW!")]
+
     
     minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
     endpoint = minio_base.replace("http://", "").replace("https://", "")
@@ -239,6 +283,35 @@ async def store_in_vault(content: str, prefix: str = "claude_chat") -> list[type
         
         if not client.bucket_exists("vault"):
             client.make_bucket("vault")
+            
+        if jsonld_payload:
+            json_bytes = jsonld_payload.encode("utf-8")
+            client.put_object(
+                "vault",
+                json_filename,
+                data=io.BytesIO(json_bytes),
+                length=len(json_bytes),
+                content_type="application/ld+json"
+            )
+            content = f"[View Croissant JSON-LD Data](https://mcp.dev.codata.org/vault/{json_filename})\n\n" + content
+            
+        # Append history of previous interactions with the same prefix
+        try:
+            objects = client.list_objects("vault", prefix=prefix, recursive=True)
+            history_links = []
+            for obj in objects:
+                if obj.is_dir or not (obj.object_name.endswith(".md") or obj.object_name.endswith(".md.gz")):
+                    continue
+                if obj.object_name != filename:
+                    # Extract username from filename if possible (prefix_username_timestamp.md)
+                    parts = obj.object_name.replace(".md", "").split("_")
+                    author = parts[-3] if len(parts) >= 3 else "unknown"
+                    history_links.append(f"- [{obj.object_name}](https://mcp.dev.codata.org/vault/{obj.object_name}) (Author: {author})")
+            
+            if history_links:
+                content += f"\n\n# History for {prefix}\n" + "\n".join(sorted(history_links)) + "\n"
+        except Exception as e:
+            print(f"Warning: Failed to fetch history for prefix {prefix}: {e}")
             
         content_bytes = content.encode("utf-8")
         client.put_object(
@@ -316,25 +389,209 @@ async def get_hazard_translation(hips_code: str, lang_code: str) -> list[types.T
     except Exception as e:
         return [types.TextContent(type="text", text=f"Failed to fetch linked translation resource: {str(e)}")]
 
+async def predict_missing_variable_info(variables, dataset_title="Dataset"):
+    import os, httpx, json
+    
+    missing = []
+    for idx, v in enumerate(variables):
+        has_desc = bool(v.get("description") or v.get("definition"))
+        has_unit = bool(v.get("unit"))
+        if not has_desc or not has_unit:
+            missing.append({
+                "index": idx,
+                "name": v.get("name", ""),
+                "label": v.get("label", ""),
+                "needs_desc": not has_desc,
+                "needs_unit": not has_unit
+            })
+            
+    if not missing:
+        return variables
+        
+    prompt = f"Given the following dataset context: {dataset_title}\n\n"
+    prompt += "Please predict the missing descriptions and physical units of measure for the following variables.\n"
+    prompt += "Return a JSON array of objects, where each object has 'index', 'predicted_description' (if needed), and 'predicted_unit' (if needed).\n\n"
+    prompt += json.dumps(missing, indent=2)
+    
+    ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+    
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            res = await client.post(f"{ollama_host}/api/generate", json={
+                "model": "llama3.1",
+                "prompt": prompt,
+                "stream": False,
+                "format": "json"
+            })
+            
+            if res.status_code == 200:
+                predictions = json.loads(res.json().get("response", "[]"))
+                if isinstance(predictions, dict) and "predictions" in predictions:
+                    predictions = predictions["predictions"]
+                    
+                if isinstance(predictions, list):
+                    for p in predictions:
+                        idx = p.get("index")
+                        if idx is not None and 0 <= idx < len(variables):
+                            var = variables[idx]
+                            if p.get("predicted_description"):
+                                if "label" in var or "definition" in var:
+                                    var["definition"] = f"{p['predicted_description']} (Predicted by model: Ollama llama3.1)"
+                                else:
+                                    var["description"] = f"{p['predicted_description']} (Predicted by model: Ollama llama3.1)"
+                            if p.get("predicted_unit"):
+                                var["unit"] = f"{p['predicted_unit']} (Predicted by model: Ollama llama3.1)"
+    except Exception as e:
+        print(f"Ollama variable prediction failed: {e}")
+        
+    return variables
+
 async def extract_variables_from_croissant(dataset_id_or_url: str) -> list[types.TextContent]:
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers={"User-Agent": "curl/7.68.0"}) as client:
+            # 1. Lookup in Elasticsearch first
+            es_url = os.environ.get("ELASTICSEARCH_URL", "http://localhost:9200").rstrip("/")
+            try:
+                # Try multiple indices since we don't know where it came from
+                search_term = f'"{dataset_id_or_url}"'
+                es_res = await client.post(f"{es_url}/_search", json={
+                    "query": {
+                        "multi_match": {
+                            "query": dataset_id_or_url,
+                            "fields": ["url", "schema:url", "identifier", "@id"]
+                        }
+                    }
+                })
+                
+                hits = []
+                if es_res.status_code == 200:
+                    hits = es_res.json().get("hits", {}).get("hits", [])
+                    
+                if not hits:
+                    for idx in ["croissant", "dataverse", "openml", "hips"]:
+                        fallback_res = await client.get(f"{es_url}/{idx}/_search", params={"q": search_term})
+                        if fallback_res.status_code == 200:
+                            idx_hits = fallback_res.json().get("hits", {}).get("hits", [])
+                            if idx_hits:
+                                hits = idx_hits
+                                break
+
+                if hits:
+                    raw_jsonld = hits[0]["_source"].get("_markdown_text")
+                    if raw_jsonld:
+                            try:
+                                parsed_jsonld = json.loads(raw_jsonld)
+                                res = await client.post(f"{API_BASE}/variables/croissant/raw", json={"jsonld": parsed_jsonld})
+                                if res.status_code == 200:
+                                    data = res.json()
+                                    variables = data.get("variables", [])
+                                    files = data.get("files", [])
+                                    print(f"DEBUG Step 1: variables={variables}, files={files}", flush=True)
+                                    if variables or files:
+                                        if variables:
+                                            variables = await predict_missing_variable_info(variables, dataset_title=dataset_id_or_url)
+                                            data["variables"] = variables
+                                        return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
+                                    else:
+                                        print("DEBUG Step 1: No variables or files, falling through...", flush=True)
+                                        # Return raw JSON-LD so the LLM can inspect distribution files
+                                        return [types.TextContent(type="text", text=json.dumps(parsed_jsonld, indent=2))]
+                            except json.JSONDecodeError:
+                                print("Warning: Could not parse JSON-LD from Elasticsearch _markdown_text")
+            except Exception as e:
+                print(f"Warning: Elastic lookup failed: {e}")
+
+            # 2. Fallback to QLever SPARQL
             response = await client.get(f"{API_BASE}/variables/sparql", params={"id": dataset_id_or_url})
             response.raise_for_status()
             data = response.json()
             variables = data.get("variables", [])
             
             if variables:
+                # Ask Ollama to predict missing definitions/units
+                variables = await predict_missing_variable_info(variables, dataset_title=data.get("identifier", dataset_id_or_url))
+                data["variables"] = variables
                 return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
                 
+            # 3. Fallback to Internet Crawler (URL to JSON-LD)
+            if dataset_id_or_url.isdigit():
+                dataset_id_or_url = f"https://www.openml.org/d/{dataset_id_or_url}"
+                
             if dataset_id_or_url.startswith("http"):
+                # Handle Dataverse DOIs by resolving redirects and delegating to the OAI/Croissant extractor
+                import urllib.request
+                try:
+                    req = urllib.request.Request(dataset_id_or_url, method="HEAD", headers={"User-Agent": "curl/7.68.0"})
+                    with urllib.request.urlopen(req) as resp:
+                        resolved_url = resp.url
+                        
+                    doi_part = None
+                    base_url = None
+                    if "dataset.xhtml?persistentId=doi:" in resolved_url:
+                        base_url = resolved_url.split("/dataset.xhtml")[0]
+                        doi_part = resolved_url.split("persistentId=")[1].split("&")[0]
+                    elif "citation?persistentId=doi:" in resolved_url:
+                        base_url = resolved_url.split("/citation")[0]
+                        doi_part = resolved_url.split("persistentId=")[1].split("&")[0]
+                        
+                    if base_url and doi_part:
+                        try:
+                            croissant_url = f"{base_url}/api/datasets/export?exporter=croissant&persistentId={doi_part}"
+                            export_res = await client.get(croissant_url)
+                            if export_res.status_code == 200:
+                                parsed_jsonld = export_res.json()
+                                res = await client.post(f"{API_BASE}/variables/croissant/raw", json={"jsonld": parsed_jsonld})
+                                if res.status_code == 200:
+                                    data = res.json()
+                                    variables = data.get("variables", [])
+                                    files = data.get("files", [])
+                                    print(f"DEBUG Step 3: variables={variables}, files={files}", flush=True)
+                                    if variables or files:
+                                        if variables:
+                                            variables = await predict_missing_variable_info(variables, dataset_title=data.get("identifier", dataset_id_or_url))
+                                            data["variables"] = variables
+                                        return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
+                                    else:
+                                        print("DEBUG Step 3: No variables or files, falling through...", flush=True)
+                                        # If no specific variables were extracted, return the raw Croissant JSON-LD 
+                                        # so the LLM can at least inspect the 'distribution' file objects.
+                                        return [types.TextContent(type="text", text=json.dumps(parsed_jsonld, indent=2))]
+                        except Exception as ex:
+                            print(f"Warning: Failed to fetch or parse Croissant export: {ex}")
+                            
+                        # Fallback to OAI_ORE if Croissant export fails
+                        oai_url = f"{base_url}/api/datasets/export?exporter=OAI_ORE&persistentId={doi_part}"
+                        return await extract_variables_from_oai(oai_url)
+                except Exception as e:
+                    print(f"Warning: URL redirect check failed: {e}")
+
                 response = await client.get(f"{API_BASE}/variables/croissant", params={"url": dataset_id_or_url})
                 response.raise_for_status()
                 data = response.json()
                 if "error" in data and not data.get("variables"):
                     return [types.TextContent(type="text", text=f"Error: {data['error']}")]
-                return [types.TextContent(type="text", text=json.dumps(data.get("variables", []), indent=2))]
                 
+                variables = data.get("variables", [])
+                if variables:
+                    variables = await predict_missing_variable_info(variables, dataset_title=dataset_id_or_url)
+                
+                return [types.TextContent(type="text", text=json.dumps(variables, indent=2))]
+                
+            # 4. Fallback to Local File System
+            if os.path.exists(dataset_id_or_url):
+                try:
+                    with open(dataset_id_or_url, "r") as f:
+                        local_jsonld = json.load(f)
+                        res = await client.post(f"{API_BASE}/variables/croissant/raw", json={"jsonld": local_jsonld})
+                        if res.status_code == 200:
+                            data = res.json()
+                            variables = data.get("variables", [])
+                            if variables:
+                                variables = await predict_missing_variable_info(variables, dataset_title=dataset_id_or_url)
+                                return [types.TextContent(type="text", text=json.dumps(variables, indent=2))]
+                except Exception as e:
+                    print(f"Warning: Failed to parse local file {dataset_id_or_url}: {e}")
+                    
             return [types.TextContent(type="text", text="[]")]
     except Exception as e:
         return [types.TextContent(type="text", text=f"Failed to extract Croissant variables: {str(e)}")]
@@ -347,7 +604,12 @@ async def extract_variables_from_oai(url: str) -> list[types.TextContent]:
             data = response.json()
             if "error" in data and not data.get("questions") and not data.get("variables"):
                 return [types.TextContent(type="text", text=f"Error: {data['error']}")]
-            return [types.TextContent(type="text", text=json.dumps({"questions": data.get("questions", []), "variables": data.get("variables", [])}, indent=2))]
+                
+            variables = data.get("variables", [])
+            if variables:
+                variables = await predict_missing_variable_info(variables, dataset_title=url)
+                
+            return [types.TextContent(type="text", text=json.dumps({"questions": data.get("questions", []), "variables": variables}, indent=2))]
     except Exception as e:
         return [types.TextContent(type="text", text=f"Failed to extract OAI variables: {str(e)}")]
 
@@ -491,10 +753,15 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
         return await read_vault_article(
             url_or_filename=arguments.get("url_or_filename", arguments.get("filename"))
         )
+    elif name == "list_vault_documents":
+        return await list_vault_documents(
+            prefix=arguments.get("prefix", "")
+        )
     elif name == "save_to_vault":
         return await store_in_vault(
             content=arguments.get("content"),
-            prefix=arguments.get("prefix", "claude_chat")
+            prefix=arguments.get("prefix", "claude_chat"),
+            jsonld_payload=arguments.get("jsonld_payload")
         )
     elif name == "get_croissant_dataset":
         return await get_croissant_dataset(id=arguments.get("id"))
@@ -578,6 +845,16 @@ async def list_tools() -> list[types.Tool]:
             }
         ),
         types.Tool(
+            name="list_vault_documents",
+            description="List all available documents in the MinIO vault. Use this to browse what files and interactions have been saved.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "prefix": {"type": "string", "description": "Optional prefix to filter the documents by (e.g., 'honduras_coffee')."}
+                }
+            }
+        ),
+        types.Tool(
             name="get_croissant_dataset",
             description="Retrieve the full detailed Croissant JSON-LD metadata for a specific dataset. You can pass either its internal ID or its exact source/content URL.",
             inputSchema={
@@ -617,7 +894,7 @@ async def list_tools() -> list[types.Tool]:
                 "type": "object",
                 "required": ["dataset_id_or_url"],
                 "properties": {
-                    "dataset_id_or_url": {"type": "string", "description": "Dataset ID (e.g. DOI or local QLever bnode) or external JSON-LD URL."}
+                    "dataset_id_or_url": {"type": "string", "description": "Dataset ID or external JSON-LD URL. CRITICAL: If querying an OpenML dataset, you MUST provide the FULL HTTP URL (e.g., 'https://www.openml.org/d/46729'), NOT just the numeric ID. If you just pass the ID, the system will not know where to fetch it from!"}
                 }
             }
         ),
@@ -670,12 +947,13 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="save_to_vault",
-            description="Store text content (like AI responses, summaries, or extracted notes) in the MinIO vault.",
+            description="Store text content (like AI responses, summaries, or extracted notes) in the MinIO vault. CRITICAL INSTRUCTION: When saving dataset summaries or analysis, you MUST automatically generate the Croissant JSON-LD metadata for the dataset and provide it in the jsonld_payload parameter. Do NOT wait for the user to ask you.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "content": {"type": "string", "description": "The text content to store in the vault."},
-                    "prefix": {"type": "string", "description": "Optional prefix for the filename (default is 'claude_chat')."}
+                    "prefix": {"type": "string", "description": "Optional prefix for the filename (default is 'claude_chat')."},
+                    "jsonld_payload": {"type": "string", "description": "Optional Croissant JSON-LD string to save alongside the markdown file. CRITICAL: You MUST write out the FULL, COMPLETE JSON-LD payload. Do NOT truncate it. Do NOT use placeholders like '...rest of the variables...'. Output every single variable fully!"}
                 },
                 "required": ["content"]
             }
@@ -887,15 +1165,20 @@ def main(port: int, transport: str) -> int:
                         ]
                         
                         headers = {
-                            "Content-Encoding": "gzip",
                             "Link": ", ".join(signposting_links),
                             "X-Fair-Signposting": "enabled"
                         }
                         
-                        print("DEBUG HEADERS: ", headers, flush=True)
+                        media_type = "text/markdown; charset=utf-8"
+                        if filename.endswith(".jsonld") or filename.endswith(".jsonld.gz"):
+                            media_type = "application/ld+json; charset=utf-8"
+                        
+                        if filename.endswith(".gz"):
+                            headers["Content-Encoding"] = "gzip"
+                        
                         return Response(
                             r.content, 
-                            media_type="text/markdown; charset=utf-8", 
+                            media_type=media_type, 
                             headers=headers
                         )
                 except Exception as e:
