@@ -252,6 +252,8 @@ async def list_vault_documents(prefix: str = "") -> list[types.TextContent]:
         return [types.TextContent(type="text", text=f"Error listing vault documents: {str(e)}")]
 
 async def store_in_vault(content: str, prefix: str = "claude_chat", jsonld_payload: str = None) -> list[types.TextContent]:
+    if not prefix:
+        prefix = "claude_chat"
     import datetime, io, os
     from minio import Minio
     global SERVER_USER_INFO
@@ -285,6 +287,9 @@ async def store_in_vault(content: str, prefix: str = "claude_chat", jsonld_paylo
             client.make_bucket("vault")
             
         if jsonld_payload:
+            import json
+            if isinstance(jsonld_payload, dict):
+                jsonld_payload = json.dumps(jsonld_payload, indent=2)
             json_bytes = jsonld_payload.encode("utf-8")
             client.put_object(
                 "vault",
@@ -952,8 +957,8 @@ async def list_tools() -> list[types.Tool]:
                 "type": "object",
                 "properties": {
                     "content": {"type": "string", "description": "The text content to store in the vault."},
-                    "prefix": {"type": "string", "description": "Optional prefix for the filename (default is 'claude_chat')."},
-                    "jsonld_payload": {"type": "string", "description": "Optional Croissant JSON-LD string to save alongside the markdown file. CRITICAL: You MUST write out the FULL, COMPLETE JSON-LD payload. Do NOT truncate it. Do NOT use placeholders like '...rest of the variables...'. Output every single variable fully!"}
+                    "prefix": {"description": "Optional prefix for the filename (default is 'claude_chat')."},
+                    "jsonld_payload": {"description": "Optional Croissant JSON-LD string or JSON object to save alongside the markdown file. CRITICAL: You MUST write out the FULL, COMPLETE JSON-LD payload. Do NOT truncate it. Do NOT use placeholders like '...rest of the variables...'. Output every single variable fully!"}
                 },
                 "required": ["content"]
             }
