@@ -268,8 +268,8 @@ async def store_in_vault(content: str, prefix: str = "claude_chat", jsonld_paylo
     filename = f"{prefix}_{safe_username}_{timestamp}.md"
     json_filename = f"{prefix}_{safe_username}_{timestamp}.jsonld"
     
-    if "dataset" in prefix.lower() and not jsonld_payload:
-        return [types.TextContent(type="text", text="CRITICAL SYSTEM ERROR: You attempted to save a dataset summary without providing the 'jsonld_payload' parameter. You MUST generate the Croissant JSON-LD metadata and provide it in this parameter. YOU MUST IMMEDIATELY CALL THIS TOOL AGAIN with the JSON-LD included! DO NOT ASK THE USER FOR PERMISSION to generate it, JUST DO IT AUTOMATICALLY NOW!")]
+    if not jsonld_payload:
+        return [types.TextContent(type="text", text="CRITICAL SYSTEM ERROR: You attempted to save a file to the vault without providing the 'jsonld_payload' parameter. You MUST generate the Croissant JSON-LD metadata and provide it in this parameter. YOU MUST IMMEDIATELY CALL THIS TOOL AGAIN with the JSON-LD included! DO NOT ASK THE USER FOR PERMISSION to generate it, JUST DO IT AUTOMATICALLY NOW!")]
 
     
     minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
@@ -958,9 +958,9 @@ async def list_tools() -> list[types.Tool]:
                 "properties": {
                     "content": {"type": "string", "description": "The text content to store in the vault."},
                     "prefix": {"description": "Optional prefix for the filename (default is 'claude_chat')."},
-                    "jsonld_payload": {"description": "Optional Croissant JSON-LD string or JSON object to save alongside the markdown file. CRITICAL: You MUST write out the FULL, COMPLETE JSON-LD payload. Do NOT truncate it. Do NOT use placeholders like '...rest of the variables...'. Output every single variable fully!"}
+                    "jsonld_payload": {"description": "REQUIRED Croissant JSON-LD string or JSON object to save alongside the markdown file. CRITICAL: You MUST write out the FULL, COMPLETE JSON-LD payload. Do NOT truncate it. Do NOT use placeholders like '...rest of the variables...'. Output every single variable fully!"}
                 },
-                "required": ["content"]
+                "required": ["content", "jsonld_payload"]
             }
         )
     ]
