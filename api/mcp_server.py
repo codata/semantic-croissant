@@ -251,9 +251,7 @@ async def list_vault_documents(prefix: str = "") -> list[types.TextContent]:
     except Exception as e:
         return [types.TextContent(type="text", text=f"Error listing vault documents: {str(e)}")]
 
-async def store_in_vault(content: str, prefix: str = "claude_chat", jsonld_payload: str = None) -> list[types.TextContent]:
-    if not prefix:
-        prefix = "claude_chat"
+async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None) -> list[types.TextContent]:
     import datetime, io, os
     from minio import Minio
     global SERVER_USER_INFO
@@ -265,8 +263,24 @@ async def store_in_vault(content: str, prefix: str = "claude_chat", jsonld_paylo
     safe_username = "".join(c if c.isalnum() else "_" for c in username).lower()
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{prefix}_{safe_username}_{timestamp}.md"
-    json_filename = f"{prefix}_{safe_username}_{timestamp}.jsonld"
+    
+    # Compute UNF-6 hash for the content (pure python fallback to avoid SIGILL from polars)
+    unf_label = "UNF-6_error"
+    try:
+        import hashlib, base64
+        words = sorted(content.split())
+        c = b""
+        for w in words:
+            c += w.encode("utf-8") + b"\n\x00"
+        d = hashlib.sha256(c).digest()[:16] # 128-bit truncation
+        raw_hash = base64.b64encode(d).decode("ascii")
+        safe_hash = raw_hash.replace("=", "").replace("+", "").replace("/", "")
+        unf_label = f"UNF-6_{safe_hash}"
+    except Exception as e:
+        print(f"Failed to generate UNF-6 hash: {e}")
+    
+    filename = f"{prefix}_{unf_label}_{safe_username}_{timestamp}.md"
+    json_filename = f"{prefix}_{unf_label}_{safe_username}_{timestamp}.jsonld"
     
     if not jsonld_payload:
         return [types.TextContent(type="text", text="CRITICAL SYSTEM ERROR: You attempted to save a file to the vault without providing the 'jsonld_payload' parameter. You MUST generate the Croissant JSON-LD metadata and provide it in this parameter. YOU MUST IMMEDIATELY CALL THIS TOOL AGAIN with the JSON-LD included! DO NOT ASK THE USER FOR PERMISSION to generate it, JUST DO IT AUTOMATICALLY NOW!")]
@@ -288,7 +302,66 @@ async def store_in_vault(content: str, prefix: str = "claude_chat", jsonld_paylo
             
         if jsonld_payload:
             import json
-            if isinstance(jsonld_payload, dict):
+            if isinstance(jsonld_payload, str):
+                try:
+                    payload_dict = json.loads(jsonld_payload)
+                except Exception:
+                    payload_dict = None
+            else:
+                payload_dict = jsonld_payload
+                
+            if isinstance(payload_dict, dict):
+                md_url = f"https://mcp.dev.codata.org/vault/{filename}"
+                
+                # Fetch history of previous interactions using the base prefix (first 3 words)
+                history_md = ""
+                try:
+                    base_prefix = "_".join(prefix.split("_")[:3])
+                    objects = client.list_objects("vault", prefix=base_prefix, recursive=True)
+                    history_links = []
+                    history_objects = []
+                    for obj in objects:
+                        if obj.is_dir or not (obj.object_name.endswith(".md") or obj.object_name.endswith(".md.gz")):
+                            continue
+                        if obj.object_name != filename:
+                            parts = obj.object_name.replace(".md", "").split("_")
+                            author = parts[-3] if len(parts) >= 3 else "unknown"
+                            history_links.append(f"- [{obj.object_name}](https://mcp.dev.codata.org/vault/{obj.object_name}) (Author: {author})")
+                            history_objects.append(obj.object_name)
+                    
+                    if history_links:
+                        history_md = f"\n\n# History for {base_prefix}\n" + "\n".join(sorted(history_links)) + "\n"
+                        # Inject history as structured objects into the JSON-LD isBasedOn property
+                        if "isBasedOn" not in payload_dict:
+                            payload_dict["isBasedOn"] = []
+                        elif not isinstance(payload_dict["isBasedOn"], list):
+                            payload_dict["isBasedOn"] = [payload_dict["isBasedOn"]]
+                        
+                        for obj_name in sorted(history_objects):
+                            payload_dict["isBasedOn"].append({
+                                "@type": "CreativeWork",
+                                "name": obj_name,
+                                "url": f"https://mcp.dev.codata.org/vault/{obj_name}"
+                            })
+                except Exception as e:
+                    print(f"Warning: Failed to fetch history for prefix {prefix}: {e}")
+                
+                if "distribution" not in payload_dict:
+                    payload_dict["distribution"] = []
+                elif isinstance(payload_dict["distribution"], dict):
+                    payload_dict["distribution"] = [payload_dict["distribution"]]
+                    
+                if isinstance(payload_dict.get("distribution"), list):
+                    payload_dict["distribution"].append({
+                        "@type": "cr:FileObject",
+                        "name": f"{prefix} Markdown Content",
+                        "description": "The unstructured markdown content related to this semantic dataset.",
+                        "contentUrl": md_url,
+                        "encodingFormat": "text/markdown"
+                    })
+                payload_dict["url"] = md_url
+                jsonld_payload = json.dumps(payload_dict, indent=2)
+            elif isinstance(jsonld_payload, dict):
                 jsonld_payload = json.dumps(jsonld_payload, indent=2)
             json_bytes = jsonld_payload.encode("utf-8")
             client.put_object(
@@ -299,24 +372,8 @@ async def store_in_vault(content: str, prefix: str = "claude_chat", jsonld_paylo
                 content_type="application/ld+json"
             )
             content = f"[View Croissant JSON-LD Data](https://mcp.dev.codata.org/vault/{json_filename})\n\n" + content
-            
-        # Append history of previous interactions with the same prefix
-        try:
-            objects = client.list_objects("vault", prefix=prefix, recursive=True)
-            history_links = []
-            for obj in objects:
-                if obj.is_dir or not (obj.object_name.endswith(".md") or obj.object_name.endswith(".md.gz")):
-                    continue
-                if obj.object_name != filename:
-                    # Extract username from filename if possible (prefix_username_timestamp.md)
-                    parts = obj.object_name.replace(".md", "").split("_")
-                    author = parts[-3] if len(parts) >= 3 else "unknown"
-                    history_links.append(f"- [{obj.object_name}](https://mcp.dev.codata.org/vault/{obj.object_name}) (Author: {author})")
-            
-            if history_links:
-                content += f"\n\n# History for {prefix}\n" + "\n".join(sorted(history_links)) + "\n"
-        except Exception as e:
-            print(f"Warning: Failed to fetch history for prefix {prefix}: {e}")
+            if history_md:
+                content += history_md
             
         content_bytes = content.encode("utf-8")
         client.put_object(
@@ -845,9 +902,9 @@ async def list_tools() -> list[types.Tool]:
             description="Read the contents of an article or document from the MinIO vault. You can pass the exact filename (e.g. 'article.md') or the original URL of the article.",
             inputSchema={
                 "type": "object",
-                "required": ["url_or_filename"],
                 "properties": {
-                    "url_or_filename": {"type": "string", "description": "The URL of the article, or its exact filename in the vault."}
+                    "url_or_filename": {"type": ["string", "null"], "description": "The URL of the article, or its exact filename in the vault."},
+                    "filename": {"type": ["string", "null"], "description": "The exact filename in the vault."}
                 }
             }
         ),
@@ -857,7 +914,7 @@ async def list_tools() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "prefix": {"type": "string", "description": "Optional prefix to filter the documents by (e.g., 'honduras_coffee')."}
+                    "prefix": {"type": ["string", "null"], "description": "Optional prefix to filter the documents by (e.g., 'honduras_coffee')."}
                 }
             }
         ),
@@ -878,7 +935,7 @@ async def list_tools() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "q": {"type": "string", "description": "Optional HIPs code (e.g. BI0101) or hazard description/name."}
+                    "q": {"type": ["string", "null"], "description": "Optional HIPs code (e.g. BI0101) or hazard description/name."}
                 }
             }
         ),
@@ -922,7 +979,7 @@ async def list_tools() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Optional query."}
+                    "query": {"type": ["string", "null"], "description": "Optional query."}
                 }
             }
         ),
@@ -959,10 +1016,10 @@ async def list_tools() -> list[types.Tool]:
                 "type": "object",
                 "properties": {
                     "content": {"type": "string", "description": "The text content to store in the vault."},
-                    "prefix": {"description": "Optional prefix for the filename (default is 'claude_chat')."},
-                    "jsonld_payload": {"description": "REQUIRED Croissant JSON-LD string or JSON object to save alongside the markdown file. CRITICAL: You MUST write out the FULL, COMPLETE JSON-LD payload. Do NOT truncate it. Do NOT use placeholders like '...rest of the variables...'. Output every single variable fully!"}
+                    "prefix": {"type": "string", "description": "REQUIRED: You MUST generate a short, descriptive snake_case summary of the data/chat (e.g. 'extracting_ai_factory_numbers') and provide it here. Do NOT use generic prefixes!"},
+                    "jsonld_payload": {"type": ["string", "object"], "description": "REQUIRED Croissant JSON-LD string or JSON object to save alongside the markdown file. CRITICAL: You MUST write out the FULL, COMPLETE JSON-LD payload. Do NOT truncate it. Do NOT use placeholders like '...rest of the variables...'. Output every single variable fully!"}
                 },
-                "required": ["content", "jsonld_payload"]
+                "required": ["prefix", "content", "jsonld_payload"]
             }
         )
     ]
