@@ -2,6 +2,10 @@
 
 This repository contains the deployment infrastructure for the `croissant-live` semantic database, leveraging [QLever](https://github.com/ad-freiburg/qlever).
 
+This development is funded by:
+- The Climate-Adapt4EOSC project has received funding from the Horizon Europe Framework Programme under grant agreement N° 101188248.
+- CDIF4EOSC: Developing and implementing the Cross-Domain Interoperability Framework for EOSC is funded by the European Union under Grant Agreement 101292473.
+
 ## Architecture
 - **qlever-tests**: The original `qlever-tests` repository is linked here as a **Git Submodule**. This provides access to the required environment variables (`.env` files) and Docker build contexts (`Dockerfile`s).
 - **compose.yaml**: The Docker Compose file defines the `croissant-live` profile to run the server and UI concurrently with standard QLever components.
@@ -270,6 +274,27 @@ To do this, use the following `stdio` execution command in your client's configu
 ```
 
 Restart your IDE or Claude Desktop. You should see an icon or status indicating the tools are loaded, enabling conversational queries directly against the Croissant datasets!
+
+## Vault Storage & UNF-6 Integrity
+
+The Semantic Croissant ecosystem includes a dedicated object storage layer (powered by MinIO) referred to as the **Vault**. The Vault is designed to persist user interactions, AI-generated dataset summaries, and their corresponding Croissant JSON-LD metadata. 
+
+When you use the `save_to_vault` tool through the MCP server, the content is securely saved to the Vault using a deterministic fingerprint known as the **UNF-6** (Universal Numeric Fingerprint) label.
+
+### How the UNF-6 Label Works
+
+To guarantee data integrity and version control, every saved file is uniquely identified by its contents. Instead of relying purely on random UUIDs, the system generates a UNF-6 hash:
+1. All words within the text content are split and lexicographically sorted to neutralize minor formatting changes.
+2. The sorted tokens are concatenated and hashed using SHA-256.
+3. The resulting hash is truncated to 128 bits and encoded in Base64 (with URL-safe replacements).
+
+The resulting filename adheres to the following structure:
+`[prefix]_UNF-6_[hash]_[username]_[timestamp].[ext]`
+
+For example, saving a dataset summary might produce:
+`shrink_swell_risks_UNF-6_Kq4bhbZB2z4Vz5lgSYzALA_anonymous_20260810_083505.md`
+
+This guarantees that two identical pieces of content will generate the same UNF-6 hash segment, allowing the system to easily track exact duplicates or iterations of a dataset over time. Both the unstructured Markdown (`.md`) and the structured Croissant metadata (`.jsonld`) are saved side-by-side using the same naming convention.
 
 ## FAIR Signposting Protocol
 
