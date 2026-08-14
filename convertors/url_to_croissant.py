@@ -638,7 +638,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
     if parsed_url.query:
         qs = urllib.parse.parse_qsl(parsed_url.query)
         for k, v in qs:
-            safe_name += "_" + v
+            safe_name += "_" + v.replace("/", "_").replace(":", "_")
             
     if not safe_name:
         safe_name = "url_output"
@@ -996,12 +996,24 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                 
                 # Write to temporary file for rdflib
                 if user_name or user_email:
-                    creator = {"@type": "Person"}
+                    if "creator" in json_data:
+                        existing_creators = json_data.pop("creator")
+                        if "author" not in json_data:
+                            json_data["author"] = existing_creators
+                        else:
+                            if not isinstance(json_data["author"], list):
+                                json_data["author"] = [json_data["author"]]
+                            if isinstance(existing_creators, list):
+                                json_data["author"].extend(existing_creators)
+                            else:
+                                json_data["author"].append(existing_creators)
+                                
+                    creator_node = {"@type": "Person"}
                     if user_name:
-                        creator["name"] = user_name
+                        creator_node["name"] = user_name
                     if user_email:
-                        creator["email"] = user_email
-                    json_data["creator"] = creator
+                        creator_node["email"] = user_email
+                    json_data["creator"] = creator_node
                     
                 import tempfile
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonld', delete=False) as tf:

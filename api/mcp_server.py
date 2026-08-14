@@ -8,14 +8,52 @@ import mcp.types as types
 from mcp.server.lowlevel import Server
 from starlette.responses import HTMLResponse
 
+
+import base64
+import json
+import os
+
 API_BASE = os.environ.get("API_BASE", "http://localhost:7013")
 MCP_DOMAIN = os.environ.get("MCP_DOMAIN", "mcp.dev.codata.org")
+
+def get_odrl_token():
+    auth_file = os.path.expanduser("~/.odrl/authorize")
+    if os.path.exists(auth_file):
+        try:
+            with open(auth_file, "r") as f:
+                return base64.b64encode(f.read().encode("utf-8")).decode("utf-8")
+        except:
+            pass
+    return None
+
+def get_user_info_from_odrl():
+    auth_file = os.path.expanduser("~/.odrl/authorize")
+    if os.path.exists(auth_file):
+        try:
+            with open(auth_file, "r") as f:
+                data = json.load(f)
+                did = data.get("did", "")
+                if did:
+                    short_did = did.split(":")[-1][:8]
+                    return {"name": f"did_{short_did}", "preferred_username": f"did_{short_did}", "email": did}
+        except:
+            pass
+    return None
+
+SERVER_USER_INFO = get_user_info_from_odrl()
+
+def get_auth_headers(base_headers=None):
+    headers = base_headers.copy() if base_headers else {}
+    token = get_odrl_token()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 app = Server("Croissant MCP")
 
 async def search_croissant_datasets(q: str, limit: int = 10, page: int = 1, format: str = "json-ld") -> list[types.TextContent]:
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=get_auth_headers(get_auth_headers())) as client:
             response = await client.get(f"{API_BASE}/search", params={"q": q, "limit": limit, "page": page})
             response.raise_for_status()
             data = response.json()
@@ -69,7 +107,7 @@ async def elasticsearch_fulltext_search(q: str, limit: int = 10, format: str = "
                 }
             }
         }
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=get_auth_headers(get_auth_headers())) as client:
             response = await client.post(
                 f"{es_url}/croissant/_search",
                 json=payload,
@@ -124,7 +162,7 @@ async def ask_expert(index: str, q: str, limit: int = 10) -> list[types.TextCont
                 }
             }
         }
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=get_auth_headers(get_auth_headers())) as client:
             response = await client.post(
                 f"{es_url}/{index}/_search",
                 json=payload,
@@ -192,7 +230,7 @@ async def read_vault_article(url_or_filename: str) -> list[types.TextContent]:
 
     minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
     
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(headers=get_auth_headers()) as client:
         try:
             # Try original filename
             minio_url = f"{minio_base}/vault/{filename}"
@@ -360,6 +398,28 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None) 
                         "encodingFormat": "text/markdown"
                     })
                 payload_dict["url"] = md_url
+                if SERVER_USER_INFO and SERVER_USER_INFO.get("email"):
+                    did_str = SERVER_USER_INFO.get("email")
+                    creator_node = {
+                        "@type": "Person",
+                        "name": SERVER_USER_INFO.get("name", "MCP Agent User"),
+                        "identifier": did_str
+                    }
+                    
+                    if "creator" in payload_dict:
+                        existing_creators = payload_dict.pop("creator")
+                        if "author" not in payload_dict:
+                            payload_dict["author"] = existing_creators
+                        else:
+                            if not isinstance(payload_dict["author"], list):
+                                payload_dict["author"] = [payload_dict["author"]]
+                            if isinstance(existing_creators, list):
+                                payload_dict["author"].extend(existing_creators)
+                            else:
+                                payload_dict["author"].append(existing_creators)
+                                
+                    payload_dict["creator"] = [creator_node]
+
                 jsonld_payload = json.dumps(payload_dict, indent=2)
             elif isinstance(jsonld_payload, dict):
                 jsonld_payload = json.dumps(jsonld_payload, indent=2)
@@ -390,7 +450,7 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None) 
 
 async def get_croissant_dataset(id: str) -> list[types.TextContent]:
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=get_auth_headers(get_auth_headers())) as client:
             response = await client.get(f"{API_BASE}/croissant", params={"id": id})
             response.raise_for_status()
             return [types.TextContent(type="text", text=json.dumps(response.json(), indent=2))]
@@ -402,7 +462,7 @@ async def get_hazard_info_profiles(q: str = None) -> list[types.TextContent]:
         params = {}
         if q:
             params["q"] = q
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=get_auth_headers(get_auth_headers())) as client:
             response = await client.get(f"{API_BASE}/hazard-info", params=params)
             response.raise_for_status()
             data = response.json()
@@ -413,7 +473,7 @@ async def get_hazard_info_profiles(q: str = None) -> list[types.TextContent]:
 
 async def get_hazard_translation(hips_code: str, lang_code: str) -> list[types.TextContent]:
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=get_auth_headers(get_auth_headers())) as client:
             info_resp = await client.get(f"{API_BASE}/hazard-info", params={"q": hips_code})
             info_resp.raise_for_status()
             data = info_resp.json()
@@ -478,7 +538,7 @@ async def predict_missing_variable_info(variables, dataset_title="Dataset"):
     ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
     
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=120.0, headers=get_auth_headers(get_auth_headers())) as client:
             res = await client.post(f"{ollama_host}/api/generate", json={
                 "model": "llama3.1",
                 "prompt": prompt,
@@ -510,7 +570,7 @@ async def predict_missing_variable_info(variables, dataset_title="Dataset"):
 
 async def extract_variables_from_croissant(dataset_id_or_url: str) -> list[types.TextContent]:
     try:
-        async with httpx.AsyncClient(timeout=30.0, headers={"User-Agent": "curl/7.68.0"}) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=get_auth_headers({"User-Agent": "curl/7.68.0"})) as client:
             # 1. Lookup in Elasticsearch first
             es_url = os.environ.get("ELASTICSEARCH_URL", "http://localhost:9200").rstrip("/")
             try:
@@ -660,7 +720,7 @@ async def extract_variables_from_croissant(dataset_id_or_url: str) -> list[types
 
 async def extract_variables_from_oai(url: str) -> list[types.TextContent]:
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=get_auth_headers(get_auth_headers())) as client:
             response = await client.get(f"{API_BASE}/variables/oai", params={"url": url})
             response.raise_for_status()
             data = response.json()
@@ -752,7 +812,7 @@ async def ingest_to_qlever(jsonld_payload: str = None, file_path: str = None, re
         else:
             return [types.TextContent(type="text", text="Error: Must provide either jsonld_payload or file_path")]
             
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=60.0, headers=get_auth_headers(get_auth_headers())) as client:
             response = await client.post(f"{API_BASE}/add_record", params={"rebuild": str(rebuild).lower()}, content=payload)
             response.raise_for_status()
             data = response.json()
@@ -1024,85 +1084,11 @@ async def list_tools() -> list[types.Tool]:
         )
     ]
 
-SERVER_ACCESS_TOKEN = None
-SERVER_USER_INFO = None
-PENDING_DEVICE_CODE = None
-DEVICE_CODE_EXPIRES_AT = 0
-
 async def check_authentication() -> str | None:
-    global SERVER_ACCESS_TOKEN, SERVER_USER_INFO, PENDING_DEVICE_CODE, DEVICE_CODE_EXPIRES_AT
-    
-    issuer = os.environ.get("OAUTH_ISSUER")
-    client_id = os.environ.get("OAUTH_CLIENT_ID")
-    
-    if not issuer or not client_id:
-        return None
-        
-    issuer = issuer.rstrip("/")
-    
-    if SERVER_ACCESS_TOKEN:
-        return None
-        
-    import time
-    if PENDING_DEVICE_CODE:
-        if time.time() > DEVICE_CODE_EXPIRES_AT:
-            PENDING_DEVICE_CODE = None
-            return "Your previous authentication link expired. Please run the tool again to get a new link."
-            
-        token_url = f"{issuer}/oauth/token"
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            res = await client.post(token_url, data={
-                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-                "device_code": PENDING_DEVICE_CODE,
-                "client_id": client_id
-            })
-            
-            if res.status_code == 200:
-                data = res.json()
-                SERVER_ACCESS_TOKEN = data.get("access_token")
-                PENDING_DEVICE_CODE = None
-                
-                # Fetch user info
-                userinfo_url = f"{issuer}/userinfo"
-                async with httpx.AsyncClient(timeout=10.0) as u_client:
-                    u_res = await u_client.get(userinfo_url, headers={"Authorization": f"Bearer {SERVER_ACCESS_TOKEN}"})
-                    if u_res.status_code == 200:
-                        SERVER_USER_INFO = u_res.json()
-                        
-                return None
-            else:
-                data = res.json()
-                error = data.get("error")
-                if error == "authorization_pending":
-                    return "You haven't finished authenticating yet. Please complete the login in your browser and run this tool again."
-                elif error == "slow_down":
-                    return "Please wait a moment and try running the tool again."
-                elif error == "expired_token":
-                    PENDING_DEVICE_CODE = None
-                    return "The authentication link expired. Please run the tool again for a new link."
-                else:
-                    PENDING_DEVICE_CODE = None
-                    return f"Authentication failed ({error}). Please run the tool again."
-                    
-    device_url = f"{issuer}/oauth/device/code"
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        res = await client.post(device_url, data={
-            "client_id": client_id,
-            "scope": "openid profile email offline_access"
-        })
-        
-        if res.status_code == 200:
-            data = res.json()
-            PENDING_DEVICE_CODE = data.get("device_code")
-            DEVICE_CODE_EXPIRES_AT = time.time() + data.get("expires_in", 900)
-            
-            user_code = data.get("user_code")
-            verification_uri = data.get("verification_uri_complete")
-            
-            return f"This tool requires user authentication to proceed. Please provide the user with the following authorization link and ask them to open it in their browser to log in:\n\nURL: {verification_uri}\nCode: {user_code}\n\nOnce they confirm they have logged in, run this tool again."
-        else:
-            return f"Failed to initiate authentication: {res.text}"
-
+    token = get_odrl_token()
+    if not token:
+        return "Authentication required: ~/.odrl/authorize not found. Please create it or authenticate on the MCP front page."
+    return None
 @click.command()
 @click.option("--port", default=7070, help="Port to listen on for SSE")
 @click.option(
@@ -1112,6 +1098,8 @@ async def check_authentication() -> str | None:
     help="Transport type. Always defaults to stdio; pass --transport sse to start the HTTP/SSE server.",
 )
 def main(port: int, transport: str) -> int:
+    if not get_odrl_token():
+        print("WARNING: ~/.odrl/authorize not found. Please create it using odrl-cli or authenticate on the front page.", flush=True)
     if transport == "sse":
         from mcp.server.sse import SseServerTransport
         from starlette.applications import Starlette
@@ -1179,12 +1167,22 @@ def main(port: int, transport: str) -> int:
                     .card {{ background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; margin-bottom: 20px; }}
                     code {{ background: #eef1f5; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.9em; }}
                     .endpoint {{ font-weight: bold; color: #0056b3; }}
+                    .btn {{ display: inline-block; padding: 10px 15px; margin-right: 10px; background: #0056b3; color: white; text-decoration: none; border-radius: 4px; }}
+                    .btn:hover {{ background: #004494; }}
                 </style>
             </head>
             <body>
                 <h1>🥐 Semantic Croissant MCP Server</h1>
                 <p>Welcome! This is a Model Context Protocol (MCP) server that exposes the internal Semantic Croissant dataset catalog.</p>
                 
+                <div class="card">
+                    <h2>Authentication (ODRL)</h2>
+                    <p>Status: <strong>{'Authenticated via ~/.odrl/authorize' if get_odrl_token() else 'Not Authenticated'}</strong></p>
+                    <p>Link your identity to ODRL policies:</p>
+                    <a href="https://odrl.dev.codata.org/vcs" class="btn">Login with Google</a>
+                    <a href="https://odrl.dev.codata.org/vcs" class="btn">Login with GitHub</a>
+                </div>
+
                 <div class="card">
                     <h2>Available Tools</h2>
                     <ul>
@@ -1197,7 +1195,7 @@ def main(port: int, transport: str) -> int:
                 <div class="card">
                     <h2>Connection Details</h2>
                     <p>This server provides an SSE (Server-Sent Events) transport for MCP.</p>
-                    <p><strong>SSE Endpoint:</strong> <span class="endpoint">https://{MCP_DOMAIN}/mcp/sse</span></p>
+                    <p><strong>SSE Endpoint:</strong> <span class="endpoint">https://{{MCP_DOMAIN}}/mcp/sse</span></p>
                 </div>
                 
                 <p><small>Powered by <a href="https://github.com/ad-freiburg/qlever">QLever</a> and the standard python MCP SDK.</small></p>
@@ -1211,7 +1209,7 @@ def main(port: int, transport: str) -> int:
             filename = request.path_params["filename"]
             minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
             minio_url = f"{minio_base}/vault/{filename}"
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(headers=get_auth_headers()) as client:
                 try:
                     r = await client.get(minio_url)
                     if r.status_code == 200:
@@ -1254,7 +1252,7 @@ def main(port: int, transport: str) -> int:
             filename = request.path_params["filename"]
             minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
             minio_url = f"{minio_base}/downloads/{filename}"
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(headers=get_auth_headers()) as client:
                 try:
                     r = await client.get(minio_url)
                     if r.status_code == 200:
@@ -1284,7 +1282,7 @@ def main(port: int, transport: str) -> int:
             if request.url.query:
                 target_url += f"?{request.url.query}"
                 
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(headers=get_auth_headers()) as client:
                 try:
                     method = request.method
                     headers = dict(request.headers)
