@@ -180,6 +180,17 @@ docker build -t api-croissant-live api/
 docker compose --profile croissant-live up -d --force-recreate mcp-croissant-live
 ```
 
+### ODRL / DID Authentication
+
+The MCP Server integrates with the CODATA ODRL infrastructure for decentralized identity management. This ensures that any Croissant datasets or summaries you save to the Vault are properly attributed to your Decentralized Identifier (DID).
+
+To enable ODRL Authentication:
+1. Ensure the server is running (`docker compose --profile croissant-live up -d`).
+2. Navigate to `https://mcp.dev.codata.org/` in your browser. This root page acts as your Authentication Dashboard.
+3. Click either the **Google** or **GitHub** OAuth buttons to securely redirect to the external ODRL Wallet (`https://odrl.dev.codata.org/vcs`).
+4. Once authenticated, an authorization token (`~/.odrl/authorize`) containing your DID is saved to your local machine.
+5. The MCP containers automatically mount this `~/.odrl` directory. Any subsequent AI agent commands that export Croissant JSON-LD or save to the Vault will detect it and uniquely set your DID in the `creator` field.
+
 ### Connecting AI Assistants (IDEs & Desktop)
 
 You can connect your IDEs to the public endpoint at `https://mcp.dev.codata.org/mcp` using the configurations below.
