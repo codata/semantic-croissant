@@ -365,7 +365,7 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None) 
                             parts = obj.object_name.replace(".md", "").split("_")
                             author = parts[-3] if len(parts) >= 3 else "unknown"
                             history_links.append(f"- [{obj.object_name}](https://mcp.dev.codata.org/vault/{obj.object_name}) (Author: {author})")
-                            history_objects.append(obj.object_name)
+                            history_objects.append((obj.object_name, author))
                     
                     if history_links:
                         history_md = f"\n\n# History for {base_prefix}\n" + "\n".join(sorted(history_links)) + "\n"
@@ -375,32 +375,80 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None) 
                         elif not isinstance(payload_dict["isBasedOn"], list):
                             payload_dict["isBasedOn"] = [payload_dict["isBasedOn"]]
                         
-                        for obj_name in sorted(history_objects):
+                        for obj_name, obj_author in sorted(history_objects, key=lambda x: x[0]):
                             payload_dict["isBasedOn"].append({
                                 "@type": "CreativeWork",
                                 "name": obj_name,
-                                "url": f"https://mcp.dev.codata.org/vault/{obj_name}"
+                                "url": f"https://mcp.dev.codata.org/vault/{obj_name}",
+                                "creator": {
+                                    "@type": "Person",
+                                    "name": obj_author
+                                }
                             })
                 except Exception as e:
                     print(f"Warning: Failed to fetch history for prefix {prefix}: {e}")
                 
+                ai_model = None
+                try:
+                    ctx = app.request_context
+                    if hasattr(ctx, "session") and hasattr(ctx.session, "client_params"):
+                        cparams = ctx.session.client_params
+                        if cparams:
+                            cinfo = getattr(cparams, "clientInfo", None) if not isinstance(cparams, dict) else cparams.get("clientInfo")
+                            if cinfo:
+                                if isinstance(cinfo, dict):
+                                    ai_name = cinfo.get("name", "")
+                                    ai_version = cinfo.get("version", "")
+                                else:
+                                    ai_name = getattr(cinfo, "name", "")
+                                    ai_version = getattr(cinfo, "version", "")
+                                if ai_name or ai_version:
+                                    ai_model = f"{ai_name} {ai_version}".strip()
+                    if not ai_model:
+                        ai_model = "Unknown AI Agent (via MCP)"
+                except Exception as e:
+                    print(f"Warning: Failed to extract AI model info: {e}")
+                    ai_model = "Unknown AI Agent (via MCP)"
+
+                if "isBasedOn" not in payload_dict:
+                    payload_dict["isBasedOn"] = []
+                elif not isinstance(payload_dict["isBasedOn"], list):
+                    payload_dict["isBasedOn"] = [payload_dict["isBasedOn"]]
+                
+                md_is_based_on = {
+                    "@type": "CreativeWork",
+                    "name": f"{prefix} Markdown Content",
+                    "url": md_url
+                }
+                if ai_model:
+                    md_is_based_on["creator"] = {"@id": "#ai-model"}
+                payload_dict["isBasedOn"].append(md_is_based_on)
+                
+                payload_dict["url"] = md_url
+
                 if "distribution" not in payload_dict:
                     payload_dict["distribution"] = []
                 elif isinstance(payload_dict["distribution"], dict):
                     payload_dict["distribution"] = [payload_dict["distribution"]]
                     
                 if isinstance(payload_dict.get("distribution"), list):
-                    payload_dict["distribution"].append({
+                    md_dist = {
                         "@type": "cr:FileObject",
                         "name": f"{prefix} Markdown Content",
                         "description": "The unstructured markdown content related to this semantic dataset.",
                         "contentUrl": md_url,
                         "encodingFormat": "text/markdown"
-                    })
-                payload_dict["url"] = md_url
+                    }
+                    if ai_model:
+                        md_dist["creator"] = {"@id": "#ai-model"}
+                    payload_dict["distribution"].append(md_dist)
+                    
                 if SERVER_USER_INFO and SERVER_USER_INFO.get("email"):
                     did_str = SERVER_USER_INFO.get("email")
+                    safe_u = __import__("re").sub(r'[^a-zA-Z0-9]', '_', SERVER_USER_INFO.get("name", "anonymous")).lower()
+                    author_id = safe_u.split("_")[-1] if "_" in safe_u else safe_u
                     creator_node = {
+                        "@id": f"#{author_id}",
                         "@type": "Person",
                         "name": SERVER_USER_INFO.get("name", "MCP Agent User"),
                         "identifier": did_str
@@ -419,6 +467,16 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None) 
                                 payload_dict["author"].append(existing_creators)
                                 
                     payload_dict["creator"] = [creator_node]
+                    
+                    if ai_model:
+                        import datetime
+                        ai_node = {
+                            "@id": "#ai-model",
+                            "@type": "SoftwareApplication",
+                            "name": ai_model,
+                            "dateCreated": datetime.datetime.utcnow().isoformat() + "Z"
+                        }
+                        payload_dict["creator"].append(ai_node)
 
                 jsonld_payload = json.dumps(payload_dict, indent=2)
             elif isinstance(jsonld_payload, dict):
@@ -536,9 +594,14 @@ async def predict_missing_variable_info(variables, dataset_title="Dataset"):
     prompt += json.dumps(missing, indent=2)
     
     ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+    ollama_token = os.environ.get("OLLAMA_TOKEN")
+    
+    headers = {}
+    if ollama_token:
+        headers["Authorization"] = f"Bearer {ollama_token}"
     
     try:
-        async with httpx.AsyncClient(timeout=120.0, headers=get_auth_headers(get_auth_headers())) as client:
+        async with httpx.AsyncClient(timeout=120.0, headers=headers) as client:
             res = await client.post(f"{ollama_host}/api/generate", json={
                 "model": "llama3.1",
                 "prompt": prompt,
