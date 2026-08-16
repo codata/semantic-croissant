@@ -14,3 +14,4 @@ PyJWT
 cryptography
 cloudscraper
 minio
+playwright

@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y docker.io curl jq
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN playwright install --with-deps chromium
 
 # Create directories for processing
 RUN mkdir -p /app/incoming /app/processed
