@@ -926,7 +926,7 @@ async def extract_variables_from_oai(url: str) -> list[types.TextContent]:
     except Exception as e:
         return [types.TextContent(type="text", text=f"Failed to extract OAI variables: {str(e)}")]
 
-async def url_to_croissant(url: str, slice: bool = False, traverse: bool = False, reingest: bool = False) -> list[types.TextContent]:
+async def url_to_croissant(url: str, slice: bool = False, traverse: bool = False, reingest: bool = False, upload_gdrive: bool = False, upload_gdrive_folder: str = None) -> list[types.TextContent]:
     if reingest:
         auth_msg = await check_authentication()
         if auth_msg:
@@ -941,6 +941,10 @@ async def url_to_croissant(url: str, slice: bool = False, traverse: bool = False
             cmd.append("--traverse")
         if reingest:
             cmd.append("--reingest")
+        if upload_gdrive:
+            cmd.append("--upload-gdrive")
+        if upload_gdrive_folder:
+            cmd.extend(["--upload-gdrive-folder", upload_gdrive_folder])
             
         if SERVER_USER_INFO:
             user_name = SERVER_USER_INFO.get("name")
@@ -1012,6 +1016,56 @@ async def ingest_to_qlever(jsonld_payload: str = None, file_path: str = None, re
         return [types.TextContent(type="text", text=f"Failed to ingest to QLever: {str(e)}")]
 
 
+
+
+async def handle_google_drive(operation: str, filename: str = None, content: str = None, folder_id: str = None, query: str = None, file_id: str = None) -> list[types.TextContent]:
+    try:
+        import os
+        import tempfile
+        import sys
+        sys.path.append(os.path.join(os.getcwd(), 'convertors'))
+        from gdrive_utils import upload_to_gdrive, search_gdrive, read_gdrive_file
+        
+        user_info = get_user_info_from_odrl()
+        user_email = user_info.get("email", "unknown@example.com") if user_info else "unknown@example.com"
+        
+        if operation == "upload":
+            if not filename or not content or not folder_id:
+                return [types.TextContent(type="text", text="Error: upload operation requires filename, content, and folder_id.")]
+            temp_dir = tempfile.mkdtemp()
+            file_path = os.path.join(temp_dir, filename)
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            uploaded_ids = upload_to_gdrive(user_email, [file_path], target_folder_id=folder_id)
+            if uploaded_ids:
+                doc_link = f"https://docs.google.com/document/d/{uploaded_ids[0]}/edit" if filename.endswith(".md") else f"https://drive.google.com/file/d/{uploaded_ids[0]}/view"
+                return [types.TextContent(type="text", text=f"Successfully uploaded {filename} to Google Drive folder {folder_id}. Link: {doc_link}")]
+            return [types.TextContent(type="text", text=f"Failed to upload {filename} to Google Drive.")]
+            
+        elif operation == "search":
+            if not query:
+                return [types.TextContent(type="text", text="Error: search operation requires a query.")]
+            results = search_gdrive(query, folder_id)
+            if not results:
+                return [types.TextContent(type="text", text="No files found.")]
+            formatted = "\\n".join([f"- {r['name']} (ID: {r['id']}, Type: {r.get('mimeType')})" for r in results])
+            return [types.TextContent(type="text", text=f"Search Results:\\n{formatted}")]
+            
+        elif operation == "read":
+            if not file_id:
+                return [types.TextContent(type="text", text="Error: read operation requires a file_id.")]
+            file_content = read_gdrive_file(file_id)
+            if file_content is None:
+                return [types.TextContent(type="text", text=f"Failed to read file {file_id}.")]
+            return [types.TextContent(type="text", text=file_content)]
+            
+        else:
+            return [types.TextContent(type="text", text=f"Error: Unknown operation {operation}")]
+            
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"Error in Google Drive operation: {e}")]
+
+
 async def get_planner(query: str = None) -> list[types.TextContent]:
     text = """
 SYSTEM INSTRUCTION FOR LLM - Navigation Guide:
@@ -1035,7 +1089,7 @@ SYSTEM INSTRUCTION FOR LLM - Navigation Guide:
 
 5. If the user is asking to "check the list of CODATA MCP tools" or similar:
    - Stop using tools. 
-   - Tell the user: "Here are the available CODATA MCP tools: search_croissant_datasets, elasticsearch_fulltext_search, ask_expert, get_croissant_dataset, hazards_info_profile, hazards_translation, extract_variables_from_croissant, extract_variables_from_oai, planner, url_to_croissant, ingest_to_qlever, read_vault_article."
+   - Tell the user: "Here are the available CODATA MCP tools: search_croissant_datasets, elasticsearch_fulltext_search, ask_expert, get_croissant_dataset, hazards_info_profile, hazards_translation, extract_variables_from_croissant, extract_variables_from_oai, planner, url_to_croissant, ingest_to_qlever, read_vault_article, google-drive."
    
 6. If you are saving numbers and figures to the vault (e.g., using save_to_vault), you MUST save them precisely and format them in markdown (e.g., as markdown tables).
 """
@@ -1093,13 +1147,24 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
         return await url_to_croissant(
             url=arguments.get("url"),
             slice=arguments.get("slice", False),
-            traverse=arguments.get("traverse", False)
+            traverse=arguments.get("traverse", False),
+            upload_gdrive=arguments.get("upload_gdrive", False),
+            upload_gdrive_folder=arguments.get("upload_gdrive_folder")
         )
     elif name == "ingest_to_qlever":
         return await ingest_to_qlever(
             jsonld_payload=arguments.get("jsonld_payload"),
             file_path=arguments.get("file_path"),
             rebuild=arguments.get("rebuild", False)
+        )
+    elif name == "google-drive":
+        return await handle_google_drive(
+            operation=arguments.get("operation"),
+            filename=arguments.get("filename"),
+            content=arguments.get("content"),
+            folder_id=arguments.get("folder_id"),
+            query=arguments.get("query"),
+            file_id=arguments.get("file_id")
         )
     elif name == "planner":
         return await get_planner(query=arguments.get("query"))
@@ -1236,6 +1301,22 @@ async def list_tools() -> list[types.Tool]:
             }
         ),
         types.Tool(
+            name="google-drive",
+            description="Perform operations on Google Drive. Supported operations: 'search', 'read', 'upload'.",
+            inputSchema={
+                "type": "object",
+                "required": ["operation"],
+                "properties": {
+                    "operation": {"type": "string", "description": "The operation to perform: 'search', 'read', or 'upload'."},
+                    "query": {"type": "string", "description": "Search query for 'search' operation. E.g. \"name contains 'report'\""},
+                    "file_id": {"type": "string", "description": "The file ID for 'read' operation."},
+                    "folder_id": {"type": "string", "description": "The target folder ID for 'search' or 'upload' operations."},
+                    "filename": {"type": "string", "description": "The name of the file to create for 'upload' operation."},
+                    "content": {"type": "string", "description": "The text content for 'upload' operation."}
+                }
+            }
+        ),
+        types.Tool(
             name="url_to_croissant",
             description="Scrapes a URL (like a dataset documentation page or YouTube video) and converts it to a Croissant JSON-LD. If you pass a Google Sheets URL, it will read the sheet and process every URL found in it in batch. Does NOT ingest into QLever unless reingest=True.",
             inputSchema={
@@ -1244,7 +1325,9 @@ async def list_tools() -> list[types.Tool]:
                     "url": {"type": "string", "description": "The URL to scrape (e.g., https://huggingface.co/datasets/nyu-mll/glue) or a Google Sheets URL"},
                     "slice": {"type": "boolean", "description": "Enable slice mode to split markdown into pieces for large documents (default False)"},
                     "traverse": {"type": "boolean", "description": "Extract and link all URLs on the same level (default False)"},
-                    "reingest": {"type": "boolean", "description": "Automatically ingest the result into QLever database (default False)"}
+                    "reingest": {"type": "boolean", "description": "Automatically ingest the result into QLever database (default False)"},
+                    "upload_gdrive": {"type": "boolean", "description": "Upload the generated Croissant and markdown files to Google Drive in a folder named after the userID/email (default False)"},
+                    "upload_gdrive_folder": {"type": "string", "description": "Optional specific Google Drive Folder ID to upload to. If provided, this overrides the default name-based folder search."}
                 },
                 "required": ["url"]
             }

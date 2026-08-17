@@ -21,26 +21,10 @@ from bs4 import BeautifulSoup
 import markdownify
 from rdflib import Graph
 from youtube_transcript_api import YouTubeTranscriptApi
-from playwright.sync_api import sync_playwright
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 ELASTICSEARCH_URL = os.environ.get("ELASTICSEARCH_URL", "http://localhost:9200")
 MODEL_NAME = "gemma4-croissant"
-
-def fetch_with_playwright(url):
-    print(f"  -> Fetching with Playwright fallback: {url}")
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(url, wait_until="networkidle", timeout=30000)
-            page.wait_for_timeout(5000)
-            content = page.content()
-            browser.close()
-            return content
-    except Exception as e:
-        print(f"  -> Playwright fallback failed: {e}")
-        return None
 
 def fetch_youtube_transcript(url):
     print(f"Fetching YouTube transcript for {url}...")
@@ -207,61 +191,8 @@ def fetch_url_markdown(url, traverse=False):
     print(f"Fetching {url}...")
     try:
         response = scraper.get(url, timeout=30)
-        
-        content_type = response.headers.get('content-type', '').lower()
-        if 'application/pdf' in content_type or url.lower().endswith('.pdf'):
-            try:
-                from pypdf import PdfReader
-                import io
-                
-                import hashlib
-                from datetime import datetime, timezone
-
-                pdf_bytes = response.content
-                checksum = hashlib.sha256(pdf_bytes).hexdigest()
-                size = len(pdf_bytes)
-                
-                print("Detected PDF document. Extracting text...")
-                pdf_file = io.BytesIO(pdf_bytes)
-                reader = PdfReader(pdf_file)
-                text = ""
-                for page in reader.pages:
-                    extracted = page.extract_text()
-                    if extracted:
-                        text += extracted + "\n\n"
-                    
-                meta = {
-                    "name": url.split('/')[-1] or "PDF Document",
-                    "contentUrl": url,
-                    "encodingFormat": "application/pdf",
-                    "contentSize": f"{size} B",
-                    "sha256": checksum,
-                    "retrievalTimestamp": datetime.now(timezone.utc).isoformat(),
-                    "httpHeaders": dict(response.headers)
-                }
-                
-                if response.headers.get('Last-Modified'):
-                    meta["dateModified"] = response.headers.get('Last-Modified')
-                
-                if response.headers.get('ETag'):
-                    meta["version"] = response.headers.get('ETag').strip('"')
-                
-                if traverse:
-                    return text.strip(), meta, []
-                return text.strip(), meta
-            except Exception as e:
-                print(f"Failed to parse PDF: {e}")
-
-        html_text = response.text
-        if ("JavaScript is disabled" in html_text and "verify that you're not a robot" in html_text) or response.status_code in (202, 403):
-            print("Detected bot protection challenge in response. Triggering Playwright fallback...")
-            pw_content = fetch_with_playwright(url)
-            if pw_content:
-                html_text = pw_content
-        else:
-            response.raise_for_status()
-
-        soup = BeautifulSoup(html_text, 'html.parser')
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
 
         # Extract HTML-level metadata (title, meta tags, JSON-LD, etc.)
         page_meta = extract_page_meta(soup, url)
@@ -379,7 +310,7 @@ def translate_to_english(text):
     print("Translating content to English using Ollama...")
     prompt = f"Translate the following text to English. Preserve all markdown formatting exactly. Output only the translated text.\n\n{text}"
     payload = {
-        "model": MODEL_NAME,
+        "model": "gemma4:e2b",
         "prompt": prompt,
         "stream": False,
         "options": {
@@ -420,47 +351,6 @@ def get_elasticsearch_version(url, expert="/croissant"):
     except Exception as e:
         print(f"Warning: Failed to check ES version: {e}")
     return None
-
-def convert_oai_to_croissant(doc):
-    croissant = {
-        "@context": {
-            "@language": "en",
-            "@vocab": "https://schema.org/",
-            "cr": "http://mlcommons.org/croissant/",
-            "sc": "https://schema.org/",
-            "dct": "http://purl.org/dc/terms/"
-        },
-        "@type": "sc:Dataset",
-        "conformsTo": "http://mlcommons.org/croissant/1.0",
-        "name": "Unknown Dataset",
-        "description": "No description provided.",
-        "url": ""
-    }
-    if not isinstance(doc, dict): return None
-    metadata = doc.get("ore:describes", doc)
-    
-    if "title" in metadata: croissant["name"] = metadata["title"]
-    elif "schema:name" in metadata: croissant["name"] = metadata["schema:name"]
-    elif "name" in metadata: croissant["name"] = metadata["name"]
-    
-    # Handle Dataverse specific description field
-    if "citation:dsDescription" in metadata:
-        desc_obj = metadata["citation:dsDescription"]
-        if isinstance(desc_obj, list) and len(desc_obj) > 0:
-            if "citation:dsDescriptionValue" in desc_obj[0]:
-                croissant["description"] = desc_obj[0]["citation:dsDescriptionValue"]
-    elif "dsDescription" in metadata:
-        desc_obj = metadata["dsDescription"]
-        if isinstance(desc_obj, list) and len(desc_obj) > 0:
-            if "dsDescriptionValue" in desc_obj[0]:
-                croissant["description"] = desc_obj[0]["dsDescriptionValue"]
-    elif "schema:description" in metadata: croissant["description"] = metadata["schema:description"]
-    elif "description" in metadata: croissant["description"] = metadata["description"]
-    
-    if "url" in metadata: croissant["url"] = metadata["url"]
-    elif "@id" in metadata: croissant["url"] = metadata["@id"]
-    elif "@id" in doc: croissant["url"] = doc["@id"]
-    return croissant
 
 def index_into_elasticsearch(url, json_data, markdown_data, expert="/croissant"):
     # Extract index name from expert path (e.g., /expert/honduras -> honduras)
@@ -602,6 +492,7 @@ def index_into_elasticsearch(url, json_data, markdown_data, expert="/croissant")
 
 def check_dataverse_direct_export(url):
     try:
+        # Resolve DOI redirects if it's a doi.org link
         if "doi.org" in url:
             res = requests.head(url, allow_redirects=True, timeout=10)
             target_url = res.url
@@ -614,47 +505,19 @@ def check_dataverse_direct_export(url):
             persistent_id = query.get("persistentId", [""])[0]
             if persistent_id:
                 base_url = f"{parsed.scheme}://{parsed.netloc}"
-                
-                for exporter in ["croissant", "schema.org"]:
-                    export_url = f"{base_url}/api/datasets/export?exporter={exporter}&persistentId={persistent_id}"
-                    print(f"Dataverse URL detected. Trying direct export from {export_url}")
-                    res = requests.get(export_url, timeout=15)
-                    
-                    if res.status_code == 200:
-                        if 'json' in res.headers.get('content-type', '').lower():
-                            try:
-                                data = res.json()
-                                if data.get("status") != "ERROR":
-                                    return data
-                            except json.JSONDecodeError:
-                                pass
-                        else:
-                            print("Direct export returned non-JSON. Trying Playwright...")
-                            pw_content = fetch_with_playwright(export_url)
-                            if pw_content:
-                                try:
-                                    soup = BeautifulSoup(pw_content, 'html.parser')
-                                    data = json.loads(soup.body.text)
-                                    if data.get("status") != "ERROR":
-                                        return data
-                                except Exception:
-                                    pass
-                    elif res.status_code in (202, 403) and 'html' in res.headers.get('content-type', '').lower():
-                        print("Direct export intercepted by WAF. Trying Playwright...")
-                        pw_content = fetch_with_playwright(export_url)
-                        if pw_content:
-                            try:
-                                soup = BeautifulSoup(pw_content, 'html.parser')
-                                data = json.loads(soup.body.text)
-                                if data.get("status") != "ERROR":
-                                    return data
-                            except Exception:
-                                pass
+                export_url = f"{base_url}/api/datasets/export?exporter=croissant&persistentId={persistent_id}"
+                print(f"Dataverse URL detected. Trying direct Croissant export from {export_url}")
+                res = requests.get(export_url, timeout=15)
+                if res.status_code == 200:
+                    try:
+                        return res.json()
+                    except json.JSONDecodeError:
+                        pass
     except Exception as e:
         print(f"Direct export check failed: {e}")
     return None
 
-def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, user_name=None, user_email=None, index=False, elastic=False, expert="/expert/croissant", upload_gdrive=False, upload_gdrive_folder=None):
+def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, user_name=None, user_email=None, index=False, elastic=False, expert="/expert/croissant"):
     direct_jsonld = check_dataverse_direct_export(url)
     if direct_jsonld:
         print("✓ Successfully retrieved Croissant JSON-LD directly from Dataverse API!")
@@ -684,8 +547,6 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
             qs = urllib.parse.parse_qsl(parsed_url.query)
             for k, v in qs:
                 safe_name += "_" + v
-        import re
-        safe_name = re.sub(r'[^a-zA-Z0-9_]', '_', safe_name)
         if not safe_name:
             safe_name = "url_output"
             
@@ -710,8 +571,6 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
         if elastic:
             index_into_elasticsearch(url, json_data, "", expert)
             
-        if upload_gdrive and user_email:
-            print(f"Skipping Google Drive upload for direct Dataverse export because no Markdown content was generated (only Croissant metadata is available).")
         return
 
     page_meta = None
@@ -733,8 +592,13 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
     # Generate a safe filename based on the URL
     parsed_url = urllib.parse.urlparse(url)
     safe_name = parsed_url.netloc + parsed_url.path
-    import re
-    safe_name = re.sub(r'[^a-zA-Z0-9_]', '_', safe_name)
+    safe_name = safe_name.replace("/", "_").replace(".", "_")
+    
+    if parsed_url.query:
+        qs = urllib.parse.parse_qsl(parsed_url.query)
+        for k, v in qs:
+            safe_name += "_" + v
+            
     if not safe_name:
         safe_name = "url_output"
         
@@ -742,17 +606,11 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
     safe_name = os.path.join("data", "ca4eosc", safe_name)
 
     md_filename = f"{safe_name}_content.md"
-    croissant_filename = os.path.basename(f"{safe_name}_croissant.jsonld")
-    header = f"# Document: {url}\n\n* **Croissant Metadata**: [{croissant_filename}](./{croissant_filename})\n\n"
-    
-    # Don't duplicate if already present
-    if not markdown_data.startswith(f"# Document: {url}"):
-        markdown_data = header + markdown_data
-        
     with open(md_filename, "w", encoding='utf-8') as f:
         f.write(markdown_data)
-        
     print(f"Extracted markdown saved to {md_filename}")
+
+    lang = "en"
     try:
         from langdetect import detect
         lang = detect(markdown_data)
@@ -1090,24 +948,12 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                 
                 # Write to temporary file for rdflib
                 if user_name or user_email:
-                    if "creator" in json_data:
-                        existing_creators = json_data.pop("creator")
-                        if "author" not in json_data:
-                            json_data["author"] = existing_creators
-                        else:
-                            if not isinstance(json_data["author"], list):
-                                json_data["author"] = [json_data["author"]]
-                            if isinstance(existing_creators, list):
-                                json_data["author"].extend(existing_creators)
-                            else:
-                                json_data["author"].append(existing_creators)
-                                
-                    creator_node = {"@type": "Person"}
+                    creator = {"@type": "Person"}
                     if user_name:
-                        creator_node["name"] = user_name
+                        creator["name"] = user_name
                     if user_email:
-                        creator_node["email"] = user_email
-                    json_data["creator"] = creator_node
+                        creator["email"] = user_email
+                    json_data["creator"] = creator
                     
                 import tempfile
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonld', delete=False) as tf:
@@ -1195,50 +1041,13 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
         if elastic:
             index_into_elasticsearch(url, json_data, markdown_data, expert)
 
-        if upload_gdrive and user_email:
-            try:
-                # Extract references from the Croissant JSON-LD and append to Markdown
-                references = []
-                for key in ["citation", "isBasedOn", "url"]:
-                    if key in json_data:
-                        val = json_data[key]
-                        if isinstance(val, list):
-                            references.extend(val)
-                        else:
-                            references.append(val)
-                            
-                if "unmappedFields" in json_data:
-                    for field in json_data["unmappedFields"]:
-                        if isinstance(field, dict) and field.get("key", "").lower() in ["references", "reference", "citation", "citations"]:
-                            val = field.get("value")
-                            if isinstance(val, list):
-                                references.extend(val)
-                            elif val:
-                                references.append(val)
-                                
-                if references:
-                    with open(md_filename, "a", encoding='utf-8') as f:
-                        f.write("\n\n---\n## References\n")
-                        for i, ref in enumerate(references, 1):
-                            # Filter out complex objects and just use their IDs/names or strings
-                            ref_text = str(ref)
-                            if isinstance(ref, dict):
-                                ref_text = ref.get("url", ref.get("name", ref.get("@id", str(ref))))
-                            f.write(f"{i}. {ref_text}\n")
-                            
-                from gdrive_utils import upload_to_gdrive
-                print(f"Uploading output to Google Drive folder: {user_email}")
-                upload_to_gdrive(user_email, [md_filename], target_folder_id=upload_gdrive_folder)
-            except Exception as e:
-                print(f"Failed to upload to Google Drive: {e}")
-
             
     except requests.exceptions.Timeout:
         print(f"Failed to process {url}: Request timed out after 600s")
     except Exception as e:
         print(f"Failed to process {url}: {e}")
 
-def process_spreadsheet(url, is_slice=False, traverse=False, reingest=False, user_name=None, user_email=None, index=False, elastic=False, expert="/expert/croissant", upload_gdrive=False, upload_gdrive_folder=None):
+def process_spreadsheet(url, is_slice=False, traverse=False, reingest=False, user_name=None, user_email=None, index=False, elastic=False, expert="/expert/croissant"):
     print(f"Detected Google Spreadsheet URL: {url}")
     # Convert edit url to export url
     if "/edit" in url:
@@ -1292,7 +1101,7 @@ def process_spreadsheet(url, is_slice=False, traverse=False, reingest=False, use
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {
-            executor.submit(convert_to_croissant, target_url, is_slice, traverse, reingest, user_name, user_email, index, elastic, expert, upload_gdrive, upload_gdrive_folder): target_url
+            executor.submit(convert_to_croissant, target_url, is_slice, traverse, reingest, user_name, user_email, index, elastic, expert): target_url
             for target_url in urls_to_process
         }
         
@@ -1304,89 +1113,6 @@ def process_spreadsheet(url, is_slice=False, traverse=False, reingest=False, use
             except Exception as e:
                 print(f"\n[{i}/{len(urls_to_process)}] Failed processing: {target_url} - {e}")
 
-def process_local_file(file_path, args):
-    print(f"\nProcessing local file: {file_path}")
-    try:
-        if os.path.getsize(file_path) == 0:
-            print(f"Skipping empty file: {file_path}")
-            return
-            
-        with open(file_path, "r", encoding="utf-8") as f:
-            json_data = json.load(f)
-
-        if getattr(args, "format", "croissant") == "oai":
-            if isinstance(json_data, list):
-                if len(json_data) == 1:
-                    json_data = json_data[0]
-                else:
-                    json_data = {"items": json_data}
-            json_data = convert_oai_to_croissant(json_data)
-            if not json_data:
-                print("Could not convert OAI to Croissant, skipping...")
-                return
-
-        # Get URL
-        url_val = json_data.get("contentUrl") or json_data.get("url")
-        if not url_val:
-            url_val = f"file://{os.path.abspath(file_path)}"
-
-        # Try to extract markdown data from isBasedOn or nearby file
-        markdown_data = ""
-        md_path = None
-        
-        # Check isBasedOn references
-        if "isBasedOn" in json_data:
-            items = json_data["isBasedOn"] if isinstance(json_data["isBasedOn"], list) else [json_data["isBasedOn"]]
-            for item in items:
-                if isinstance(item, dict) and item.get("encodingFormat") == "text/markdown" and item.get("contentUrl"):
-                    url_ref = item["contentUrl"]
-                    if url_ref.startswith("file://"):
-                        candidate = url_ref.replace("file://", "")
-                        if os.path.exists(candidate):
-                            md_path = candidate
-                            break
-        
-        # Check nearby candidate if not found
-        if not md_path:
-            candidate1 = file_path.replace("_croissant.jsonld", "_content.md").replace(".jsonld", "_content.md")
-            candidate2 = file_path.replace("_croissant.jsonld", "_en_content.md").replace(".jsonld", "_en_content.md")
-            if os.path.exists(candidate1):
-                md_path = candidate1
-            elif os.path.exists(candidate2):
-                md_path = candidate2
-
-        if md_path and os.path.exists(md_path):
-            with open(md_path, "r", encoding="utf-8") as f:
-                markdown_data = f.read()
-            print(f"  Loaded markdown content from: {md_path}")
-        else:
-            print("  Warning: No markdown content file found.")
-
-        # Validate with Elasticsearch and update version if it exists
-        if "version" not in json_data:
-            json_data["version"] = "1.0"
-        es_version = get_elasticsearch_version(url_val, args.expert)
-        if es_version:
-            json_data["version"] = str(es_version)
-            print(f"  ✓ Resource already in Elasticsearch. Updating version to {es_version}")
-            # Rewrite the updated JSON-LD back to the local file
-            if getattr(args, "format", "croissant") != "oai":
-                with open(file_path, "w", encoding="utf-8") as f:
-                    json.dump(json_data, f, indent=2)
-
-        if args.reingest:
-            print("\n--- Ingesting into QLever ---")
-            api_base = os.environ.get("API_BASE", "http://localhost:7013")
-            res_ql = requests.post(f"{api_base}/add_record", json=json_data, timeout=10)
-            res_ql.raise_for_status()
-            print(f"✓ Successfully ingested into QLever!")
-
-        if args.elastic:
-            index_into_elasticsearch(url_val, json_data, markdown_data, args.expert)
-
-    except Exception as e:
-        print(f"✗ Failed to process file {file_path}: {e}")
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert web pages to Croissant JSON-LD.")
     parser.add_argument("url", help="The URL to scrape (e.g. https://ollama.com/library/ornith/tags)")
@@ -1395,15 +1121,12 @@ if __name__ == "__main__":
     parser.add_argument("--reingest", action="store_true", help="Automatically ingest the result into QLever database")
     parser.add_argument("--index-ollama", action="store_true", help="Index the result into Ollama (provenance indexing). Implied by --reingest")
     parser.add_argument("--index", type=str, help="Index name for Elasticsearch (e.g., expert/dataverse). Overrides --expert.")
-    parser.add_argument("--format", type=str, default="croissant", help="Input format (croissant or oai)")
     parser.add_argument("--elastic", action="store_true", help=f"Index JSON-LD into Elasticsearch (default: {ELASTICSEARCH_URL})")
     parser.add_argument("--user-name", type=str, help="Name of the authenticated user")
     parser.add_argument("--user-email", type=str, help="Email of the authenticated user")
     parser.add_argument("--limit", type=int, help="Limit the number of URLs to process when reading from a spreadsheet")
     parser.add_argument("--workers", type=int, default=4, help="Number of concurrent workers for processing spreadsheet URLs")
     parser.add_argument("--expert", "-e", type=str, default="/expert/croissant", help="Selected collection for expert.")
-    parser.add_argument("--upload-gdrive", action="store_true", help="Upload resulting files to Google Drive using Service Account")
-    parser.add_argument("--upload-gdrive-folder", type=str, help="Specific Google Drive folder ID to upload to (bypasses name search)")
     args = parser.parse_args()
     
     if args.index:
@@ -1422,14 +1145,77 @@ if __name__ == "__main__":
         print(f"Found {len(files)} files to process.")
         
         for i, file_path in enumerate(files, 1):
-            process_local_file(file_path, args)
+            print(f"\n[{i}/{len(files)}] Processing local file: {file_path}")
+            try:
+                if os.path.getsize(file_path) == 0:
+                    print(f"Skipping empty file: {file_path}")
+                    continue
+                    
+                with open(file_path, "r", encoding="utf-8") as f:
+                    json_data = json.load(f)
+
+                # Get URL
+                url_val = json_data.get("contentUrl") or json_data.get("url")
+                if not url_val:
+                    url_val = f"file://{os.path.abspath(file_path)}"
+
+                # Try to extract markdown data from isBasedOn or nearby file
+                markdown_data = ""
+                md_path = None
+                
+                # Check isBasedOn references
+                if "isBasedOn" in json_data:
+                    items = json_data["isBasedOn"] if isinstance(json_data["isBasedOn"], list) else [json_data["isBasedOn"]]
+                    for item in items:
+                        if isinstance(item, dict) and item.get("encodingFormat") == "text/markdown" and item.get("contentUrl"):
+                            url_ref = item["contentUrl"]
+                            if url_ref.startswith("file://"):
+                                candidate = url_ref.replace("file://", "")
+                                if os.path.exists(candidate):
+                                    md_path = candidate
+                                    break
+                
+                # Check nearby candidate if not found
+                if not md_path:
+                    candidate1 = file_path.replace("_croissant.jsonld", "_content.md").replace(".jsonld", "_content.md")
+                    candidate2 = file_path.replace("_croissant.jsonld", "_en_content.md").replace(".jsonld", "_en_content.md")
+                    if os.path.exists(candidate1):
+                        md_path = candidate1
+                    elif os.path.exists(candidate2):
+                        md_path = candidate2
+
+                if md_path and os.path.exists(md_path):
+                    with open(md_path, "r", encoding="utf-8") as f:
+                        markdown_data = f.read()
+                    print(f"  Loaded markdown content from: {md_path}")
+                else:
+                    print("  Warning: No markdown content file found.")
+
+                # Validate with Elasticsearch and update version if it exists
+                if "version" not in json_data:
+                    json_data["version"] = "1.0"
+                es_version = get_elasticsearch_version(url_val, args.expert)
+                if es_version:
+                    json_data["version"] = str(es_version)
+                    print(f"  ✓ Resource already in Elasticsearch. Updating version to {es_version}")
+                    # Rewrite the updated JSON-LD back to the local file
+                    with open(file_path, "w", encoding="utf-8") as f:
+                        json.dump(json_data, f, indent=2)
+
+                if args.reingest:
+                    print("\n--- Ingesting into QLever ---")
+                    api_base = os.environ.get("API_BASE", "http://localhost:7013")
+                    res_ql = requests.post(f"{api_base}/add_record", json=json_data, timeout=10)
+                    res_ql.raise_for_status()
+                    print(f"✓ Successfully ingested into QLever!")
+
+                if args.elastic:
+                    index_into_elasticsearch(url_val, json_data, markdown_data, args.expert)
+
+            except Exception as e:
+                print(f"✗ Failed to process file {file_path}: {e}")
 
     elif os.path.isfile(args.url):
-        if getattr(args, "format", "croissant") == "oai":
-            process_local_file(args.url, args)
-            import sys
-            sys.exit(0)
-            
         print(f"Reading URLs from file: {args.url}")
         with open(args.url, 'r', encoding='utf-8') as f:
             content = f.read()
@@ -1480,7 +1266,7 @@ if __name__ == "__main__":
         for i, target_url in enumerate(urls_to_process, 1):
             print(f"\n[{i}/{len(urls_to_process)}] Processing file URL: {target_url}")
             try:
-                convert_to_croissant(target_url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index_ollama, args.elastic, args.expert, args.upload_gdrive, args.upload_gdrive_folder)
+                convert_to_croissant(target_url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index_ollama, args.elastic, args.expert)
             except Exception as e:
                 print(f"Failed processing {target_url}: {e}")
 
@@ -1488,4 +1274,4 @@ if __name__ == "__main__":
     elif "docs.google.com/spreadsheets" in args.url:
         process_spreadsheet(args.url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index_ollama, args.elastic, args.expert)
     else:
-        convert_to_croissant(args.url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index_ollama, args.elastic, args.expert, getattr(args, "upload_gdrive", False), getattr(args, "upload_gdrive_folder", None))
+        convert_to_croissant(args.url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index_ollama, args.elastic, args.expert)
