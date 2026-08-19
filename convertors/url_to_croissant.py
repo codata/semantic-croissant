@@ -197,7 +197,57 @@ def extract_page_meta(soup, url):
 
     return meta
 
+def fetch_github_repo(url, traverse=False):
+    import urllib.parse
+    parsed = urllib.parse.urlparse(url)
+    path_parts = parsed.path.strip('/').split('/')
+    if len(path_parts) >= 2:
+        owner = path_parts[0]
+        repo = path_parts[1]
+        
+        print(f"Fetching GitHub repository via API: {owner}/{repo}")
+        api_url = f"https://api.github.com/repos/{owner}/{repo}"
+        readme_url = f"https://raw.githubusercontent.com/{owner}/{repo}/HEAD/README.md"
+        
+        try:
+            repo_info = scraper.get(api_url, timeout=30).json()
+            readme_res = scraper.get(readme_url, timeout=30)
+            readme_content = readme_res.text if readme_res.status_code == 200 else "No README found."
+            
+            markdown_content = f"# {repo_info.get('name', repo)}\n\n"
+            markdown_content += f"**Description:** {repo_info.get('description', '')}\n"
+            markdown_content += f"**Stars:** {repo_info.get('stargazers_count', 0)}\n"
+            markdown_content += f"**Forks:** {repo_info.get('forks_count', 0)}\n"
+            markdown_content += f"**Language:** {repo_info.get('language', 'Unknown')}\n"
+            markdown_content += f"**License:** {repo_info.get('license', {}).get('name', 'None') if repo_info.get('license') else 'None'}\n\n"
+            markdown_content += f"## README\n\n{readme_content}"
+            
+            page_meta = {
+                "@type": "SoftwareSourceCode",
+                "name": repo_info.get("name", repo),
+                "description": repo_info.get("description", ""),
+                "url": url,
+                "keywords": repo_info.get("topics", []),
+                "github_stars": repo_info.get("stargazers_count", 0),
+                "github_forks": repo_info.get("forks_count", 0)
+            }
+            
+            return markdown_content, {"contentUrl": url}, [], page_meta
+            
+        except Exception as e:
+            print(f"Failed to fetch GitHub API for {url}: {e}")
+            
+    return None
+
 def fetch_url_markdown(url, traverse=False):
+    if "github.com" in url and "api.github.com" not in url:
+        parsed = urllib.parse.urlparse(url)
+        path_parts = parsed.path.strip('/').split('/')
+        if len(path_parts) == 2:
+            res = fetch_github_repo(url, traverse)
+            if res:
+                return res
+                
     if "youtube.com" in url or "youtu.be" in url:
         yt_text, yt_meta = fetch_youtube_transcript(url)
         if traverse:
@@ -206,10 +256,21 @@ def fetch_url_markdown(url, traverse=False):
         
     print(f"Fetching {url}...")
     try:
-        response = scraper.get(url, timeout=30)
-        
-        content_type = response.headers.get('content-type', '').lower()
-        if 'application/pdf' in content_type or url.lower().endswith('.pdf'):
+        if os.path.exists(url):
+            is_local = True
+            with open(url, "rb") as f:
+                content_bytes = f.read()
+            import mimetypes
+            content_type = mimetypes.guess_type(url)[0] or ""
+            is_pdf = url.lower().endswith('.pdf') or 'application/pdf' in content_type
+        else:
+            is_local = False
+            response = scraper.get(url, timeout=30)
+            content_bytes = response.content
+            content_type = response.headers.get('content-type', '').lower()
+            is_pdf = 'application/pdf' in content_type or url.lower().endswith('.pdf')
+            
+        if is_pdf:
             try:
                 from pypdf import PdfReader
                 import io
@@ -217,7 +278,7 @@ def fetch_url_markdown(url, traverse=False):
                 import hashlib
                 from datetime import datetime, timezone
 
-                pdf_bytes = response.content
+                pdf_bytes = content_bytes
                 checksum = hashlib.sha256(pdf_bytes).hexdigest()
                 size = len(pdf_bytes)
                 
@@ -237,14 +298,13 @@ def fetch_url_markdown(url, traverse=False):
                     "contentSize": f"{size} B",
                     "sha256": checksum,
                     "retrievalTimestamp": datetime.now(timezone.utc).isoformat(),
-                    "httpHeaders": dict(response.headers)
                 }
-                
-                if response.headers.get('Last-Modified'):
-                    meta["dateModified"] = response.headers.get('Last-Modified')
-                
-                if response.headers.get('ETag'):
-                    meta["version"] = response.headers.get('ETag').strip('"')
+                if not is_local:
+                    meta["httpHeaders"] = dict(response.headers)
+                    if response.headers.get('Last-Modified'):
+                        meta["dateModified"] = response.headers.get('Last-Modified')
+                    if response.headers.get('ETag'):
+                        meta["version"] = response.headers.get('ETag').strip('"')
                 
                 if traverse:
                     return text.strip(), meta, []
@@ -252,14 +312,32 @@ def fetch_url_markdown(url, traverse=False):
             except Exception as e:
                 print(f"Failed to parse PDF: {e}")
 
-        html_text = response.text
-        if ("JavaScript is disabled" in html_text and "verify that you're not a robot" in html_text) or response.status_code in (202, 403):
-            print("Detected bot protection challenge in response. Triggering Playwright fallback...")
-            pw_content = fetch_with_playwright(url)
-            if pw_content:
-                html_text = pw_content
+        if is_local:
+            try:
+                html_text = content_bytes.decode('utf-8')
+            except UnicodeDecodeError:
+                html_text = content_bytes.decode('latin-1')
         else:
-            response.raise_for_status()
+            html_text = response.text
+            if ("JavaScript is disabled" in html_text and "verify that you're not a robot" in html_text) or response.status_code in (202, 403):
+                print("Detected bot protection challenge in response. Triggering Playwright fallback...")
+                pw_content = fetch_with_playwright(url)
+                if pw_content:
+                    html_text = pw_content
+            else:
+                response.raise_for_status()
+
+        # If local and not HTML, return as raw text directly
+        if is_local and not (html_text.strip().lower().startswith('<!doctype html') or '<html' in html_text.lower() or '<body' in html_text.lower()):
+            page_meta = {
+                "@type": "CreativeWork",
+                "name": url.split('/')[-1] or "Local Document",
+                "url": url,
+            }
+            if traverse:
+                return html_text.strip(), {"contentUrl": url}, [], page_meta
+            else:
+                return html_text.strip(), {"contentUrl": url}
 
         soup = BeautifulSoup(html_text, 'html.parser')
 
@@ -753,6 +831,38 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
         f.write(markdown_data)
         
     print(f"Extracted markdown saved to {md_filename}")
+    
+    # Upload to Vault if MinIO is configured
+    try:
+        minio_url = os.environ.get("MINIO_URL")
+        minio_user = os.environ.get("MINIO_ROOT_USER", "minioadmin")
+        minio_pass = os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin")
+        if minio_url:
+            from minio import Minio
+            endpoint = minio_url.replace("http://", "").replace("https://", "")
+            client = Minio(
+                endpoint,
+                access_key=minio_user,
+                secret_key=minio_pass,
+                secure=minio_url.startswith("https")
+            )
+            # Ensure vault bucket exists
+            if not client.bucket_exists("vault"):
+                client.make_bucket("vault")
+            
+            vault_filename = os.path.basename(md_filename)
+            md_bytes = markdown_data.encode('utf-8')
+            client.put_object(
+                "vault",
+                vault_filename,
+                data=io.BytesIO(md_bytes),
+                length=len(md_bytes),
+                content_type="text/markdown"
+            )
+            print(f"Extracted markdown successfully uploaded to vault: https://mcp.dev.codata.org/vault/{vault_filename}")
+    except Exception as e:
+        print(f"Warning: Failed to upload markdown to MinIO vault: {e}")
+
     try:
         from langdetect import detect
         lang = detect(markdown_data)
@@ -924,7 +1034,11 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
     prompt = f"Create Croissant JSON-LD metadata for a machine learning model or dataset. The source URL is {url}."
     if lang != 'en':
         prompt += f" The source documentation is in language code '{lang}'. Please translate the relevant metadata to English and output the Croissant JSON-LD entirely in English."
-    prompt += f" Here is the documentation and description extracted from its official page:\n\n{llm_context_data}\n\nExtract relevant information such as the description, authors, license, keywords, tags, or any dataset dependencies into the Croissant metadata if available. Map keywords/tags to the standard schema:keywords property, and extract them EXACTLY as they appear in the text (do not change casing or invent new tags). Ensure 'keywords' is formatted as a JSON array of strings, not a single comma-separated string. IMPORTANT: For any fields or data that do not have a standard mapping in Croissant, include them in the JSON-LD under a custom field called 'unmappedFields' as a list of key-value pairs.\n\nCRITICAL: Do NOT invent, hallucinate, or generate generic information. You MUST extract the name, description, and details directly from the provided text above.\n\nOutput ONLY a valid JSON object. "
+    prompt += f" Here is the documentation and description extracted from its official page:\n\n{llm_context_data}\n\n"
+    prompt += "Extract relevant information such as the description, authors, license, keywords, tags, or any dataset dependencies into the Croissant metadata if available. Map keywords/tags to the standard schema:keywords property, and extract them EXACTLY as they appear in the text (do not change casing or invent new tags). Ensure 'keywords' is formatted as a JSON array of strings, not a single comma-separated string. IMPORTANT: For any fields or data that do not have a standard mapping in Croissant, include them in the JSON-LD under a custom field called 'unmappedFields' as a list of key-value pairs.\n"
+    prompt += "CRITICAL: You MUST use the exact following JSON-LD structure and include ALL of these top-level fields: '@context', '@type', 'name', 'description', 'url', 'license', 'keywords', 'unmappedFields', 'contentUrl', 'isBasedOn', 'isPartOf', 'version', 'creator'.\n"
+    prompt += 'Example structure:\n{\n  "@context": {\n    "@language": "en",\n    "@vocab": "https://schema.org/",\n    "cr": "http://mlcommons.org/croissant/",\n    "dct": "http://purl.org/dc/terms/",\n    "sc": "https://schema.org/",\n    "conformsTo": "dct:conformsTo",\n    "distribution": {"@id": "cr:distribution"},\n    "bs4ExtractionPattern": {"@id": "sc:processingRequirement", "@type": "@json"},\n    "unf": "https://guides.dataverse.org/en/6.9/developers/unf/unf-v6.html",\n    "odrl": "http://www.w3.org/ns/odrl/2/",\n    "cdif": "https://cdif.org/1.1/",\n    "did": "https://www.w3.org/ns/did/v1"\n  },\n  "@type": "sc:SoftwareApplication",\n  "name": "...",\n  "description": "...",\n  "url": "...",\n  "license": "...",\n  "keywords": [],\n  "unmappedFields": [],\n  "contentUrl": "...",\n  "isBasedOn": [],\n  "isPartOf": [{"@type": "Collection", "name": "/expert/croissant"}],\n  "version": "1.0",\n  "creator": {"@type": "Person", "name": "...", "email": "..."}\n}\n\n'
+    prompt += "CRITICAL: Do NOT invent, hallucinate, or generate generic information. You MUST extract the name, description, and details directly from the provided text above.\n\nOutput ONLY a valid JSON object."
     
     start_time = time.time()
     try:
@@ -1404,6 +1518,7 @@ if __name__ == "__main__":
     parser.add_argument("--expert", "-e", type=str, default="/expert/croissant", help="Selected collection for expert.")
     parser.add_argument("--upload-gdrive", action="store_true", help="Upload resulting files to Google Drive using Service Account")
     parser.add_argument("--upload-gdrive-folder", type=str, help="Specific Google Drive folder ID to upload to (bypasses name search)")
+    parser.add_argument("--is-file", action="store_true", help="Treat the input URL as a local file to describe (bypasses URL list reading)")
     args = parser.parse_args()
     
     if args.index:
@@ -1424,7 +1539,7 @@ if __name__ == "__main__":
         for i, file_path in enumerate(files, 1):
             process_local_file(file_path, args)
 
-    elif os.path.isfile(args.url):
+    elif os.path.isfile(args.url) and not args.is_file:
         if getattr(args, "format", "croissant") == "oai":
             process_local_file(args.url, args)
             import sys

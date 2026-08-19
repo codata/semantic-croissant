@@ -341,3 +341,22 @@ from mcp_server import call_tool
 asyncio.run(call_tool('read_vault_article', {'url_or_filename': 'honduras_president_charges_factual_summary.md'}))
 "
 ```
+
+## Google Drive Integration
+
+The MCP Server includes an optional feature to automatically upload generated Croissant (`.jsonld`) and Markdown (`.md`) files directly to a Google Drive folder. The folder is automatically named after the user's email ID.
+
+### Setting up the Service Account
+
+To enable this feature, you must configure a Google Service Account:
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and create a new project (or use an existing one).
+2. Enable the **Google Drive API** for your project.
+3. Navigate to **IAM & Admin** > **Service Accounts** and create a new Service Account.
+4. Create a new JSON key for this Service Account and download it to your local machine.
+5. Save the file as `credentials.json` in the root of this project (it is mapped into the `api-croissant-live` container via the `compose.yaml` volumes).
+   - Alternatively, you can specify a custom path using the `GDRIVE_CREDENTIALS_FILE` environment variable.
+
+### Usage in MCP
+
+When calling the `url_to_croissant` tool from your AI assistant, simply pass the `upload_gdrive: true` parameter. The server will authenticate using the mapped `credentials.json` and upload the extracted files into a Drive folder matching your ODRL/Authentication email address! If the credentials file is missing, the upload is gracefully skipped.

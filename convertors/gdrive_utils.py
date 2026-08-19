@@ -3,7 +3,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-SCOPES = ['https://www.googleapis.com/auth/drive.file']
+SCOPES = ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/documents']
 CREDENTIALS_FILE = os.environ.get('GDRIVE_CREDENTIALS_FILE', '/app/credentials.json')
 
 def get_gdrive_service():
@@ -51,7 +51,95 @@ def get_or_create_folder(service, folder_name):
         print(f"Error getting/creating folder: {e}")
         return None
 
-def upload_to_gdrive(folder_name, file_paths, target_folder_id=None):
+
+def parse_html_to_docs_requests(html_content, start_index=1):
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html_content, "html.parser")
+    requests = []
+    current_index = start_index
+
+    def process_node(node, current_styles):
+        nonlocal current_index
+        
+        if isinstance(node, str):
+            text = str(node)
+            if not text:
+                return
+                
+            req = {
+                "insertText": {
+                    "location": {"index": current_index},
+                    "text": text,
+                }
+            }
+            requests.append(req)
+            
+            if current_styles:
+                style_req = {
+                    "updateTextStyle": {
+                        "range": {"startIndex": current_index, "endIndex": current_index + len(text)},
+                        "textStyle": current_styles,
+                        "fields": ",".join(current_styles.keys())
+                    }
+                }
+                requests.append(style_req)
+                
+            current_index += len(text)
+            return
+
+        name = node.name
+        
+        styles = current_styles.copy()
+        if name in ['b', 'strong']:
+            styles['bold'] = True
+        elif name in ['i', 'em']:
+            styles['italic'] = True
+        elif name == 'a' and node.get('href'):
+            styles['link'] = {"url": node.get('href')}
+
+        if name in ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li"]:
+            start = current_index
+            for child in node.children:
+                process_node(child, styles)
+                
+            req = {
+                "insertText": {
+                    "location": {"index": current_index},
+                    "text": "\n"
+                }
+            }
+            requests.append(req)
+            current_index += 1
+            
+            if name.startswith("h"):
+                level = int(name[1])
+                style_req = {
+                    "updateParagraphStyle": {
+                        "range": {"startIndex": start, "endIndex": current_index},
+                        "paragraphStyle": {"namedStyleType": f"HEADING_{level}"},
+                        "fields": "namedStyleType"
+                    }
+                }
+                requests.append(style_req)
+            elif name == "li":
+                bullet_req = {
+                    "createParagraphBullets": {
+                        "range": {"startIndex": start, "endIndex": current_index},
+                        "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE"
+                    }
+                }
+                requests.append(bullet_req)
+        else:
+            for child in node.children:
+                process_node(child, styles)
+
+    for child in soup.body.children if soup.body else soup.children:
+        if child.name is not None or str(child).strip():
+            process_node(child, {})
+
+    return requests
+
+def upload_to_gdrive(folder_name, file_paths, target_folder_id=None, suggest_mode=False):
     service = get_gdrive_service()
     if not service:
         return []
@@ -95,17 +183,26 @@ def upload_to_gdrive(folder_name, file_paths, target_folder_id=None):
             if file_path.endswith('.md'):
                 try:
                     import markdown
+                    import re
                     with open(file_path, 'r', encoding='utf-8') as f:
                         md_content = f.read()
+                        
+                    # Wrap raw URLs in < > so markdown parses them as autolinks
+                    # Negative lookbehind ensures we don't double-wrap existing links or hrefs
+                    pattern = re.compile(r'(?<![\[\("<])(https?://[^\s\)<>"]+)')
+                    md_content = pattern.sub(r'<\1>', md_content)
+                    
                     html_body = markdown.markdown(md_content, extensions=['extra', 'sane_lists', 'nl2br', 'footnotes'])
                     
+                    color_style = "color: red; " if suggest_mode else ""
+                    
                     # Apply explicit inline styling so Google Docs enforces Arial 12 and paragraph splits
-                    html_body = html_body.replace('<p>', '<p style="font-family: Arial, sans-serif; font-size: 12pt; margin-bottom: 12pt; line-height: 1.5;">')
-                    html_body = html_body.replace('<li>', '<li style="font-family: Arial, sans-serif; font-size: 12pt; margin-bottom: 6pt; line-height: 1.5;">')
+                    html_body = html_body.replace('<p>', f'<p style="font-family: Arial, sans-serif; font-size: 12pt; margin-bottom: 12pt; line-height: 1.5; {color_style}">')
+                    html_body = html_body.replace('<li>', f'<li style="font-family: Arial, sans-serif; font-size: 12pt; margin-bottom: 6pt; line-height: 1.5; {color_style}">')
                     for h in ['h1', 'h2', 'h3', 'h4', 'h5']:
-                        html_body = html_body.replace(f'<{h}>', f'<{h} style="font-family: Arial, sans-serif; margin-top: 16pt; margin-bottom: 8pt;">')
+                        html_body = html_body.replace(f'<{h}>', f'<{h} style="font-family: Arial, sans-serif; margin-top: 16pt; margin-bottom: 8pt; {color_style}">')
                         
-                    html_content = f'<html><head><meta charset="UTF-8"></head><body style="font-family: Arial, sans-serif; font-size: 12pt;">\n{html_body}\n</body></html>'
+                    html_content = f'<html><head><meta charset="UTF-8"></head><body style="font-family: Arial, sans-serif; font-size: 12pt; {color_style}">\n{html_body}\n</body></html>'
                     
                     import tempfile
                     fd, upload_path = tempfile.mkstemp(suffix='.html')
