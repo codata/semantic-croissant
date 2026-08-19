@@ -319,6 +319,13 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     
+    if isinstance(content, str) and content.endswith(".md") and os.path.exists(content):
+        try:
+            with open(content, "r") as f:
+                content = f.read()
+        except Exception:
+            pass
+    
     # Compute UNF-6 hash for the content (pure python fallback to avoid SIGILL from polars)
     unf_label = "UNF-6_error"
     try:
@@ -336,6 +343,12 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
     
     import json
     if isinstance(jsonld_payload, str):
+        if jsonld_payload.endswith(".jsonld") and os.path.exists(jsonld_payload):
+            try:
+                with open(jsonld_payload, "r") as f:
+                    jsonld_payload = f.read()
+            except Exception:
+                pass
         try:
             payload_dict = json.loads(jsonld_payload)
         except Exception:
@@ -575,6 +588,23 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
                         if not any(isinstance(x, dict) and x.get("name") == gc.get("name") for x in existing):
                             existing.append(gc)
                 payload_dict["creator"] = existing
+
+            # Replace any local file paths in the payload with the vault URL
+            def replace_local_urls(obj, new_url):
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        if isinstance(v, str) and v.startswith("file:///app/data/ca4eosc/"):
+                            obj[k] = new_url
+                        else:
+                            replace_local_urls(v, new_url)
+                elif isinstance(obj, list):
+                    for i in range(len(obj)):
+                        if isinstance(obj[i], str) and obj[i].startswith("file:///app/data/ca4eosc/"):
+                            obj[i] = new_url
+                        else:
+                            replace_local_urls(obj[i], new_url)
+
+            replace_local_urls(payload_dict, md_url)
 
             jsonld_payload = json.dumps(payload_dict, indent=2)
                 
@@ -926,7 +956,7 @@ async def extract_variables_from_oai(url: str) -> list[types.TextContent]:
     except Exception as e:
         return [types.TextContent(type="text", text=f"Failed to extract OAI variables: {str(e)}")]
 
-async def url_to_croissant(url: str, slice: bool = False, traverse: bool = False, reingest: bool = False, upload_gdrive: bool = False, upload_gdrive_folder: str = None) -> list[types.TextContent]:
+async def url_to_croissant(url: str, slice: bool = False, traverse: bool = False, reingest: bool = False, upload_gdrive: bool = False, upload_gdrive_folder: str = None, is_file: bool = False) -> list[types.TextContent]:
     if reingest:
         auth_msg = await check_authentication()
         if auth_msg:
@@ -945,6 +975,8 @@ async def url_to_croissant(url: str, slice: bool = False, traverse: bool = False
             cmd.append("--upload-gdrive")
         if upload_gdrive_folder:
             cmd.extend(["--upload-gdrive-folder", upload_gdrive_folder])
+        if is_file:
+            cmd.append("--is-file")
             
         if SERVER_USER_INFO:
             user_name = SERVER_USER_INFO.get("name")
@@ -1018,7 +1050,7 @@ async def ingest_to_qlever(jsonld_payload: str = None, file_path: str = None, re
 
 
 
-async def handle_google_drive(operation: str, filename: str = None, content: str = None, folder_id: str = None, query: str = None, file_id: str = None) -> list[types.TextContent]:
+async def handle_google_drive(operation: str, filename: str = None, content: str = None, folder_id: str = None, query: str = None, file_id: str = None, suggest_mode: bool = False) -> list[types.TextContent]:
     try:
         import os
         import tempfile
@@ -1032,11 +1064,16 @@ async def handle_google_drive(operation: str, filename: str = None, content: str
         if operation == "upload":
             if not filename or not content or not folder_id:
                 return [types.TextContent(type="text", text="Error: upload operation requires filename, content, and folder_id.")]
+                
+            # Prepend Creator info to content
+            creator_info = f"**Creator:** {user_email} (AI Assisted)\n\n"
+            content = creator_info + content
+            
             temp_dir = tempfile.mkdtemp()
             file_path = os.path.join(temp_dir, filename)
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
-            uploaded_ids = upload_to_gdrive(user_email, [file_path], target_folder_id=folder_id)
+            uploaded_ids = upload_to_gdrive(user_email, [file_path], target_folder_id=folder_id, suggest_mode=suggest_mode)
             if uploaded_ids:
                 doc_link = f"https://docs.google.com/document/d/{uploaded_ids[0]}/edit" if filename.endswith(".md") else f"https://drive.google.com/file/d/{uploaded_ids[0]}/view"
                 return [types.TextContent(type="text", text=f"Successfully uploaded {filename} to Google Drive folder {folder_id}. Link: {doc_link}")]
@@ -1089,7 +1126,7 @@ SYSTEM INSTRUCTION FOR LLM - Navigation Guide:
 
 5. If the user is asking to "check the list of CODATA MCP tools" or similar:
    - Stop using tools. 
-   - Tell the user: "Here are the available CODATA MCP tools: search_croissant_datasets, elasticsearch_fulltext_search, ask_expert, get_croissant_dataset, hazards_info_profile, hazards_translation, extract_variables_from_croissant, extract_variables_from_oai, planner, url_to_croissant, ingest_to_qlever, read_vault_article, google-drive."
+   - Tell the user: "Here are the available CODATA MCP tools: search_croissant_datasets, elasticsearch_fulltext_search, ask_expert, get_croissant_dataset, hazards_info_profile, hazards_translation, extract_variables_from_croissant, extract_variables_from_oai, planner, url_to_croissant, describe_resource, ingest_to_qlever, read_vault_article, google-drive."
    
 6. If you are saving numbers and figures to the vault (e.g., using save_to_vault), you MUST save them precisely and format them in markdown (e.g., as markdown tables).
 """
@@ -1143,6 +1180,16 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
         return await extract_variables_from_croissant(dataset_id_or_url=arguments.get("dataset_id_or_url"))
     elif name == "extract_variables_from_oai":
         return await extract_variables_from_oai(url=arguments.get("url"))
+    elif name == "describe_resource":
+        target = arguments.get("target")
+        return await url_to_croissant(
+            url=target,
+            slice=arguments.get("slice", False),
+            traverse=False,
+            reingest=arguments.get("reingest", False),
+            upload_gdrive=False,
+            is_file=True
+        )
     elif name == "url_to_croissant":
         return await url_to_croissant(
             url=arguments.get("url"),
@@ -1164,7 +1211,8 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
             content=arguments.get("content"),
             folder_id=arguments.get("folder_id"),
             query=arguments.get("query"),
-            file_id=arguments.get("file_id")
+            file_id=arguments.get("file_id"),
+            suggest_mode=arguments.get("suggest_mode", False)
         )
     elif name == "planner":
         return await get_planner(query=arguments.get("query"))
@@ -1312,8 +1360,22 @@ async def list_tools() -> list[types.Tool]:
                     "file_id": {"type": "string", "description": "The file ID for 'read' operation."},
                     "folder_id": {"type": "string", "description": "The target folder ID for 'search' or 'upload' operations."},
                     "filename": {"type": "string", "description": "The name of the file to create for 'upload' operation."},
-                    "content": {"type": "string", "description": "The text content for 'upload' operation."}
+                    "content": {"type": "string", "description": "The text content for 'upload' operation."},
+                    "suggest_mode": {"type": "boolean", "description": "Optional flag for 'upload'. If true, formats the text in red to indicate it is a suggested draft."}
                 }
+            }
+        ),
+        types.Tool(
+            name="describe_resource",
+            description="Describes a resource (local file or URL) by generating a Croissant JSON-LD file and a Markdown summary file.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string", "description": "The URL or absolute local file path to describe."},
+                    "slice": {"type": "boolean", "description": "Enable slice mode for large documents (default False)"},
+                    "reingest": {"type": "boolean", "description": "Automatically ingest into QLever database (default False)"}
+                },
+                "required": ["target"]
             }
         ),
         types.Tool(

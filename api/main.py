@@ -944,13 +944,29 @@ def get_variables_croissant(url: str):
 @app.get("/variables/oai")
 def get_variables_oai(url: str):
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "curl/7.68.0"})
-        with urllib.request.urlopen(req) as response:
-            content = response.read().decode()
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "curl/7.68.0"})
+            with urllib.request.urlopen(req) as response:
+                content = response.read().decode()
+                data = json.loads(content)
+        except Exception:
+            # Fallback to Playwright if urllib fails or WAF blocks (JSONDecodeError)
+            import sys
+            sys.path.append(os.path.join(os.getcwd(), 'convertors'))
+            from url_to_croissant import fetch_with_playwright
+            content = fetch_with_playwright(url)
+            
+            # WAF pages might still return HTML, we should find JSON inside it if there's any, or parse it directly
+            import bs4
+            soup = bs4.BeautifulSoup(content, 'html.parser')
+            # Look for <pre> block containing JSON (typical for API responses viewed in browser)
+            pre = soup.find('pre')
+            if pre:
+                content = pre.text
             try:
                 data = json.loads(content)
             except json.JSONDecodeError:
-                return {"error": "URL did not return valid JSON. Ensure you are pointing to a JSON-LD file or API endpoint, not an HTML landing page.", "questions": [], "variables": []}
+                return {"error": "URL did not return valid JSON even after Playwright fallback.", "questions": [], "variables": []}
             
         questions = []
         variables = []
