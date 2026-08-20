@@ -50,6 +50,16 @@ async def run_agent(query: str, expert: str = "openml", limit: int = 10, save_va
             ]
             
             async with httpx.AsyncClient(timeout=120.0) as client:
+                async def keepalive():
+                    try:
+                        while True:
+                            await asyncio.sleep(15)
+                            await session.send_ping()
+                    except Exception:
+                        pass
+                
+                keepalive_task = asyncio.create_task(keepalive())
+                
                 while True:
                     print(f"\n[Agent] Thinking... (Model: {MODEL})")
                     try:
@@ -103,6 +113,7 @@ async def run_agent(query: str, expert: str = "openml", limit: int = 10, save_va
                                 "name": name
                             })
                     else:
+                        keepalive_task.cancel()
                         final_answer = msg.get("content", "")
                         print("\n✅ [Agent] Final Answer:")
                         print(final_answer)

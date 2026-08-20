@@ -589,22 +589,20 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
                             existing.append(gc)
                 payload_dict["creator"] = existing
 
-            # Replace any local file paths in the payload with the vault URL
-            def replace_local_urls(obj, new_url):
-                if isinstance(obj, dict):
-                    for k, v in obj.items():
-                        if isinstance(v, str) and v.startswith("file:///app/data/ca4eosc/"):
-                            obj[k] = new_url
-                        else:
-                            replace_local_urls(v, new_url)
-                elif isinstance(obj, list):
-                    for i in range(len(obj)):
-                        if isinstance(obj[i], str) and obj[i].startswith("file:///app/data/ca4eosc/"):
-                            obj[i] = new_url
-                        else:
-                            replace_local_urls(obj[i], new_url)
-
-            replace_local_urls(payload_dict, md_url)
+            # Removed replace_local_urls as it destructively mapped all local files to the same agent response URL
+            
+            # --- DIGITAL SIGNATURE LOGIC ---
+            did_str = "anonymous"
+            if SERVER_USER_INFO and SERVER_USER_INFO.get("email"):
+                did_str = SERVER_USER_INFO.get("email")
+                
+            unf_signature = unf_label.replace("UNF-6_", "UNF-6:")
+            digital_signature = f"{did_str}:{unf_signature}"
+            
+            payload_dict["signature"] = {
+                "@type": "cr:DigitalSignature",
+                "value": digital_signature
+            }
 
             jsonld_payload = json.dumps(payload_dict, indent=2)
                 
@@ -622,6 +620,14 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
             content_type="application/ld+json"
         )
         content = f"[View Croissant JSON-LD Data](https://mcp.dev.codata.org/vault/{json_filename})\n\n" + content
+        
+        # Append digital signature to markdown
+        did_str_fallback = "anonymous"
+        if SERVER_USER_INFO and SERVER_USER_INFO.get("email"):
+            did_str_fallback = SERVER_USER_INFO.get("email")
+        sig_str = f"{did_str_fallback}:{unf_label.replace('UNF-6_', 'UNF-6:')}"
+        content += f"\n\n---\n**Digital Signature:** `{sig_str}`\n"
+        
         if history_md:
             content += history_md
         
@@ -987,7 +993,7 @@ async def url_to_croissant(url: str, slice: bool = False, traverse: bool = False
                 cmd.extend(["--user-email", user_email])
                 
         env = os.environ.copy()
-        env["OLLAMA_HOST"] = "http://10.147.18.37:11434"
+        env["OLLAMA_HOST"] = env.get("OLLAMA_HOST", "http://10.147.18.82:11435")
         if "ELASTICSEARCH_URL" not in env:
             env["ELASTICSEARCH_URL"] = "http://localhost:9200"
         
