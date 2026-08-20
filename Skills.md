@@ -35,3 +35,8 @@ The repository embeds the [Croissant Toolkit](https://github.com/codata/croissan
 - **`wizard`**: Automatically navigates, transcribes, translates, and structures raw web content or data into perfect Croissant JSON-LD.
 - **`nlp-expert`**: Extracts named entities (people, places, organizations) and injects them semantically into the dataset metadata.
 - **`croissant-expert`**: Enforces strict MLCommons Croissant schema constraints during generation.
+
+## 5. Testing
+For any testing functionality, you MUST use the scripts located in the `tests/` directory. 
+- A comprehensive suite is provided in the `tests/` folder.
+- To run all unit tests sequentially, execute the `tests/run_all_tests.py` script.
