@@ -1129,6 +1129,14 @@ SYSTEM INSTRUCTION FOR LLM - Navigation Guide:
    - Tell the user: "Here are the available CODATA MCP tools: search_croissant_datasets, elasticsearch_fulltext_search, ask_expert, get_croissant_dataset, hazards_info_profile, hazards_translation, extract_variables_from_croissant, extract_variables_from_oai, planner, url_to_croissant, describe_resource, ingest_to_qlever, read_vault_article, google-drive."
    
 6. If you are saving numbers and figures to the vault (e.g., using save_to_vault), you MUST save them precisely and format them in markdown (e.g., as markdown tables).
+
+7. If the user asks to analyze/describe a URL or file, use the 'url_to_croissant' tool first.
+
+8. If the user asks to search for datasets generally, use the 'ask_expert' tool. Start by querying a relevant index like 'dataverse' or 'openml'. If it does not return enough datasets to satisfy the user's request, try querying other indices. Then use 'extract_variables_from_croissant' for each found dataset.
+
+9. CRITICAL: If you extract variables from datasets, you MUST include ALL extracted variables formatted clearly as a Markdown table or list in your Final Answer. Do NOT tell the user to check the tool outputs; output the actual variables in your markdown response!
+
+10. Do NOT use the 'save_to_vault' tool manually unless specifically requested. The system will automatically save your final results to the vault.
 """
     return [types.TextContent(type="text", text=text)]
 
@@ -1136,7 +1144,27 @@ SYSTEM INSTRUCTION FOR LLM - Navigation Guide:
 @app.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
     print(f"DEBUG CALL_TOOL: {name} {arguments}", flush=True)
-    if name == "search_croissant_datasets":
+    if name == "onboarding":
+        guidance = """
+Here is detailed information about how every tool works:
+
+- planner: Get navigation and instructions on which tool to use based on the user's intent.
+- search_croissant_datasets: Search for datasets across the Semantic Croissant database using keywords.
+- elasticsearch_fulltext_search: Query the Elasticsearch index directly for indexed Croissant datasets (includes full-text search over full Markdown and metadata).
+- ask_expert: Query one of the semantic expert indices (e.g., 'dataverse', 'openml', 'honduras') for highly specific knowledge and datasets.
+- get_croissant_dataset: Get the full Croissant JSON-LD payload for a specific dataset ID.
+- hazards_info_profile: Search for Hazard Information Profiles (HIPs) based on a query.
+- hazards_translation: Get translations for Hazard Information Profiles into a specific language.
+- extract_variables_from_croissant: Fetch a dataset's metadata and extract its variables and files.
+- extract_variables_from_oai: Fetch metadata via OAI-PMH and extract variables/files.
+- url_to_croissant: Scrape a URL and convert it into a Croissant metadata description.
+- describe_resource: Same as url_to_croissant but more generally named.
+- ingest_to_qlever: Ingest an RDF file into the local Qlever knowledge graph.
+- read_vault_article: Read the contents of a markdown file stored in the system vault.
+- google-drive: Perform operations on Google Drive (search, read, upload).
+"""
+        return [types.TextContent(type="text", text=guidance)]
+    elif name == "search_croissant_datasets":
         return await search_croissant_datasets(
             q=arguments.get("q"),
             limit=arguments.get("limit", 10),
@@ -1222,6 +1250,16 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
 @app.list_tools()
 async def list_tools() -> list[types.Tool]:
     return [
+        types.Tool(
+            name="onboarding",
+            description="Provides guidance on which tools to select for your task. You MUST call this tool before selecting any other tools.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": ["string", "null"], "description": "Optional query describing the user's intent."}
+                }
+            }
+        ),
         types.Tool(
             name="search_croissant_datasets",
             description="Search for datasets across the Semantic Croissant database using keywords.",
