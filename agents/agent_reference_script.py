@@ -8,9 +8,16 @@ import argparse
 from mcp.client.sse import sse_client
 from mcp.client.session import ClientSession
 
-OLLAMA_HOST = "http://10.147.18.82:11435"
-MODEL = "gemma4:e4b"
-MCP_URL = "http://localhost:7070/sse"
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent.config")
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    config = json.load(f)
+
+OLLAMA_HOST = config.get("OLLAMA_HOST", "http://10.147.18.82:11435")
+MODEL = config.get("MODEL", "gemma4:e4b")
+MCP_URL = config.get("MCP_URL", "http://localhost:7070/sse")
+AI_MODEL_OVERRIDE = config.get("ai_model_override", "Semantic Croissant AI Agent v.0.1")
+SYSTEM_PROMPT = config.get("system_prompt", "You are an autonomous AI data analyst agent connected to an MCP tool ecosystem.")
+USER_PROMPT_TEMPLATE = config.get("user_prompt_template", "Execute the user's query: \"{query}\"")
 
 def mcp_tool_to_ollama(tool):
     """Convert an MCP Tool schema to Ollama's Chat Completion tool schema."""
@@ -34,21 +41,9 @@ async def run_agent(query: str, expert: str = "openml", limit: int = 10, save_va
             ollama_tools = [mcp_tool_to_ollama(t) for t in mcp_tools.tools]
             print(f"Loaded {len(ollama_tools)} tools into the Agent.")
             
-            system_prompt = (
-                "You are an autonomous AI data analyst agent connected to an MCP tool ecosystem. "
-                "You execute instructions by chaining tools together. Always examine tool outputs to decide your next step.\n"
-                "CRITICAL: When generating a jsonld_payload for Croissant, you MUST use the Croissant ML format context, NOT standard schema.org. "
-                "Your payload must include: \"@context\": {\"@language\": \"en\", \"@vocab\": \"https://schema.org/\", \"cr\": \"http://mlcommons.org/croissant/\", \"sc\": \"https://schema.org/\"}"
-            )
-            user_prompt = f"""
-Execute the user's query: "{query}"
-
-You must choose the most appropriate tools to fulfill this request.
-- If the user asks to analyze/describe a URL or file, use the 'url_to_croissant' tool first.
-- If the user asks to search for datasets, use the 'ask_expert' tool. Start by querying the '{expert}' index. If it does not return enough datasets to satisfy the user's request, you MUST try querying the 'dataverse' index or the 'openml' index to find more datasets. Then use 'extract_variables_from_croissant' for each found dataset.
-- CRITICAL: If you extract variables from datasets, you MUST include ALL extracted variables formatted clearly as a Markdown table or list in your Final Answer. Do NOT tell the user to check the tool outputs; output the actual variables in your markdown response!
-- Do NOT use the 'save_to_vault' tool. The system will automatically save your final results to the vault.
-"""
+            system_prompt = SYSTEM_PROMPT
+            user_prompt = USER_PROMPT_TEMPLATE.format(query=query, expert=expert)
+            
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -174,7 +169,7 @@ You must choose the most appropriate tools to fulfill this request.
                                     "prefix": "agent_script_output",
                                     "content": content_arg,
                                     "jsonld_payload": payload_arg,
-                                    "ai_model_override": "Semantic Croissant AI Agent v.0.1"
+                                    "ai_model_override": AI_MODEL_OVERRIDE
                                 })
                                 save_msg = "\n".join([c.text for c in save_result.content if c.type == "text"])
                                 print(f"✅ Saved to Vault:\n{save_msg}")
