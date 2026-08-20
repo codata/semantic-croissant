@@ -455,7 +455,7 @@ def fetch_url_markdown(url, traverse=False):
 
 def translate_to_english(text):
     print("Translating content to English using Ollama...")
-    prompt = f"Translate the following text to English. Preserve all markdown formatting exactly. Output only the translated text.\n\n{text}"
+    prompt = f"Perform a precise ONE-to-ONE translation of the following text to English. Preserve all markdown formatting exactly. Do NOT add any introductory text. Output ONLY the translated text.\n\n{text}"
     payload = {
         "model": MODEL_NAME,
         "prompt": prompt,
@@ -775,6 +775,19 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
             f.write(output)
         print(f"\nOutput saved to {output_filename}")
         
+        md_filename = f"{safe_name}_content.md"
+        title = json_data.get("name", "Dataverse Dataset")
+        desc = json_data.get("description", "No description provided.")
+        if isinstance(desc, list): desc = " ".join(desc)
+        md_content = f"# {title}\n\n**Description:** {desc}\n\n"
+        if "keywords" in json_data:
+            kw = json_data["keywords"]
+            md_content += f"**Keywords:** {', '.join(kw) if isinstance(kw, list) else kw}\n\n"
+            
+        with open(md_filename, "w", encoding="utf-8") as f:
+            f.write(md_content)
+        print(f"Extracted markdown saved to {md_filename}")
+        
         if reingest:
             print("\n--- Ingesting into QLever ---")
             try:
@@ -834,7 +847,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
     
     # Upload to Vault if MinIO is configured
     try:
-        minio_url = os.environ.get("MINIO_URL")
+        minio_url = os.environ.get("MINIO_URL", "http://minio:9000")
         minio_user = os.environ.get("MINIO_ROOT_USER", "minioadmin")
         minio_pass = os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin")
         if minio_url:
@@ -879,6 +892,20 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
             with open(md_filename, "w", encoding='utf-8') as f:
                 f.write(markdown_data)
             print(f"Translated markdown saved to {md_filename}")
+            try:
+                import io
+                vault_en_filename = os.path.basename(md_filename)
+                en_bytes = markdown_data.encode('utf-8')
+                client.put_object(
+                    "vault",
+                    vault_en_filename,
+                    data=io.BytesIO(en_bytes),
+                    length=len(en_bytes),
+                    content_type="text/markdown"
+                )
+                print(f"Translated markdown successfully uploaded to vault: https://mcp.dev.codata.org/vault/{vault_en_filename}")
+            except Exception as e:
+                print(f"Warning: Failed to upload translated markdown to MinIO vault: {e}")
 
     slice_links = []
     if is_slice:
@@ -1033,7 +1060,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
 
     prompt = f"Create Croissant JSON-LD metadata for a machine learning model or dataset. The source URL is {url}."
     if lang != 'en':
-        prompt += f" The source documentation is in language code '{lang}'. Please translate the relevant metadata to English and output the Croissant JSON-LD entirely in English."
+        prompt += f" The source documentation is in language code '{lang}'. Please do a precise ONE-to-ONE translation of the relevant metadata to English and output the Croissant JSON-LD entirely in English."
     prompt += f" Here is the documentation and description extracted from its official page:\n\n{llm_context_data}\n\n"
     prompt += "Extract relevant information such as the description, authors, license, keywords, tags, or any dataset dependencies into the Croissant metadata if available. Map keywords/tags to the standard schema:keywords property, and extract them EXACTLY as they appear in the text (do not change casing or invent new tags). Ensure 'keywords' is formatted as a JSON array of strings, not a single comma-separated string. IMPORTANT: For any fields or data that do not have a standard mapping in Croissant, include them in the JSON-LD under a custom field called 'unmappedFields' as a list of key-value pairs.\n"
     prompt += "CRITICAL: You MUST use the exact following JSON-LD structure and include ALL of these top-level fields: '@context', '@type', 'name', 'description', 'url', 'license', 'keywords', 'unmappedFields', 'contentUrl', 'isBasedOn', 'isPartOf', 'version', 'creator'.\n"
@@ -1104,19 +1131,20 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                 print("✓ JSON is well-formed")
                 
                 # Inject link to the generated markdown file(s)
-                md_abs_path = os.path.abspath(md_filename)
+                original_vault_url = f"https://mcp.dev.codata.org/vault/{os.path.basename(original_md_filename)}"
                 doc_links = [{
                     "@type": "CreativeWork",
                     "name": "Scraped Markdown Content",
-                    "contentUrl": f"file://{os.path.abspath(original_md_filename)}",
+                    "contentUrl": original_vault_url,
                     "encodingFormat": "text/markdown"
                 }]
                 
                 if original_md_filename != md_filename:
+                    translated_vault_url = f"https://mcp.dev.codata.org/vault/{os.path.basename(md_filename)}"
                     doc_links.append({
                         "@type": "CreativeWork",
                         "name": "Translated Markdown Content (English)",
-                        "contentUrl": f"file://{md_abs_path}",
+                        "contentUrl": translated_vault_url,
                         "encodingFormat": "text/markdown"
                     })
                     
@@ -1126,10 +1154,24 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                         sib_md_filename = os.path.join("data", "ca4eosc", f"{sib_safe}_content.md")
                         with open(sib_md_filename, "w", encoding='utf-8') as f:
                             f.write(sib['markdown'])
+                        try:
+                            import io
+                            vault_sib_filename = os.path.basename(sib_md_filename)
+                            sib_bytes = sib['markdown'].encode('utf-8')
+                            client.put_object(
+                                "vault",
+                                vault_sib_filename,
+                                data=io.BytesIO(sib_bytes),
+                                length=len(sib_bytes),
+                                content_type="text/markdown"
+                            )
+                        except Exception as e:
+                            print(f"Warning: Failed to upload sibling markdown to MinIO vault: {e}")
+                            
                         doc_links.append({
                             "@type": "CreativeWork",
                             "name": sib['title'],
-                            "contentUrl": f"file://{os.path.abspath(sib_md_filename)}",
+                            "contentUrl": f"https://mcp.dev.codata.org/vault/{os.path.basename(sib_md_filename)}",
                             "encodingFormat": "text/markdown"
                         })
                 
@@ -1188,14 +1230,41 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                 # Reorder dictionary to put @context and @type at the top
                 ordered_data = {}
                 
+                # Add ODRL policy for Markdown files with language property
+                json_data["odrl:hasPolicy"] = {
+                    "@type": "odrl:Policy",
+                    "odrl:permission": [{
+                        "odrl:action": ["odrl:read", "odrl:use"],
+                        "odrl:target": {
+                            "@type": "odrl:AssetCollection",
+                            "odrl:refinement": [
+                                {
+                                    "odrl:leftOperand": "dc:format",
+                                    "odrl:operator": "odrl:eq",
+                                    "odrl:rightOperand": "text/markdown"
+                                },
+                                {
+                                    "odrl:leftOperand": "dc:language",
+                                    "odrl:operator": "odrl:isPresent"
+                                }
+                            ]
+                        }
+                    }]
+                }
+                
                 # Use full Croissant context
                 existing_ctx = json_data.pop("@context", None)
                 if not existing_ctx or existing_ctx == "https://schema.org":
                     ordered_data["@context"] = {
                         "@vocab": "https://schema.org/",
-                        "cr": "http://mlcommons.org/croissant/"
+                        "cr": "http://mlcommons.org/croissant/",
+                        "odrl": "http://www.w3.org/ns/odrl/2/",
+                        "dc": "http://purl.org/dc/terms/"
                     }
                 else:
+                    if isinstance(existing_ctx, dict):
+                        existing_ctx["odrl"] = "http://www.w3.org/ns/odrl/2/"
+                        existing_ctx["dc"] = "http://purl.org/dc/terms/"
                     ordered_data["@context"] = existing_ctx
                     
                 ordered_data["@type"] = json_data.pop("@type", "Dataset")
