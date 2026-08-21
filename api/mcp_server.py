@@ -1131,6 +1131,7 @@ async def extract_keyfigures_from_text(content: str, file_path: str = "") -> lis
                     row_tuple = tuple(row)
                     if row_tuple not in seen_rows:
                         seen_rows.add(row_tuple)
+                        final_writer.writerow(row)
                 final_csv = final_output_io.getvalue()
                 
                 try:
@@ -1175,7 +1176,7 @@ async def extract_keyfigures_from_text(content: str, file_path: str = "") -> lis
                     print(f"Warning: Failed to ingest extracted keyfigures JSON-LD to QLever: {e}")
                     
                 system_instruction = "\n\n---\nSYSTEM INSTRUCTION FOR LLM: Do NOT add any interpretations, summaries, or conversational text. You MUST ONLY output the extracted variables above exactly as a markdown table."
-                return [types.TextContent(type="text", text=final_csv + system_instruction)]
+                return [types.TextContent(type="text", text=final_csv + system_instruction + "\n\n--- CDIF VARIABLES (JSON-LD) ---\n" + json.dumps(jsonld_doc, indent=2))]
             else:
                 return [types.TextContent(type="text", text=f"Error: The model failed to return a valid extraction block. Raw output:\n{result}")]
     except Exception as e:
@@ -1194,7 +1195,7 @@ async def extract_keyfigures_tool(file_path: str) -> list[types.TextContent]:
             url = file_path
             
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}) as client:
                 resp = await client.get(url)
                 resp.raise_for_status()
                 content = resp.text
