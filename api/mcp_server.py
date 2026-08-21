@@ -1053,7 +1053,161 @@ async def ingest_to_qlever(jsonld_payload: str = None, file_path: str = None, re
     except Exception as e:
         return [types.TextContent(type="text", text=f"Failed to ingest to QLever: {str(e)}")]
 
+async def extract_keyfigures_from_text(content: str, file_path: str = "") -> list[types.TextContent]:
+    import os, httpx, json, csv, io
+    ollama_host = os.environ.get("OLLAMA_HOST", "http://10.147.18.82:11435")
+    model = "gemma4:e4b"
+    
+    prompt = (
+        "Extract all important numbers, key figures, and numerical data points from the following text.\n"
+        "Do NOT group multiple entities into a single row. For example, if the text says 'Google: $4.2T, Meta: $1.4T', you must create completely separate rows for Google and Meta.\n\n"
+        f"Text to analyze:\n{content}\n\n"
+        "```csv\n"
+        "Conceptual Variable,Represented Variable,Instance Variable,Unit of Measure,Value\n"
+    )
+    
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "temperature": 0.0
+        }
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.post(f"{ollama_host}/api/generate", json=payload)
+            response.raise_for_status()
+            data = response.json()
+            result = data.get("response", "").strip()
+            
+            output_io = io.StringIO()
+            writer = csv.writer(output_io)
+            
+            lines = result.strip().split('\n')
+            is_markdown = any(line.strip().startswith('|') for line in lines)
+            
+            if is_markdown:
+                for line in lines:
+                    line = line.strip()
+                    if line.startswith('|') and not line.startswith('| :---') and 'Conceptual Variable' not in line:
+                        # Parse markdown row
+                        row = [cell.strip() for cell in line.strip('|').split('|')]
+                        if len(row) >= 5:
+                            writer.writerow(row[:5])
+            else:
+                csv_content = ""
+                if "```csv" in result:
+                    parts = result.split("```csv")
+                    if len(parts) > 1:
+                        csv_content = parts[1].split("```")[0].strip()
+                elif "```" in result:
+                    parts = result.split("```")
+                    if len(parts) > 1:
+                        csv_content = parts[1].strip()
+                else:
+                    csv_lines = [line for line in lines if "," in line]
+                    if len(csv_lines) > 2:
+                        csv_content = "\n".join(csv_lines)
+                        
+                if csv_content:
+                    input_io = io.StringIO(csv_content)
+                    reader = csv.reader(input_io)
+                    for row in reader:
+                        if len(row) >= 5:
+                            writer.writerow(row[:5])
+                            
+            extracted_csv = output_io.getvalue().strip()
+            if extracted_csv:
+                final_output_io = io.StringIO()
+                final_writer = csv.writer(final_output_io)
+                final_writer.writerow(['Conceptual Variable', 'Represented Variable', 'Instance Variable', 'Unit of Measure', 'Value'])
+                
+                input_io = io.StringIO(extracted_csv)
+                reader = csv.reader(input_io)
+                seen_rows = set()
+                for row in reader:
+                    row_tuple = tuple(row)
+                    if row_tuple not in seen_rows:
+                        seen_rows.add(row_tuple)
+                final_csv = final_output_io.getvalue()
+                
+                try:
+                    await store_in_vault(content=final_csv, prefix="extracted_keyfigures")
+                except Exception as e:
+                    print(f"Warning: Failed to save extracted keyfigures to vault: {e}")
+                    
+                try:
+                    reader_json = csv.reader(io.StringIO(final_csv))
+                    header = next(reader_json, None)
+                    variables = []
+                    row_idx = 1
+                    for row in reader_json:
+                        if len(row) < 5: continue
+                        cv, rv, iv, unit, val = row[:5]
+                        variables.append({
+                            "@id": f"ex:extracted/iv/var_{row_idx}",
+                            "@type": ["cdi:InstanceVariable", "schema:PropertyValue"],
+                            "schema:name": cv,
+                            "schema:description": rv,
+                            "schema:alternateName": [iv],
+                            "schema:unitText": unit,
+                            "schema:value": val
+                        })
+                        row_idx += 1
+                        
+                    base_url = f"https://mcp.dev.codata.org/vault/{file_path}" if not file_path.startswith("http") else file_path
+                    jsonld_doc = {
+                        "@context": {
+                            "schema": "http://schema.org/",
+                            "cdi": "http://ddialliance.org/Specification/DDI-CDI/1.0/RDF/",
+                            "cdif": "https://cdif.org/1.1/",
+                            "ex": base_url if file_path else "https://example.org/"
+                        },
+                        "@id": f"ex:dataset/extracted_keyfigures",
+                        "@type": ["schema:Dataset"],
+                        "schema:name": "Extracted Key Figures",
+                        "schema:variableMeasured": variables
+                    }
+                    await ingest_to_qlever(jsonld_payload=json.dumps(jsonld_doc), rebuild=True)
+                except Exception as e:
+                    print(f"Warning: Failed to ingest extracted keyfigures JSON-LD to QLever: {e}")
+                    
+                system_instruction = "\n\n---\nSYSTEM INSTRUCTION FOR LLM: Do NOT add any interpretations, summaries, or conversational text. You MUST ONLY output the extracted variables above exactly as a markdown table."
+                return [types.TextContent(type="text", text=final_csv + system_instruction)]
+            else:
+                return [types.TextContent(type="text", text=f"Error: The model failed to return a valid extraction block. Raw output:\n{result}")]
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"Error extracting key figures: {str(e)}")]
 
+async def extract_keyfigures_tool(file_path: str) -> list[types.TextContent]:
+    import os, httpx
+    content = ""
+    file_path = file_path.strip()
+    if os.path.exists(file_path):
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    else:
+        url = f"https://mcp.dev.codata.org/vault/{file_path}"
+        if file_path.startswith("http"):
+            url = file_path
+            
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                content = resp.text
+                if "text/html" in resp.headers.get("Content-Type", "") or content.strip().lower().startswith("<html"):
+                    try:
+                        import markdownify
+                        content = markdownify.markdownify(content, heading_style="ATX").strip()
+                    except ImportError:
+                        pass
+        except Exception as e:
+            return [types.TextContent(type="text", text=f"Error: File not found locally and failed to download from vault: {e}")]
+            
+    return await extract_keyfigures_from_text(content, file_path)
 
 
 async def handle_google_drive(operation: str, filename: str = None, content: str = None, folder_id: str = None, query: str = None, file_id: str = None, suggest_mode: bool = False) -> list[types.TextContent]:
@@ -1132,7 +1286,7 @@ SYSTEM INSTRUCTION FOR LLM - Navigation Guide:
 
 5. If the user is asking to "check the list of CODATA MCP tools" or similar:
    - Stop using tools. 
-   - Tell the user: "Here are the available CODATA MCP tools: search_croissant_datasets, elasticsearch_fulltext_search, ask_expert, get_croissant_dataset, hazards_info_profile, hazards_translation, extract_variables_from_croissant, extract_variables_from_oai, planner, url_to_croissant, describe_resource, ingest_to_qlever, read_vault_article, google-drive."
+   - Tell the user: "Here are the available CODATA MCP tools: search_croissant_datasets, elasticsearch_fulltext_search, ask_expert, get_croissant_dataset, hazards_info_profile, hazards_translation, extract_variables_from_croissant, extract_variables_from_oai, planner, url_to_croissant, describe_resource, ingest_to_qlever, read_vault_article, extract_keyfigures, google-drive."
    
 6. If you are saving numbers and figures to the vault (e.g., using save_to_vault), you MUST save them precisely and format them in markdown (e.g., as markdown tables).
 
@@ -1167,6 +1321,7 @@ Here is detailed information about how every tool works:
 - describe_resource: Same as url_to_croissant but more generally named.
 - ingest_to_qlever: Ingest an RDF file into the local Qlever knowledge graph.
 - read_vault_article: Read the contents of a markdown file stored in the system vault.
+- extract_keyfigures: Extract all important numbers, key figures, and numerical data points from a text file or vault document and return them as a CSV.
 - google-drive: Perform operations on Google Drive (search, read, upload).
 """
         return [types.TextContent(type="text", text=guidance)]
@@ -1237,6 +1392,10 @@ Here is detailed information about how every tool works:
             jsonld_payload=arguments.get("jsonld_payload"),
             file_path=arguments.get("file_path"),
             rebuild=arguments.get("rebuild", False)
+        )
+    elif name == "extract_keyfigures":
+        return await extract_keyfigures_tool(
+            file_path=arguments.get("file_path")
         )
     elif name == "google-drive":
         return await handle_google_drive(
@@ -1448,6 +1607,17 @@ async def list_tools() -> list[types.Tool]:
                     "file_path": {"type": "string", "description": "Path to the JSON-LD file on the server (alternative to jsonld_payload)."},
                     "rebuild": {"type": "boolean", "description": "Trigger full offline QLever index rebuild."}
                 }
+            }
+        ),
+        types.Tool(
+            name="extract_keyfigures",
+            description="Extract all important numbers, key figures, and numerical data points from a text file or vault document and return them as a CSV.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "Path to the markdown file to process or vault filename (e.g. 'article.md' or 'https://...')."}
+                },
+                "required": ["file_path"]
             }
         ),
         types.Tool(

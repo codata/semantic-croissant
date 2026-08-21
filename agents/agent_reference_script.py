@@ -130,10 +130,10 @@ async def run_agent(query: str, expert: str = "openml", limit: int = 10, save_va
                                         match = re.search(r"Output saved to (.*?\.jsonld)", m["content"])
                                         if match:
                                             jsonld_path_to_pass = match.group(1).strip()
-                                    if "Extracted markdown saved to " in m.get("content", ""):
-                                        match = re.search(r"Extracted markdown saved to (.*?\.md)", m["content"])
-                                        if match:
-                                            md_path_to_pass = match.group(1).strip()
+                                    if "Extracted markdown saved to " in m.get("content", "") or "Translated markdown saved to " in m.get("content", ""):
+                                        matches = re.findall(r"(?:Extracted|Translated) markdown saved to (.*?\.md)", m["content"])
+                                        if matches:
+                                            md_path_to_pass = matches[-1].strip()
                             
                             if jsonld_path_to_pass:
                                 try:
