@@ -191,6 +191,15 @@ To enable ODRL Authentication:
 4. Once authenticated, an authorization token (`~/.odrl/authorize`) containing your DID is saved to your local machine.
 5. The MCP containers automatically mount this `~/.odrl` directory. Any subsequent AI agent commands that export Croissant JSON-LD or save to the Vault will detect it and uniquely set your DID in the `creator` field.
 
+### Document Verification and Provenance Tracking
+
+The MCP Server implements cryptographic and structural verification of documents saved to the Vault to ensure transparent provenance tracking.
+
+1. **Digital Signatures & DID Anchors**: When a dataset or summary is saved to the Vault via the `save_to_vault` tool, the system automatically computes the UNF-6 hash of the document and generates a Digital Signature combining your authenticated DID and the hash. This signature and a dedicated `service` verification block are embedded directly inside the `.jsonld` metadata, tying the identity of the creator cryptographically to the exact content of the file.
+2. **Provenance Verification Tool**: You can verify the integrity and provenance of any document in the Vault using the `verify_document_provenance` MCP tool. By supplying the Vault filename (e.g., `kkFU1poLzxYuGowgjjIxYw.md`), the tool will read the associated `.jsonld` metadata to:
+   - Validate the presence of the DID Verification Block and Digital Signature.
+   - Extract and list all Creators (Human Users and AI Models) involved in the generation of the document, ensuring complete transparency of the AI/Human collaboration process.
+
 ### Connecting AI Assistants (IDEs & Desktop)
 
 You can connect your IDEs to the public endpoint at `https://mcp.dev.codata.org/mcp` using the configurations below.

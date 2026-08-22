@@ -82,6 +82,7 @@ services:
       - ${DATA_DIR:-./qlever-tests/data}:/data
       - ${VOLUME_DIR:-./qlever-tests/volumes}/croissant-live/server:/volumes/server
       - ./convertors:/app/convertors:ro
+      - ./agents:/app/agents:ro
       - ./credentials.json:/app/credentials.json:ro
     depends_on:
       - server-croissant-live
@@ -103,6 +104,7 @@ services:
       - ELASTICSEARCH_URL=http://elasticsearch:9200
     volumes:
       - ./convertors:/app/convertors:ro
+      - ./agents:/app/agents:ro
       - ~/.odrl:/root/.odrl:ro
       - ./credentials.json:/app/credentials.json:ro
     depends_on:
