@@ -669,7 +669,7 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
             payload_dict["id"] = did_str
             payload_dict["service"] = [
                 {
-                    "id": f"{did_str}#dataset-1",
+                    "id": f"{did_str}#{json_filename}",
                     "type": "UNFDataReference",
                     "serviceEndpoint": f"https://mcp.dev.codata.org/vault/{json_filename}",
                     "unf": unf_signature,
