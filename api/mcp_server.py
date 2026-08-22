@@ -228,7 +228,7 @@ async def read_vault_article(url_or_filename: str) -> list[types.TextContent]:
                 safe_name = "url_output"
             filename = f"{safe_name}_content.md"
             
-    if not filename.endswith(".md") and not filename.endswith(".jsonld") and not filename.endswith(".gz"):
+    if not filename.endswith(".md") and not filename.endswith(".jsonld") and not filename.endswith(".gz") and not filename.endswith(".csv"):
         filename += ".md"
 
     minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
@@ -365,7 +365,7 @@ async def verify_document_provenance(filename: str) -> list[types.TextContent]:
     except Exception as e:
         return [types.TextContent(type="text", text=f"Error verifying document provenance: {str(e)}")]
 
-async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, ai_model_override: str = None) -> list[types.TextContent]:
+async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, ai_model_override: str = None, file_ext: str = ".md") -> list[types.TextContent]:
     import datetime, io, os
     from minio import Minio
     global SERVER_USER_INFO
@@ -378,7 +378,7 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    if isinstance(content, str) and content.endswith(".md") and os.path.exists(content):
+    if isinstance(content, str) and content.endswith(file_ext) and os.path.exists(content):
         try:
             with open(content, "r") as f:
                 content = f.read()
@@ -424,7 +424,7 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
     if not payload_dict:
         return [types.TextContent(type="text", text="CRITICAL SYSTEM ERROR: You attempted to save a file to the vault without providing the 'jsonld_payload' parameter. You MUST generate the Croissant JSON-LD metadata and provide it in this parameter. YOU MUST IMMEDIATELY CALL THIS TOOL AGAIN with the JSON-LD included! DO NOT ASK THE USER FOR PERMISSION to generate it, JUST DO IT AUTOMATICALLY NOW!")]
 
-    filename = f"{safe_hash}.md"
+    filename = f"{safe_hash}{file_ext}"
     json_filename = f"{safe_hash}.jsonld"
 
     minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
@@ -578,7 +578,7 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
             
             md_is_based_on = {
                 "@type": "CreativeWork",
-                "name": f"{prefix} Markdown Content",
+                "name": f"{prefix} Content",
                 "url": md_url
             }
             if ai_model:
@@ -595,14 +595,42 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
             if isinstance(payload_dict.get("distribution"), list):
                 md_dist = {
                     "@type": "cr:FileObject",
-                    "name": f"{prefix} Markdown Content",
-                    "description": "The unstructured markdown content related to this semantic dataset.",
+                    "name": f"{prefix} Content",
+                    "description": "The unstructured or semi-structured content related to this semantic dataset.",
                     "contentUrl": md_url,
-                    "encodingFormat": "text/markdown"
+                    "encodingFormat": "text/csv" if file_ext == ".csv" else "text/markdown"
                 }
                 if ai_model:
                     md_dist["creator"] = {"@id": "#ai-model"}
                 payload_dict["distribution"].append(md_dist)
+                
+                if file_ext == ".csv":
+                    # Define full Croissant RecordSet for the CSV structure
+                    payload_dict["cr:recordSet"] = [
+                        {
+                            "@type": "cr:RecordSet",
+                            "@id": f"{prefix}_recordset",
+                            "cr:name": prefix,
+                            "cr:description": "Key figures extracted from the document",
+                            "cr:source": md_url,
+                            "cr:field": [
+                                { "@type": "cr:Field", "@id": "field/Conceptual_Variable", "cr:name": "Conceptual Variable", "cr:dataType": "sc:Text", "cr:source": {"cr:fileObject": md_url, "cr:extract": {"cr:column": "Conceptual Variable"}} },
+                                { "@type": "cr:Field", "@id": "field/Represented_Variable", "cr:name": "Represented Variable", "cr:dataType": "sc:Text", "cr:source": {"cr:fileObject": md_url, "cr:extract": {"cr:column": "Represented Variable"}} },
+                                { "@type": "cr:Field", "@id": "field/Instance_Variable", "cr:name": "Instance Variable", "cr:dataType": "sc:Text", "cr:source": {"cr:fileObject": md_url, "cr:extract": {"cr:column": "Instance Variable"}} },
+                                { "@type": "cr:Field", "@id": "field/Unit_of_Measure", "cr:name": "Unit of Measure", "cr:dataType": "sc:Text", "cr:source": {"cr:fileObject": md_url, "cr:extract": {"cr:column": "Unit of Measure"}} },
+                                { "@type": "cr:Field", "@id": "field/Value", "cr:name": "Value", "cr:dataType": "sc:Float", "cr:source": {"cr:fileObject": md_url, "cr:extract": {"cr:column": "Value"}} },
+                                { "@type": "cr:Field", "@id": "field/Document_ID", "cr:name": "Document ID", "cr:dataType": "sc:Text", "cr:source": {"cr:fileObject": md_url, "cr:extract": {"cr:column": "Document ID"}} },
+                                { "@type": "cr:Field", "@id": "field/Page", "cr:name": "Page", "cr:dataType": "sc:Text", "cr:source": {"cr:fileObject": md_url, "cr:extract": {"cr:column": "Page"}} },
+                                { "@type": "cr:Field", "@id": "field/Section", "cr:name": "Section", "cr:dataType": "sc:Text", "cr:source": {"cr:fileObject": md_url, "cr:extract": {"cr:column": "Section"}} },
+                                { "@type": "cr:Field", "@id": "field/Sentence", "cr:name": "Sentence", "cr:dataType": "sc:Text", "cr:source": {"cr:fileObject": md_url, "cr:extract": {"cr:column": "Sentence"}} },
+                                { "@type": "cr:Field", "@id": "field/Source_Type", "cr:name": "Source Type", "cr:dataType": "sc:Text", "cr:source": {"cr:fileObject": md_url, "cr:extract": {"cr:column": "Source Type"}} },
+                                { "@type": "cr:Field", "@id": "field/Publication_Date", "cr:name": "Publication Date", "cr:dataType": "sc:Date", "cr:source": {"cr:fileObject": md_url, "cr:extract": {"cr:column": "Publication Date"}} },
+                                { "@type": "cr:Field", "@id": "field/Retrieval_Date", "cr:name": "Retrieval Date", "cr:dataType": "sc:Date", "cr:source": {"cr:fileObject": md_url, "cr:extract": {"cr:column": "Retrieval Date"}} },
+                                { "@type": "cr:Field", "@id": "field/Confidence", "cr:name": "Confidence", "cr:dataType": "sc:Text", "cr:source": {"cr:fileObject": md_url, "cr:extract": {"cr:column": "Confidence"}} },
+                                { "@type": "cr:Field", "@id": "field/Provenance_Anchor", "cr:name": "Provenance Anchor", "cr:dataType": "sc:Text", "cr:source": {"cr:fileObject": md_url, "cr:extract": {"cr:column": "Provenance Anchor"}} }
+                            ]
+                        }
+                    ]
                 
             if SERVER_USER_INFO and SERVER_USER_INFO.get("email"):
                 did_str = SERVER_USER_INFO.get("email")
@@ -658,7 +686,7 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
                 did_str = SERVER_USER_INFO.get("email")
                 
             unf_signature = unf_label.replace("UNF-6_", "UNF-6:")
-            digital_signature = f"{did_str}:{unf_signature}"
+            digital_signature = f"{did_str}#{unf_label.replace('UNF-6_', '')}"
             
             payload_dict["signature"] = {
                 "@type": "cr:DigitalSignature",
@@ -692,26 +720,69 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
             length=len(json_bytes),
             content_type="application/ld+json"
         )
-        content = f"[View Croissant JSON-LD Data](https://mcp.dev.codata.org/vault/{json_filename})\n\n" + content
-        
-        # Append digital signature to markdown
+        # Prepare digital signature
         did_str_fallback = "anonymous"
         if SERVER_USER_INFO and SERVER_USER_INFO.get("email"):
             did_str_fallback = SERVER_USER_INFO.get("email")
-        sig_str = f"{did_str_fallback}:{unf_label.replace('UNF-6_', 'UNF-6:')}"
-        content += f"\n\n---\n**Digital Signature:** `{sig_str}`\n"
+        sig_str = f"{did_str_fallback}#{unf_label.replace('UNF-6_', '')}"
         
-        if history_md:
-            content += history_md
-        
-        content_bytes = content.encode("utf-8")
-        client.put_object(
-            "vault", 
-            filename, 
-            data=io.BytesIO(content_bytes), 
-            length=len(content_bytes),
-            content_type="text/markdown"
-        )
+        if file_ext == ".csv":
+            # Upload pure CSV
+            content_bytes = content.encode("utf-8")
+            client.put_object(
+                "vault", 
+                filename, 
+                data=io.BytesIO(content_bytes), 
+                length=len(content_bytes),
+                content_type="text/csv"
+            )
+            # Create a companion markdown file
+            md_filename = filename.replace(".csv", ".md")
+            md_content = f"**Raw Data:** [View Extracted CSV](https://mcp.dev.codata.org/vault/{filename})\n\n"
+            md_content += f"**Metadata:** [View Croissant JSON-LD Data](https://mcp.dev.codata.org/vault/{json_filename})\n\n"
+            
+            import csv, io
+            md_table = "### Extracted Key Figures\n\n"
+            try:
+                reader = csv.reader(io.StringIO(content.strip()))
+                headers = next(reader, None)
+                if headers:
+                    md_table += "| " + " | ".join(headers) + " |\n"
+                    md_table += "|" + "|".join(["---"] * len(headers)) + "|\n"
+                    for row in reader:
+                        md_table += "| " + " | ".join(row) + " |\n"
+                md_content += md_table + "\n\n"
+            except Exception as e:
+                print(f"Warning: Failed to render Markdown table from CSV: {e}")
+                
+            md_content += f"---\n**Digital Signature:** `{sig_str}`\n"
+            if history_md:
+                md_content += history_md
+            md_bytes = md_content.encode("utf-8")
+            client.put_object(
+                "vault", 
+                md_filename, 
+                data=io.BytesIO(md_bytes), 
+                length=len(md_bytes),
+                content_type="text/markdown"
+            )
+            # Update output to point to the new MD file
+            content = f"[View Documentation (Markdown)](https://mcp.dev.codata.org/vault/{md_filename})\n\n" + md_content
+        else:
+            # Traditional markdown processing
+            content = f"[View Croissant JSON-LD Data](https://mcp.dev.codata.org/vault/{json_filename})\n\n" + content
+            content += f"\n\n---\n**Digital Signature:** `{sig_str}`\n"
+            if history_md:
+                content += history_md
+            
+            content_bytes = content.encode("utf-8")
+            client.put_object(
+                "vault", 
+                filename, 
+                data=io.BytesIO(content_bytes), 
+                length=len(content_bytes),
+                content_type="text/markdown"
+            )
         
         # Index into Elasticsearch under safe_username index
         try:
@@ -1126,163 +1197,193 @@ async def ingest_to_qlever(jsonld_payload: str = None, file_path: str = None, re
     except Exception as e:
         return [types.TextContent(type="text", text=f"Failed to ingest to QLever: {str(e)}")]
 
-async def extract_keyfigures_from_text(content: str, file_path: str = "") -> list[types.TextContent]:
-    import os, httpx, json, csv, io
-    ollama_host = os.environ.get("OLLAMA_HOST", "http://10.147.18.82:11435")
-    model = "gemma4:e4b"
-    
-    prompt = (
-        "Extract all important numbers, key figures, and numerical data points from the following text.\n"
-        "Do NOT group multiple entities into a single row. For example, if the text says 'Google: $4.2T, Meta: $1.4T', you must create completely separate rows for Google and Meta.\n\n"
-        f"Text to analyze:\n{content}\n\n"
-        "```csv\n"
-        "Conceptual Variable,Represented Variable,Instance Variable,Unit of Measure,Value\n"
-    )
-    
-    payload = {
-        "model": model,
-        "prompt": prompt,
-        "stream": False,
-        "options": {
-            "temperature": 0.0
-        }
-    }
+async def finalize_keyfigures(csv_content: str, file_path: str = "") -> list[types.TextContent]:
+    import sys, os, csv, io, json
     
     try:
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            response = await client.post(f"{ollama_host}/api/generate", json=payload)
-            response.raise_for_status()
-            data = response.json()
-            result = data.get("response", "").strip()
+        
+        # Strip markdown csv formatting if present
+        if csv_content.startswith("```csv"):
+            csv_content = csv_content.replace("```csv\n", "").replace("```csv", "")
+        if csv_content.endswith("```"):
+            csv_content = csv_content[:-3].strip()
+        
+        reader = csv.reader(io.StringIO(csv_content.strip()))
+        header = next(reader, None)
+        variables = []
+        row_idx = 1
+        
+        for row in reader:
+            if len(row) < 14: continue
+            cv, rv, iv, unit, val, doc_id, page, section, sentence, src_type, pub_date, ret_date, conf, anchor = row[:14]
+            var_id = f"ex:extracted/iv/var_{row_idx}"
             
-            output_io = io.StringIO()
-            writer = csv.writer(output_io)
-            
-            lines = result.strip().split('\n')
-            is_markdown = any(line.strip().startswith('|') for line in lines)
-            
-            if is_markdown:
-                for line in lines:
-                    line = line.strip()
-                    if line.startswith('|') and not line.startswith('| :---') and 'Conceptual Variable' not in line:
-                        # Parse markdown row
-                        row = [cell.strip() for cell in line.strip('|').split('|')]
-                        if len(row) >= 5:
-                            writer.writerow(row[:5])
-            else:
-                csv_content = ""
-                if "```csv" in result:
-                    parts = result.split("```csv")
-                    if len(parts) > 1:
-                        csv_content = parts[1].split("```")[0].strip()
-                elif "```" in result:
-                    parts = result.split("```")
-                    if len(parts) > 1:
-                        csv_content = parts[1].strip()
+            # Cast val to numeric if possible
+            numeric_val = val
+            try:
+                if '.' in val:
+                    numeric_val = float(val)
                 else:
-                    csv_lines = [line for line in lines if "," in line]
-                    if len(csv_lines) > 2:
-                        csv_content = "\n".join(csv_lines)
-                        
-                if csv_content:
-                    input_io = io.StringIO(csv_content)
-                    reader = csv.reader(input_io)
-                    for row in reader:
-                        if len(row) >= 5:
-                            writer.writerow(row[:5])
-                            
-            extracted_csv = output_io.getvalue().strip()
-            if extracted_csv:
-                final_output_io = io.StringIO()
-                final_writer = csv.writer(final_output_io)
-                final_writer.writerow(['Conceptual Variable', 'Represented Variable', 'Instance Variable', 'Unit of Measure', 'Value'])
+                    numeric_val = int(val)
+            except ValueError:
+                pass
+            
+            subject_of = {
+                "@type": "schema:CreativeWork",
+                "@id": anchor,
+                "schema:identifier": doc_id,
+                "schema:pagination": section,
+                "schema:articleSection": section,
+                "schema:text": sentence,
+                "schema:additionalType": src_type,
+                "schema:dateAccessed": ret_date
+            }
+            
+            import urllib.parse
+            entity_id = urllib.parse.quote(str(iv).lower().replace(" ", "_").strip())
+            
+            var_obj = {
+                "@id": var_id,
+                "@type": ["cdi:InstanceVariable", "schema:PropertyValue"],
+                "schema:name": cv,
+                "schema:description": rv,
+                "schema:value": numeric_val,
+                "schema:unitText": unit,
+                "schema:subject": {
+                    "@id": f"ex:entity/{entity_id}",
+                    "@type": "schema:Organization",
+                    "schema:name": iv
+                },
+                "schema:subjectOf": subject_of
+            }
+            variables.append(var_obj)
+            row_idx += 1
+            
+        anchor_map = {}
+        for var in variables:
+            anchor_id = var.get("schema:subjectOf", {}).get("@id")
+            if anchor_id not in anchor_map:
+                anchor_map[anchor_id] = []
+            anchor_map[anchor_id].append(var["@id"])
+            
+        for var in variables:
+            anchor_id = var.get("schema:subjectOf", {}).get("@id")
+            related_ids = [v for v in anchor_map.get(anchor_id, []) if v != var["@id"]]
+            if related_ids:
+                var["schema:isRelatedTo"] = [{"@id": rid} for rid in related_ids]
                 
-                input_io = io.StringIO(extracted_csv)
-                reader = csv.reader(input_io)
-                seen_rows = set()
-                for row in reader:
-                    row_tuple = tuple(row)
-                    if row_tuple not in seen_rows:
-                        seen_rows.add(row_tuple)
-                        final_writer.writerow(row)
-                final_csv = final_output_io.getvalue()
-                
-                try:
-                    await store_in_vault(content=final_csv, prefix="extracted_keyfigures")
-                except Exception as e:
-                    print(f"Warning: Failed to save extracted keyfigures to vault: {e}")
-                    
-                try:
-                    reader_json = csv.reader(io.StringIO(final_csv))
-                    header = next(reader_json, None)
-                    variables = []
-                    row_idx = 1
-                    for row in reader_json:
-                        if len(row) < 5: continue
-                        cv, rv, iv, unit, val = row[:5]
-                        variables.append({
-                            "@id": f"ex:extracted/iv/var_{row_idx}",
-                            "@type": ["cdi:InstanceVariable", "schema:PropertyValue"],
-                            "schema:name": cv,
-                            "schema:description": rv,
-                            "schema:alternateName": [iv],
-                            "schema:unitText": unit,
-                            "schema:value": val
-                        })
-                        row_idx += 1
-                        
-                    base_url = f"https://mcp.dev.codata.org/vault/{file_path}" if not file_path.startswith("http") else file_path
-                    jsonld_doc = {
-                        "@context": {
-                            "schema": "http://schema.org/",
-                            "cdi": "http://ddialliance.org/Specification/DDI-CDI/1.0/RDF/",
-                            "cdif": "https://cdif.org/1.1/",
-                            "ex": base_url if file_path else "https://example.org/"
-                        },
-                        "@id": f"ex:dataset/extracted_keyfigures",
-                        "@type": ["schema:Dataset"],
-                        "schema:name": "Extracted Key Figures",
-                        "schema:variableMeasured": variables
-                    }
-                    await ingest_to_qlever(jsonld_payload=json.dumps(jsonld_doc), rebuild=True)
-                except Exception as e:
-                    print(f"Warning: Failed to ingest extracted keyfigures JSON-LD to QLever: {e}")
-                    
-                system_instruction = "\n\n---\nSYSTEM INSTRUCTION FOR LLM: Do NOT add any interpretations, summaries, or conversational text. You MUST ONLY output the extracted variables above exactly as a markdown table."
-                return [types.TextContent(type="text", text=final_csv + system_instruction + "\n\n--- CDIF VARIABLES (JSON-LD) ---\n" + json.dumps(jsonld_doc, indent=2))]
-            else:
-                return [types.TextContent(type="text", text=f"Error: The model failed to return a valid extraction block. Raw output:\n{result}")]
+        base_url = f"https://mcp.dev.codata.org/vault/{file_path}" if not file_path.startswith("http") else file_path
+        
+        jsonld_doc = {
+            "@context": {
+                "@vocab": "https://schema.org/",
+                "schema": "https://schema.org/",
+                "cdi": "http://ddialliance.org/Specification/DDI-CDI/1.0/RDF/",
+                "cdif": "https://cdif.org/1.1/",
+                "cr": "http://mlcommons.org/croissant/",
+                "odrl": "http://www.w3.org/ns/odrl/2/",
+                "ex": base_url if file_path else "https://example.org/"
+            },
+            "@id": f"ex:dataset/extracted_keyfigures",
+            "@type": ["schema:Dataset", "cr:Dataset"],
+            "conformsTo": "http://mlcommons.org/croissant/1.1",
+            "schema:name": "Extracted Key Figures",
+            "schema:license": {
+                "@type": "odrl:Set",
+                "odrl:permission": [{
+                    "odrl:action": "odrl:use"
+                }]
+            },
+            "schema:variableMeasured": variables
+        }
+        
+        try:
+            vault_result = await store_in_vault(content=csv_content, prefix="extracted_keyfigures", jsonld_payload=json.dumps(jsonld_doc), file_ext=".csv")
+        except Exception as e:
+            print(f"Warning: Failed to save extracted keyfigures to vault: {e}")
+            vault_result = [types.TextContent(type="text", text=f"Warning: Failed to save to vault: {e}")]
+            
+        try:
+            await ingest_to_qlever(jsonld_payload=json.dumps(jsonld_doc), rebuild=True)
+        except Exception as e:
+            print(f"Warning: Failed to ingest extracted keyfigures JSON-LD to QLever: {e}")
+            
+        return vault_result + [types.TextContent(type="text", text="Successfully finalized key figures, saved to vault, and registered in provenance!")]
+        
     except Exception as e:
         return [types.TextContent(type="text", text=f"Error extracting key figures: {str(e)}")]
 
-async def extract_keyfigures_tool(file_path: str) -> list[types.TextContent]:
+async def extract_keyfigures_tool(file_path: str = None, text_content: str = None) -> list[types.TextContent]:
     import os, httpx
     content = ""
-    file_path = file_path.strip()
-    if os.path.exists(file_path):
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-    else:
-        url = f"https://mcp.dev.codata.org/vault/{file_path}"
-        if file_path.startswith("http"):
-            url = file_path
+    if text_content:
+        content = text_content
+    elif file_path:
+        file_path = file_path.strip()
+        if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        else:
+            if not file_path.startswith("http") and not file_path.endswith(".md") and not file_path.endswith(".jsonld") and not file_path.endswith(".csv"):
+                file_path += ".md"
+            url = f"https://mcp.dev.codata.org/vault/{file_path}"
+            if file_path.startswith("http"):
+                url = file_path
+                
+            try:
+                async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}) as client:
+                    resp = await client.get(url)
+                    resp.raise_for_status()
+                    content = resp.text
+                    if "text/html" in resp.headers.get("Content-Type", "") or content.strip().lower().startswith("<html"):
+                        try:
+                            import markdownify
+                            content = markdownify.markdownify(content, heading_style="ATX").strip()
+                        except ImportError:
+                            pass
+            except Exception as e:
+                return [types.TextContent(type="text", text=f"Error: File not found locally and failed to download from vault: {e}")]
+    
+    if not content:
+        return [types.TextContent(type="text", text="Error: No content provided. You must provide either a valid 'file_path' or raw 'text_content'.")]
             
-        try:
-            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}) as client:
-                resp = await client.get(url)
-                resp.raise_for_status()
-                content = resp.text
-                if "text/html" in resp.headers.get("Content-Type", "") or content.strip().lower().startswith("<html"):
-                    try:
-                        import markdownify
-                        content = markdownify.markdownify(content, heading_style="ATX").strip()
-                    except ImportError:
-                        pass
-        except Exception as e:
-            return [types.TextContent(type="text", text=f"Error: File not found locally and failed to download from vault: {e}")]
-            
-    return await extract_keyfigures_from_text(content, file_path)
-
+    try:
+        import sys, os
+        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+        from agents.extract_keyfigures import compute_unf6
+        doc_hash = compute_unf6(content)
+    except Exception:
+        doc_hash = "unknown"
+        
+    from datetime import datetime
+    retrieval_date = datetime.now().strftime('%Y-%m-%d')
+    
+    prompt_content = (
+        "SYSTEM INSTRUCTION TO AI AGENT:\n"
+        "Instead of routing this task to a backend Ollama server, you must evaluate it using your own model.\n"
+        "Please apply the following extraction prompt to the text below. Once you have the CSV output, present it to the user.\n"
+        "If you need to save it as a Croissant JSON-LD Dataset, use the `save_to_vault` tool.\n\n"
+        "---\n\n"
+        "Extract ALL numbers, key figures, and numerical data points from the following text, not just the important ones. Do not skip any numbers.\n"
+        "CRITICAL INSTRUCTIONS for formatting:\n"
+        "1. 'Value' MUST be a pure number (integer or float) fully expanded (e.g., output 250000000 instead of 250M, 4200000000000 instead of $4.2T).\n"
+        "2. 'Unit of Measure' MUST be a standard abbreviation (e.g., USD, %, users).\n"
+        "3. 'Represented Variable' MUST contain the original text representation (e.g., '250M USD').\n"
+        "4. 'Instance Variable' MUST be the pure name of the entity or organization the number refers to (e.g., 'Starcloud', 'Google', 'Meta'). Do NOT include the action or the number itself in this column.\n"
+        "5. Do NOT group multiple entities into a single row. For example, if the text says 'Google: $4.2T, Meta: $1.4T', you must create completely separate rows for Google and Meta.\n"
+        "6. To be conformant, you MUST first internally split the document into paragraphs (p1, p2, ...) and sentences (s1, s2, ...) and track them. For each extracted figure, you MUST identify the paragraph and sentence index where it was found.\n"
+        f"7. Use '{doc_hash}' for the Document ID column.\n"
+        f"8. Use '{retrieval_date}' for the Retrieval Date column.\n"
+        "9. 'Provenance Anchor' MUST be formatted as DocumentID#Section_Sentence (e.g., abc#p21-p36_s1).\n"
+        "10. Output MUST be RAW CSV format. DO NOT output a markdown table. EVERY row MUST contain exactly 14 columns separated by commas. Use 'N/A' or 'text/markdown' for unknown values like Page or Source Type.\n\n"
+        "11. Once you have generated the CSV output, you MUST call the `finalize_keyfigures` tool with the generated CSV content as the `csv_content` argument. This automatically saves it to the vault and provenance.\n\n"
+        f"Text to analyze:\n{content}\n\n"
+        "Respond ONLY with a CSV block formatted exactly as below. If there are no key figures in the text, respond with 'NO_DATA'.\n"
+        "```csv\n"
+        "Conceptual Variable,Represented Variable,Instance Variable,Unit of Measure,Value,Document ID,Page,Section,Sentence,Source Type,Publication Date,Retrieval Date,Confidence,Provenance Anchor\n"
+        "```\n"
+    )
+    return [types.TextContent(type="text", text=prompt_content)]
 
 async def handle_google_drive(operation: str, filename: str = None, content: str = None, folder_id: str = None, query: str = None, file_id: str = None, suggest_mode: bool = False) -> list[types.TextContent]:
     try:
@@ -1396,7 +1497,8 @@ Here is detailed information about how every tool works:
 - describe_resource: Same as url_to_croissant but more generally named.
 - ingest_to_qlever: Ingest an RDF file into the local Qlever knowledge graph.
 - read_vault_article: Read the contents of a markdown file stored in the system vault.
-- extract_keyfigures: Extract all important numbers, key figures, and numerical data points from a text file or vault document and return them as a CSV.
+- extract_keyfigures: Extract ALL numbers, key figures, and numerical data points from a text file or vault document and return them as a CSV.
+- finalize_keyfigures: After generating the CSV from extract_keyfigures, call this tool to save the CSV and the corresponding Croissant JSON-LD to the vault.
 - google-drive: Perform operations on Google Drive (search, read, upload).
 """
         return [types.TextContent(type="text", text=guidance)]
@@ -1472,7 +1574,13 @@ Here is detailed information about how every tool works:
         )
     elif name == "extract_keyfigures":
         return await extract_keyfigures_tool(
-            file_path=arguments.get("file_path")
+            file_path=arguments.get("file_path"),
+            text_content=arguments.get("text_content")
+        )
+    elif name == "finalize_keyfigures":
+        return await finalize_keyfigures(
+            csv_content=arguments.get("csv_content"),
+            file_path=arguments.get("file_path", "")
         )
     elif name == "google-drive":
         return await handle_google_drive(
@@ -1540,6 +1648,18 @@ async def list_tools() -> list[types.Tool]:
                     "q": {"type": "string", "description": "The search query to ask the expert"},
                     "limit": {"type": "integer", "description": "Max number of results (default 10)", "default": 10}
                 }
+            }
+        ),
+        types.Tool(
+            name="finalize_keyfigures",
+            description="After extracting key figures as a CSV, you MUST call this tool to automatically convert the CSV into a Croissant JSON-LD Dataset, save it to the MinIO vault, and keep the provenance.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "csv_content": {"type": "string", "description": "The exact CSV string generated from extract_keyfigures"},
+                    "file_path": {"type": "string", "description": "The file path or URL of the source document"}
+                },
+                "required": ["csv_content"]
             }
         ),
         types.Tool(
@@ -1688,13 +1808,13 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="extract_keyfigures",
-            description="Extract all important numbers, key figures, and numerical data points from a text file or vault document and return them as a CSV.",
+            description="Extract ALL numbers, key figures, and numerical data points from a text file or vault document and return them as a CSV.",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "file_path": {"type": "string", "description": "Path to the markdown file to process or vault filename (e.g. 'article.md' or 'https://...')."}
-                },
-                "required": ["file_path"]
+                    "file_path": {"type": "string", "description": "Path to the markdown file to process or vault filename (e.g. 'article.md' or 'https://...')."},
+                    "text_content": {"type": "string", "description": "Raw text content to process, useful if you've already retrieved the document via search or other means."}
+                }
             }
         ),
         types.Tool(
@@ -1723,6 +1843,57 @@ async def list_tools() -> list[types.Tool]:
             }
         )
     ]
+
+@app.list_prompts()
+async def list_prompts() -> list[types.Prompt]:
+    return [
+        types.Prompt(
+            name="extract_keyfigures",
+            description="Prompt used to extract numerical facts and key figures from a block of text.",
+            arguments=[
+                types.PromptArgument(
+                    name="block_text",
+                    description="The text to analyze",
+                    required=True
+                )
+            ]
+        )
+    ]
+
+@app.get_prompt()
+async def get_prompt(name: str, arguments: dict[str, str] | None = None) -> types.GetPromptResult:
+    if name == "extract_keyfigures":
+        block_text = (arguments or {}).get("block_text", "")
+        prompt_content = (
+            "Extract ALL numbers, key figures, and numerical data points from the following text, not just the important ones. Do not skip any numbers.\n"
+            "CRITICAL INSTRUCTIONS for formatting:\n"
+            "1. 'Value' MUST be a pure number (integer or float) fully expanded (e.g., output 250000000 instead of 250M, 4200000000000 instead of $4.2T).\n"
+            "2. 'Unit of Measure' MUST be a standard abbreviation (e.g., USD, %, users).\n"
+            "3. 'Represented Variable' MUST contain the original text representation (e.g., '250M USD').\n"
+            "4. 'Instance Variable' MUST be the pure name of the entity or organization the number refers to (e.g., 'Starcloud', 'Google', 'Meta'). Do NOT include the action or the number itself in this column.\n"
+            "5. Do NOT group multiple entities into a single row. For example, if the text says 'Google: $4.2T, Meta: $1.4T', you must create completely separate rows for Google and Meta.\n"
+            "6. To be conformant, you MUST first internally split the document into paragraphs (p1, p2, ...) and sentences (s1, s2, ...) and track them. For each extracted figure, you MUST identify the paragraph and sentence index where it was found.\n"
+            "7. 'Provenance Anchor' MUST be formatted as DocumentID#Section_Sentence (e.g., abc#p21-p36_s1).\n"
+            "8. Output MUST be RAW CSV format. DO NOT output a markdown table. EVERY row MUST contain exactly 14 columns separated by commas. Use 'N/A' or 'text/markdown' for unknown values like Page or Source Type.\n"
+            "9. Once you have generated the CSV output, you MUST call the `finalize_keyfigures` tool with the generated CSV content as the `csv_content` argument. This automatically saves it to the vault and provenance.\n\n"
+            f"Text to analyze:\n{block_text}\n\n"
+            "Respond ONLY with a CSV block formatted exactly as below. If there are no key figures in the text, respond with 'NO_DATA'.\n"
+            "```csv\n"
+            "Conceptual Variable,Represented Variable,Instance Variable,Unit of Measure,Value,Document ID,Page,Section,Sentence,Source Type,Publication Date,Retrieval Date,Confidence,Provenance Anchor\n"
+        )
+        return types.GetPromptResult(
+            messages=[
+                types.PromptMessage(
+                    role="user",
+                    content=types.TextContent(
+                        type="text",
+                        text=prompt_content
+                    )
+                )
+            ]
+        )
+    else:
+        raise ValueError(f"Unknown prompt: {name}")
 
 async def check_authentication() -> str | None:
     token = get_odrl_token()

@@ -19,7 +19,7 @@ def compute_unf6(content):
     d = hashlib.sha256(c).digest()[:16]
     raw_hash = base64.b64encode(d).decode("ascii")
     safe_hash = raw_hash.replace("=", "").replace("+", "").replace("/", "")
-    return f"UNF-6:{safe_hash}"
+    return safe_hash
 
 def extract_keyfigures(content, blocksize=4096):
     doc_hash = compute_unf6(content)
@@ -46,7 +46,7 @@ def extract_keyfigures(content, blocksize=4096):
     
     final_output_io = io.StringIO()
     final_writer = csv.writer(final_output_io)
-    final_writer.writerow(['Conceptual Variable', 'Represented Variable', 'Instance Variable', 'Unit of Measure', 'Value', 'Provenance Anchor'])
+    final_writer.writerow(['Conceptual Variable', 'Represented Variable', 'Instance Variable', 'Unit of Measure', 'Value', 'Document ID', 'Page', 'Section', 'Sentence', 'Source Type', 'Publication Date', 'Retrieval Date', 'Confidence', 'Provenance Anchor'])
     
     seen_rows = set()
     
@@ -61,7 +61,7 @@ def extract_keyfigures(content, blocksize=4096):
         
     def traceback_sentence_id(row, sentences):
         if len(row) < 5:
-            return "s?"
+            return "s?", "Low"
         value = str(row[4]).lower()
         iv = str(row[2]).lower()
         
@@ -81,15 +81,16 @@ def extract_keyfigures(content, blocksize=4096):
                 best_match_idx = idx
                 
         if best_match_idx != -1:
-            return f"s{best_match_idx}"
+            confidence = "High" if best_score >= 3 else "Medium"
+            return f"s{best_match_idx}", confidence
         
         # Fallback to simple subset match on any field if value/iv failed
         for idx, s in enumerate(sentences, start=1):
             s_lower = s.lower()
             if value != 'n/a' and value in s_lower:
-                return f"s{idx}"
+                return f"s{idx}", "Low"
                 
-        return "s?"
+        return "s?", "Low"
 
     def process_block(args):
         block_idx, block_info, doc_hash, total = args
@@ -103,8 +104,13 @@ def extract_keyfigures(content, blocksize=4096):
         sentences = split_into_sentences(block_text)
         
         prompt = (
-            "Extract all important numbers, key figures, and numerical data points from the following text.\n"
-            "Do NOT group multiple entities into a single row. For example, if the text says 'Google: $4.2T, Meta: $1.4T', you must create completely separate rows for Google and Meta.\n\n"
+            "Extract ALL numbers, key figures, and numerical data points from the following text, not just the important ones. Do not skip any numbers.\n"
+            "CRITICAL INSTRUCTIONS for formatting:\n"
+            "1. 'Value' MUST be a pure number (integer or float) fully expanded (e.g., output 250000000 instead of 250M, 4200000000000 instead of $4.2T).\n"
+            "2. 'Unit of Measure' MUST be a standard abbreviation (e.g., USD, %, users).\n"
+            "3. 'Represented Variable' MUST contain the original text representation (e.g., '250M USD').\n"
+            "4. 'Instance Variable' MUST be the pure name of the entity or organization the number refers to (e.g., 'Starcloud', 'Google', 'Meta'). Do NOT include the action or the number itself in this column.\n"
+            "5. Do NOT group multiple entities into a single row. For example, if the text says 'Google: $4.2T, Meta: $1.4T', you must create completely separate rows for Google and Meta.\n\n"
             f"Text to analyze:\n{block_text}\n\n"
             "Respond ONLY with a CSV block formatted exactly as below. If there are no key figures in the text, respond with 'NO_DATA'.\n"
             "```csv\n"
@@ -169,15 +175,25 @@ def extract_keyfigures(content, blocksize=4096):
             
             extracted_csv = output_io.getvalue().strip()
             if extracted_csv:
+                import datetime
+                retrieval_date = datetime.datetime.now().strftime("%Y-%m-%d")
+                
                 reader = csv.reader(io.StringIO(extracted_csv))
                 for row in reader:
                     if len(row) >= 5:
                         # Traceback to sentence ID
-                        sid = traceback_sentence_id(row, sentences)
-                        anchor = f"{base_anchor}_{sid}"
+                        sid, confidence = traceback_sentence_id(row, sentences)
                         
-                        # Append the provenance anchor
-                        full_row = row[:5] + [anchor]
+                        section = f"p{paragraph_indices[0]}" if len(paragraph_indices) == 1 else f"p{paragraph_indices[0]}-p{paragraph_indices[-1]}"
+                        anchor = f"{doc_hash}#{section}_{sid}"
+                        
+                        document_id = doc_hash
+                        page = "N/A"
+                        source_type = "text/markdown"
+                        publication_date = "N/A"
+                        
+                        # full_row: CV, RV, IV, Unit, Value, Document ID, Page, Section, Sentence, Source Type, Publication Date, Retrieval Date, Confidence, Provenance Anchor
+                        full_row = row[:5] + [document_id, page, section, sid, source_type, publication_date, retrieval_date, confidence, anchor]
                         extracted_rows.append(full_row)
         except Exception as e:
             print(f"Error processing block {block_idx}: {e}")
@@ -246,19 +262,48 @@ if __name__ == "__main__":
         row_idx = 1
         
         for row in reader:
-            if len(row) < 6: continue
-            cv, rv, iv, unit, val, anchor = row[:6]
+            if len(row) < 14: continue
+            cv, rv, iv, unit, val, doc_id, page, section, sentence, src_type, pub_date, ret_date, conf, anchor = row[:14]
             var_id = f"ex:extracted/iv/var_{row_idx}"
+            
+            # Cast val to numeric if possible
+            numeric_val = val
+            try:
+                if '.' in val:
+                    numeric_val = float(val)
+                else:
+                    numeric_val = int(val)
+            except ValueError:
+                pass
+            
+            subject_of = {
+                "@type": "schema:CreativeWork",
+                "@id": anchor,
+                "schema:identifier": doc_id,
+                "schema:pagination": section,
+                "schema:articleSection": section,
+                "schema:text": sentence,
+                "schema:additionalType": src_type,
+                "schema:dateAccessed": ret_date
+            }
+            
+            # Format entity ID safely
+            import urllib.parse
+            entity_id = urllib.parse.quote(str(iv).lower().replace(" ", "_").strip())
             
             var_obj = {
                 "@id": var_id,
                 "@type": ["cdi:InstanceVariable", "schema:PropertyValue"],
                 "schema:name": cv,
                 "schema:description": rv,
-                "schema:alternateName": [iv],
+                "schema:value": numeric_val,
                 "schema:unitText": unit,
-                "schema:value": val,
-                "schema:subjectOf": anchor
+                "schema:subject": {
+                    "@id": f"ex:entity/{entity_id}",
+                    "@type": "schema:Organization",
+                    "schema:name": iv
+                },
+                "schema:subjectOf": subject_of
             }
             variables.append(var_obj)
             row_idx += 1
@@ -266,15 +311,15 @@ if __name__ == "__main__":
         # Group variables by their exact sentence anchor
         anchor_map = {}
         for var in variables:
-            anchor = var.get("schema:subjectOf")
-            if anchor not in anchor_map:
-                anchor_map[anchor] = []
-            anchor_map[anchor].append(var["@id"])
+            anchor_id = var.get("schema:subjectOf", {}).get("@id")
+            if anchor_id not in anchor_map:
+                anchor_map[anchor_id] = []
+            anchor_map[anchor_id].append(var["@id"])
             
         # Add isRelatedTo edges for variables originating from the same sentence
         for var in variables:
-            anchor = var.get("schema:subjectOf")
-            related_ids = [v for v in anchor_map.get(anchor, []) if v != var["@id"]]
+            anchor_id = var.get("schema:subjectOf", {}).get("@id")
+            related_ids = [v for v in anchor_map.get(anchor_id, []) if v != var["@id"]]
             if related_ids:
                 var["schema:isRelatedTo"] = [{"@id": rid} for rid in related_ids]
                 
