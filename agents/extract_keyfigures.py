@@ -185,7 +185,7 @@ def extract_keyfigures(content, blocksize=4096):
                         sid, confidence = traceback_sentence_id(row, sentences)
                         
                         section = f"p{paragraph_indices[0]}" if len(paragraph_indices) == 1 else f"p{paragraph_indices[0]}-p{paragraph_indices[-1]}"
-                        anchor = f"{doc_hash}#{section}_{sid}"
+                        anchor = f"{doc_hash}:v0:{section}:{sid}"
                         
                         document_id = doc_hash
                         page = "N/A"
