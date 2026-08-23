@@ -1743,7 +1743,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="read_vault_article",
-            description="Read the contents of an article or document from the MinIO vault. You can pass the exact filename (e.g. 'article.md') or the original URL of the article.",
+            description="Read the contents of an article or document from the MinIO vault. You can pass the exact filename (e.g. 'article.md'), the raw document ID (e.g. 'QkGa...'), or the original URL of the article. If you omit the .md extension, it will be automatically appended.",
             inputSchema={
                 "type": "object",
                 "properties": {

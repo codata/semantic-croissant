@@ -243,6 +243,32 @@ def get_datasets_properties(dataset_ids):
     except Exception:
         return []
 
+import httpx
+from fastapi.responses import StreamingResponse
+
+@app.get("/vault/{filename:path}")
+async def get_vault_file(filename: str):
+    minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
+    
+    if not filename.endswith(".md") and not filename.endswith(".jsonld") and not filename.endswith(".gz") and not filename.endswith(".csv"):
+        filename += ".md"
+        
+    async def stream_file():
+        async with httpx.AsyncClient() as client:
+            minio_url = f"{minio_base}/vault/{filename}"
+            async with client.stream("GET", minio_url) as response:
+                if response.status_code == 404 and not filename.endswith(".gz"):
+                    minio_url = f"{minio_base}/vault/{filename}.gz"
+                    async with client.stream("GET", minio_url) as response2:
+                        if response2.status_code == 200:
+                            async for chunk in response2.aiter_bytes():
+                                yield chunk
+                elif response.status_code == 200:
+                    async for chunk in response.aiter_bytes():
+                        yield chunk
+    
+    return StreamingResponse(stream_file())
+
 @app.get("/search")
 def search_keyword(q: str, limit: int = 100, page: int = 1):
     try:
