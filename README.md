@@ -31,6 +31,23 @@ You can override these directories by providing environment variables before run
 VOLUME_DIR=/path/to/my/volumes DATA_DIR=/path/to/my/data docker compose --profile croissant-live up -d
 ```
 
+### Profiles
+The infrastructure supports running multiple independent instances of Semantic Croissant concurrently on the same machine by using isolated profiles. Environment variables (such as port mappings and `DATA_DIR`) for each profile are stored in the `profiles/` directory (e.g., `profiles/codata.env`, `profiles/cdif4eosc.env`, `profiles/ca4eosc.env`).
+
+To build and run a specific profile (for example, `ca4eosc`), you must pass the `--env-file` flag pointing to the profile's configuration file and set the `PROFILE_NAME` variable.
+
+1. Build the profile-specific API image:
+   ```bash
+   docker build -t api-ca4eosc api/
+   ```
+
+2. Start the profile using Docker Compose:
+   ```bash
+   PROFILE_NAME=ca4eosc docker compose --env-file profiles/ca4eosc.env -p ca4eosc --profile ca4eosc up -d
+   ```
+
+Each profile is fully sandboxed, ensuring that QLever index data, Elasticsearch volumes, and Minio objects are kept in dedicated subdirectories based on the profile name (e.g., `./qlever-tests/volumes/ca4eosc/` and `./qlever-tests/data/ca4eosc/`).
+
 ## Data Conversion Pipeline
 
 Before the `croissant-live` index can be built, the raw Croissant JSON-LD files must be converted into a continuous NTriples format (`.nt`) suitable for QLever ingestion.
