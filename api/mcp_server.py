@@ -2098,8 +2098,16 @@ def main(port: int, transport: str) -> int:
         async def proxy_vault(request):
             filename = request.path_params["filename"]
             minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
-            minio_url = f"{minio_base}/vault/{filename}"
-            async with httpx.AsyncClient(headers=get_auth_headers()) as client:
+            from minio import Minio
+            from datetime import timedelta
+            endpoint = minio_base.replace("http://", "").replace("https://", "")
+            try:
+                m_client = Minio(endpoint, access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"), secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"), secure=False)
+                minio_url = m_client.presigned_get_object("vault", filename, expires=timedelta(hours=1))
+            except Exception:
+                minio_url = f"{minio_base}/vault/{filename}"
+                
+            async with httpx.AsyncClient() as client:
                 try:
                     r = await client.get(minio_url)
                     if r.status_code == 200:
@@ -2141,8 +2149,16 @@ def main(port: int, transport: str) -> int:
         async def proxy_downloads(request):
             filename = request.path_params["filename"]
             minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
-            minio_url = f"{minio_base}/downloads/{filename}"
-            async with httpx.AsyncClient(headers=get_auth_headers()) as client:
+            from minio import Minio
+            from datetime import timedelta
+            endpoint = minio_base.replace("http://", "").replace("https://", "")
+            try:
+                m_client = Minio(endpoint, access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"), secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"), secure=False)
+                minio_url = m_client.presigned_get_object("downloads", filename, expires=timedelta(hours=1))
+            except Exception:
+                minio_url = f"{minio_base}/downloads/{filename}"
+                
+            async with httpx.AsyncClient() as client:
                 try:
                     r = await client.get(minio_url)
                     if r.status_code == 200:

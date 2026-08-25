@@ -254,12 +254,24 @@ async def get_vault_file(filename: str):
         filename += ".md"
         
     async def stream_file():
+        from minio import Minio
+        from datetime import timedelta
+        endpoint = minio_base.replace("http://", "").replace("https://", "")
+        try:
+            m_client = Minio(endpoint, access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"), secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"), secure=False)
+            base_minio_url = m_client.presigned_get_object("vault", filename, expires=timedelta(hours=1))
+        except Exception:
+            base_minio_url = f"{minio_base}/vault/{filename}"
+            
         async with httpx.AsyncClient() as client:
-            minio_url = f"{minio_base}/vault/{filename}"
-            async with client.stream("GET", minio_url) as response:
+            async with client.stream("GET", base_minio_url) as response:
                 if response.status_code == 404 and not filename.endswith(".gz"):
-                    minio_url = f"{minio_base}/vault/{filename}.gz"
-                    async with client.stream("GET", minio_url) as response2:
+                    try:
+                        m_client = Minio(endpoint, access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"), secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"), secure=False)
+                        gz_minio_url = m_client.presigned_get_object("vault", filename + ".gz", expires=timedelta(hours=1))
+                    except Exception:
+                        gz_minio_url = f"{minio_base}/vault/{filename}.gz"
+                    async with client.stream("GET", gz_minio_url) as response2:
                         if response2.status_code == 200:
                             async for chunk in response2.aiter_bytes():
                                 yield chunk
