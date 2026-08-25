@@ -1,3 +1,4 @@
+import io
 import requests
 import cloudscraper
 
@@ -16,7 +17,6 @@ import urllib.parse
 import os
 import re
 import csv
-import io
 from bs4 import BeautifulSoup
 import markdownify
 from rdflib import Graph
@@ -782,6 +782,53 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
             f.write(output)
         print(f"\nOutput saved to {output_filename}")
         
+        # Upload to Vault if MinIO is configured
+        try:
+            minio_url = os.environ.get("MINIO_URL", "http://minio:9000")
+            minio_user = os.environ.get("MINIO_ROOT_USER", "minioadmin")
+            minio_pass = os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin")
+            if minio_url:
+                from minio import Minio
+                endpoint = minio_url.replace("http://", "").replace("https://", "")
+                client = Minio(
+                    endpoint,
+                    access_key=minio_user,
+                    secret_key=minio_pass,
+                    secure=minio_url.startswith("https")
+                )
+                
+                # Upload JSON-LD
+                vault_jsonld_filename = croissant_filename
+                jsonld_bytes = output.encode('utf-8')
+                client.put_object(
+                    "vault",
+                    vault_jsonld_filename,
+                    data=io.BytesIO(jsonld_bytes),
+                    length=len(jsonld_bytes),
+                    content_type="application/ld+json"
+                )
+                print(f"Croissant JSON-LD successfully uploaded to vault: https://mcp.dev.codata.org/vault/{vault_jsonld_filename}")
+                
+                # Generate and upload Datacard
+                datacard_filename = vault_jsonld_filename.replace(".jsonld", "_datacard.md")
+                datacard_content = f"**Original Source:** [View URL]({url})\n\n"
+                datacard_content += f"**Markdown Document:** [View Extracted Markdown](https://ai.mediaquantum.eu/vault/{os.path.basename(md_filename)})\n\n"
+                datacard_content += f"**Metadata:** [View Croissant JSON-LD Data](https://ai.mediaquantum.eu/vault/{vault_jsonld_filename})\n\n"
+                import hashlib
+                datacard_content += f"---\n**Digital Signature:** `{hashlib.sha256(jsonld_bytes).hexdigest()}`\n"
+                
+                dc_bytes = datacard_content.encode('utf-8')
+                client.put_object(
+                    "vault",
+                    datacard_filename,
+                    data=io.BytesIO(dc_bytes),
+                    length=len(dc_bytes),
+                    content_type="text/markdown"
+                )
+                print(f"Datacard successfully uploaded to vault: https://mcp.dev.codata.org/vault/{datacard_filename}")
+        except Exception as e:
+            print(f"Warning: Failed to upload JSON-LD/Datacard to MinIO vault: {e}")
+        
         md_filename = f"{safe_name}_content.md"
         title = json_data.get("name", "Dataverse Dataset")
         desc = json_data.get("description", "No description provided.")
@@ -1406,6 +1453,53 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
         with open(output_filename, "w", encoding='utf-8') as f:
             f.write(output)
         print(f"\nOutput saved to {output_filename}")
+        
+        # Upload to Vault if MinIO is configured
+        try:
+            minio_url = os.environ.get("MINIO_URL", "http://minio:9000")
+            minio_user = os.environ.get("MINIO_ROOT_USER", "minioadmin")
+            minio_pass = os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin")
+            if minio_url:
+                from minio import Minio
+                endpoint = minio_url.replace("http://", "").replace("https://", "")
+                client = Minio(
+                    endpoint,
+                    access_key=minio_user,
+                    secret_key=minio_pass,
+                    secure=minio_url.startswith("https")
+                )
+                
+                # Upload JSON-LD
+                vault_jsonld_filename = croissant_filename
+                jsonld_bytes = output.encode('utf-8')
+                client.put_object(
+                    "vault",
+                    vault_jsonld_filename,
+                    data=io.BytesIO(jsonld_bytes),
+                    length=len(jsonld_bytes),
+                    content_type="application/ld+json"
+                )
+                print(f"Croissant JSON-LD successfully uploaded to vault: https://mcp.dev.codata.org/vault/{vault_jsonld_filename}")
+                
+                # Generate and upload Datacard
+                datacard_filename = vault_jsonld_filename.replace(".jsonld", "_datacard.md")
+                datacard_content = f"**Original Source:** [View URL]({url})\n\n"
+                datacard_content += f"**Markdown Document:** [View Extracted Markdown](https://ai.mediaquantum.eu/vault/{os.path.basename(md_filename)})\n\n"
+                datacard_content += f"**Metadata:** [View Croissant JSON-LD Data](https://ai.mediaquantum.eu/vault/{vault_jsonld_filename})\n\n"
+                import hashlib
+                datacard_content += f"---\n**Digital Signature:** `{hashlib.sha256(jsonld_bytes).hexdigest()}`\n"
+                
+                dc_bytes = datacard_content.encode('utf-8')
+                client.put_object(
+                    "vault",
+                    datacard_filename,
+                    data=io.BytesIO(dc_bytes),
+                    length=len(dc_bytes),
+                    content_type="text/markdown"
+                )
+                print(f"Datacard successfully uploaded to vault: https://mcp.dev.codata.org/vault/{datacard_filename}")
+        except Exception as e:
+            print(f"Warning: Failed to upload JSON-LD/Datacard to MinIO vault: {e}")
         
         # --- Index into Ollama with Provenance (only when --reingest or --index is set) ---
         if reingest or index:
