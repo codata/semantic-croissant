@@ -1,54 +1,58 @@
 services:
-  init-croissant-live:
+  init:
+    container_name: ${PROFILE_NAME:-croissant-live}-init
     profiles:
-      - croissant-live
+      - ${PROFILE_NAME:-croissant-live}
     image: docker.io/library/busybox
     command:
       ["sh", "-c", "chown -R 65534:0 /data/server && chown -R 65534:0 /data/ui"]
     stop_grace_period: 0s
     restart: "no"
     volumes:
-      - ${VOLUME_DIR:-./qlever-tests/volumes}/croissant-live/server:/data/server
-      - ${VOLUME_DIR:-./qlever-tests/volumes}/croissant-live/ui:/data/ui
+      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-croissant-live}/server:/data/server
+      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-croissant-live}/ui:/data/ui
 
-  server-croissant-live:
+  server:
+    container_name: ${PROFILE_NAME:-croissant-live}-server
     profiles:
-      - croissant-live
+      - ${PROFILE_NAME:-croissant-live}
     image: ghcr.io/zazukoians/qlever-server:latest
     user: "65534:0"
     stop_grace_period: 0s
     depends_on:
-      init-croissant-live:
+      init:
         condition: service_completed_successfully
     ports:
-      - "7011:7011"
+      - "${QLEVER_SERVER_PORT:-7011}:7011"
     env_file:
-      - ./croissant-live.env
+      - ./${PROFILE_NAME:-croissant-live}.env
     environment:
       - INDEXING=true
       - FORCE_INDEXING=true
     volumes:
-      - ${VOLUME_DIR:-./qlever-tests/volumes}/croissant-live/server:/data
+      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-croissant-live}/server:/data
       - ${DATA_DIR:-./qlever-tests/data}:/raw_data:ro
 
-  ui-croissant-live:
+  ui:
+    container_name: ${PROFILE_NAME:-croissant-live}-ui
     profiles:
-      - croissant-live
+      - ${PROFILE_NAME:-croissant-live}
     image: ghcr.io/zazukoians/qlever-ui:latest
     user: "65534:0"
     stop_grace_period: 0s
     ports:
-      - "7012:7012"
+      - "${QLEVER_UI_PORT:-7012}:7012"
     env_file:
-      - ./croissant-live.env
+      - ./${PROFILE_NAME:-croissant-live}.env
     volumes:
-      - ${VOLUME_DIR:-./qlever-tests/volumes}/croissant-live/ui:/app/db
+      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-croissant-live}/ui:/app/db
     depends_on:
-      - server-croissant-live
+      - server
 
   elasticsearch:
+    container_name: ${PROFILE_NAME:-croissant-live}-elasticsearch
     profiles:
-      - croissant-live
+      - ${PROFILE_NAME:-croissant-live}
     image: docker.elastic.co/elasticsearch/elasticsearch:8.14.3
     environment:
       - discovery.type=single-node
@@ -56,7 +60,7 @@ services:
       - xpack.security.http.ssl.enabled=false
       - ES_JAVA_OPTS=-Xms512m -Xmx1g
     ports:
-      - "9200:9200"
+      - "${ES_PORT:-9200}:9200"
     volumes:
       - ${VOLUME_DIR:-./volumes}/es:/usr/share/elasticsearch/data
     healthcheck:
@@ -65,41 +69,43 @@ services:
       timeout: 10s
       retries: 10
 
-  api-croissant-live:
+  api:
+    container_name: ${PROFILE_NAME:-croissant-live}-api
     profiles:
-      - croissant-live
-    image: api-croissant-live
+      - ${PROFILE_NAME:-croissant-live}
+    image: api-${PROFILE_NAME:-croissant-live}
     pull_policy: never
     ports:
-      - "7013:8000"
+      - "${API_PORT:-7013}:8000"
     env_file:
-      - ./croissant-live.env
+      - ./${PROFILE_NAME:-croissant-live}.env
     environment:
       - ELASTICSEARCH_URL=http://elasticsearch:9200
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./hips:/app/hips:ro
       - ${DATA_DIR:-./qlever-tests/data}:/data
-      - ${VOLUME_DIR:-./qlever-tests/volumes}/croissant-live/server:/volumes/server
+      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-croissant-live}/server:/volumes/server
       - ./convertors:/app/convertors:ro
       - ./agents:/app/agents:ro
       - ./credentials.json:/app/credentials.json:ro
     depends_on:
-      - server-croissant-live
+      - server
       - elasticsearch
 
-  mcp-croissant-live:
+  mcp:
+    container_name: ${PROFILE_NAME:-croissant-live}-mcp
     profiles:
-      - croissant-live
-    image: api-croissant-live
+      - ${PROFILE_NAME:-croissant-live}
+    image: api-${PROFILE_NAME:-croissant-live}
     pull_policy: never
     command: ["python", "/app/mcp_server.py", "--transport", "sse"]
     ports:
-      - "7070:7070"
+      - "${MCP_PORT:-7070}:7070"
     env_file:
-      - ./croissant-live.env
+      - ./${PROFILE_NAME:-croissant-live}.env
     environment:
-      - API_BASE=http://api-croissant-live:8000
+      - API_BASE=http://api:8000
       - MCP_TRANSPORT=sse
       - ELASTICSEARCH_URL=http://elasticsearch:9200
     volumes:
@@ -108,16 +114,17 @@ services:
       - ~/.odrl:/root/.odrl:ro
       - ./credentials.json:/app/credentials.json:ro
     depends_on:
-      - api-croissant-live
+      - api
       - elasticsearch
 
   minio:
+    container_name: ${PROFILE_NAME:-croissant-live}-minio
     profiles:
-      - croissant-live
+      - ${PROFILE_NAME:-croissant-live}
     image: minio/minio:latest
     ports:
-      - "9005:9000"
-      - "9006:9001"
+      - "${MINIO_API_PORT:-9005}:9000"
+      - "${MINIO_CONSOLE_PORT:-9007}:9001"
     environment:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=minioadmin
