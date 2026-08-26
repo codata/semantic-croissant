@@ -736,6 +736,32 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
                     "uID": did_str
                 }
             ]
+            # Add ODRL policy for Markdown files with language property
+            if "@context" not in payload_dict:
+                payload_dict["@context"] = {}
+            if isinstance(payload_dict["@context"], dict):
+                payload_dict["@context"]["odrl"] = "http://www.w3.org/ns/odrl/2/"
+                
+            payload_dict["odrl:hasPolicy"] = {
+                "@type": "odrl:Policy",
+                "odrl:permission": [{
+                    "odrl:action": ["odrl:read", "odrl:use"],
+                    "odrl:target": {
+                        "@type": "odrl:AssetCollection",
+                        "odrl:refinement": [
+                            {
+                                "odrl:leftOperand": "dc:format",
+                                "odrl:operator": "odrl:eq",
+                                "odrl:rightOperand": "text/markdown"
+                            },
+                            {
+                                "odrl:leftOperand": "dc:language",
+                                "odrl:operator": "odrl:isPresent"
+                            }
+                        ]
+                    }
+                }]
+            }
 
             jsonld_payload = json.dumps(payload_dict, indent=2)
                 
@@ -844,6 +870,7 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
         except Exception as es_err:
             print(f"Warning: Failed to communicate with Elasticsearch: {es_err}")
         
+
         return [types.TextContent(type="text", text=f"Successfully stored in vault as {filename}")]
     except Exception as e:
         return [types.TextContent(type="text", text=f"Error storing in vault: {str(e)}")]
@@ -1945,11 +1972,11 @@ async def list_tools() -> list[types.Tool]:
                 "type": "object",
                 "properties": {
                     "content": {"type": "string", "description": "The text content to store in the vault."},
-                    "prefix": {"type": "string", "description": "Optional: A short, descriptive snake_case summary of the data/chat (e.g. 'extracting_ai_factory_numbers')."},
-                    "jsonld_payload": {"type": "string", "description": "Optional: Croissant JSON-LD string to save alongside the markdown file. Provide if summarizing a dataset."},
+                    "prefix": {"type": "string", "description": "REQUIRED: You MUST generate a short, descriptive snake_case summary of the data/chat (e.g. 'extracting_ai_factory_numbers') and provide it here. Do NOT use generic prefixes!"},
+                    "jsonld_payload": {"type": "object", "description": "REQUIRED Croissant JSON-LD string or JSON object to save alongside the markdown file. CRITICAL: You MUST write out the FULL, COMPLETE JSON-LD payload. Do NOT truncate it. Do NOT use placeholders like '...rest of the variables...'. Output every single variable fully!"},
                     "ai_model_override": {"type": "string", "description": "If your client does not expose its identity via MCP clientInfo (i.e. 'Unknown AI Agent'), you MUST provide your AI vendor and model here (e.g. 'Anthropic Claude 3.5 Sonnet', 'LM Studio Llama 3')."}
                 },
-                "required": ["content"]
+                "required": ["prefix", "content", "jsonld_payload"]
             }
         ),
         types.Tool(
@@ -2017,7 +2044,7 @@ async def get_prompt(name: str, arguments: dict[str, str] | None = None) -> type
             "5. Do NOT group multiple entities into a single row. For example, if the text says 'Google: $4.2T, Meta: $1.4T', you must create completely separate rows for Google and Meta.\n"
             "6. To be conformant, you MUST first internally split the document into paragraphs (p1, p2, ...) and sentences (s1, s2, ...) and track them. For each extracted figure, you MUST identify the paragraph and sentence index where it was found.\n"
             "7. 'Provenance Anchor' MUST be formatted as DocumentID:v0:Section:Sentence (e.g., abc:v0:p21:s1).\n"
-            "8. Output MUST be RAW CSV format. DO NOT output a markdown table. EVERY row MUST contain exactly 14 columns separated by commas. Use 'N/A' or 'text/markdown' for unknown values like Page or Source Type.\n"
+            "8. Output MUST be RAW CSV format. DO NOT output a markdown table. EVERY row MUST contain exactly 16 columns separated by commas. Use 'N/A' or 'text/markdown' for unknown values like Page or Source Type.\n"
             "9. Once you have generated the CSV output, you MUST call the `finalize_keyfigures` tool with the generated CSV content as the `csv_content` argument. This automatically saves it to the vault and provenance.\n\n"
             f"Text to analyze:\n{block_text}\n\n"
             "Respond ONLY with a CSV block formatted exactly as below. If there are no key figures in the text, respond with 'NO_DATA'.\n"
