@@ -1945,11 +1945,11 @@ async def list_tools() -> list[types.Tool]:
                 "type": "object",
                 "properties": {
                     "content": {"type": "string", "description": "The text content to store in the vault."},
-                    "prefix": {"type": "string", "description": "REQUIRED: You MUST generate a short, descriptive snake_case summary of the data/chat (e.g. 'extracting_ai_factory_numbers') and provide it here. Do NOT use generic prefixes!"},
-                    "jsonld_payload": {"type": "object", "description": "REQUIRED Croissant JSON-LD string or JSON object to save alongside the markdown file. CRITICAL: You MUST write out the FULL, COMPLETE JSON-LD payload. Do NOT truncate it. Do NOT use placeholders like '...rest of the variables...'. Output every single variable fully!"},
+                    "prefix": {"type": "string", "description": "Optional: A short, descriptive snake_case summary of the data/chat (e.g. 'extracting_ai_factory_numbers')."},
+                    "jsonld_payload": {"type": "string", "description": "Optional: Croissant JSON-LD string to save alongside the markdown file. Provide if summarizing a dataset."},
                     "ai_model_override": {"type": "string", "description": "If your client does not expose its identity via MCP clientInfo (i.e. 'Unknown AI Agent'), you MUST provide your AI vendor and model here (e.g. 'Anthropic Claude 3.5 Sonnet', 'LM Studio Llama 3')."}
                 },
-                "required": ["prefix", "content", "jsonld_payload"]
+                "required": ["content"]
             }
         ),
         types.Tool(
