@@ -233,47 +233,63 @@ async def read_vault_article(url_or_filename: str) -> list[types.TextContent]:
         filename += ".md"
 
     minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
+    endpoint = minio_base.replace("http://", "").replace("https://", "")
     
-    async with httpx.AsyncClient(headers=get_auth_headers()) as client:
+    try:
+        from minio import Minio
+        m_client = Minio(
+            endpoint,
+            access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"),
+            secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"),
+            secure=False
+        )
+        
         try:
-            # Try original filename
-            minio_url = f"{minio_base}/vault/{filename}"
-            r = await client.get(minio_url)
-            
-            # Fallback to .gz if not found
-            if r.status_code == 404 and not filename.endswith(".gz"):
+            response = m_client.get_object("vault", filename)
+            content = response.read()
+            response.close()
+            response.release_conn()
+            r_status_code = 200
+        except Exception:
+            if not filename.endswith(".gz"):
                 filename += ".gz"
-                minio_url = f"{minio_base}/vault/{filename}"
-                r = await client.get(minio_url)
-
-            if r.status_code == 200:
-                content = r.content
-                import gzip
-                if filename.endswith(".gz") or r.headers.get("content-encoding") == "gzip":
-                    try:
-                        content = gzip.decompress(content)
-                    except gzip.BadGzipFile:
-                        pass # Was not actually gzipped
-                
-                result_content = content.decode("utf-8", errors="replace")
-                
-                import re
-                session_match = re.search(r'(UNF-6_[^_]+)_', filename)
-                if session_match:
-                    session_id = session_match.group(1)
-                    if "session_" in filename:
-                        session_match_exact = re.search(r'session_(UNF-6_[^_]+)_', filename)
-                        if session_match_exact:
-                            session_id = session_match_exact.group(1)
-                            
-                    system_prompt = f"\n\n---\nSYSTEM INSTRUCTION FOR AI AGENT:\nThis document belongs to an existing session ({session_id}). When you use the 'save_to_vault' tool to save your response or analysis based on this document, you MUST include the property '\"session_id\": \"{session_id}\"' at the root level of your 'jsonld_payload' argument. This is mandatory to preserve the provenance history chain."
-                    result_content += system_prompt
-                
-                return [types.TextContent(type="text", text=result_content)]
+                try:
+                    response = m_client.get_object("vault", filename)
+                    content = response.read()
+                    response.close()
+                    response.release_conn()
+                    r_status_code = 200
+                except Exception:
+                    r_status_code = 404
             else:
-                return [types.TextContent(type="text", text=f"Article '{filename}' not found in vault (HTTP {r.status_code}).")]
-        except Exception as e:
-            return [types.TextContent(type="text", text=f"Error reading from vault: {str(e)}")]
+                r_status_code = 404
+                
+        if r_status_code == 200:
+            import gzip
+            if filename.endswith(".gz"):
+                try:
+                    content = gzip.decompress(content)
+                except gzip.BadGzipFile:
+                    pass
+                    
+            result_content = content.decode("utf-8", errors="replace")
+            import re
+            session_match = re.search(r'(UNF-6_[^_]+)_', filename)
+            if session_match:
+                session_id = session_match.group(1)
+                if "session_" in filename:
+                    session_match_exact = re.search(r'session_(UNF-6_[^_]+)_', filename)
+                    if session_match_exact:
+                        session_id = session_match_exact.group(1)
+                        
+                system_prompt = f"\n\n---\nSYSTEM INSTRUCTION FOR AI AGENT:\nThis document belongs to an existing session ({session_id}). When you use the 'save_to_vault' tool to save your response or analysis based on this document, you MUST include the property '\"session_id\": \"{session_id}\"' at the root level of your 'jsonld_payload' argument. This is mandatory to preserve the provenance history chain."
+                result_content += system_prompt
+                
+            return [types.TextContent(type="text", text=result_content)]
+        else:
+            return [types.TextContent(type="text", text=f"Article '{filename}' not found in vault (HTTP 404).")]
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"Failed to read from vault: {str(e)}")]
 
 async def list_vault_documents(prefix: str = "") -> list[types.TextContent]:
     import os
@@ -1581,6 +1597,32 @@ Here is detailed information about how every tool works:
 - google-drive: Perform operations on Google Drive (search, read, upload).
 """
         return [types.TextContent(type="text", text=guidance)]
+    elif name == "search_web":
+        query = arguments.get("query")
+        if not query:
+            return [types.TextContent(type="text", text="Error: query is required.")]
+        
+        try:
+            import requests
+            from bs4 import BeautifulSoup
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            res = requests.get(f"https://html.duckduckgo.com/html/?q={query}", headers=headers, timeout=15)
+            soup = BeautifulSoup(res.text, "html.parser")
+            results = []
+            for a in soup.find_all("a", class_="result__url"):
+                url = a.get("href")
+                if url and url.startswith("//duckduckgo.com/l/?uddg="):
+                    import urllib.parse
+                    url = urllib.parse.unquote(url.split("uddg=")[1].split("&")[0])
+                title_tag = a.find_previous("a", class_="result__snippet")
+                if title_tag:
+                    results.append({"url": url, "snippet": title_tag.text})
+            
+            if not results:
+                return [types.TextContent(type="text", text="No search results found.")]
+            return [types.TextContent(type="text", text=json.dumps(results[:5], indent=2))]
+        except Exception as e:
+            return [types.TextContent(type="text", text=f"Search failed: {e}")]
     elif name == "search_croissant_datasets":
         return await search_croissant_datasets(
             q=arguments.get("q"),
@@ -1678,7 +1720,7 @@ Here is detailed information about how every tool works:
 
 @app.list_tools()
 async def list_tools() -> list[types.Tool]:
-    return [
+    tools = [
         types.Tool(
             name="onboarding",
             description="Provides guidance on which tools to select for your task. You MUST call this tool before selecting any other tools.",
@@ -1922,6 +1964,28 @@ async def list_tools() -> list[types.Tool]:
             }
         )
     ]
+    
+    try:
+        ctx = app.request_context
+        client_name = ctx.session.client_info.name if ctx and ctx.session and ctx.session.client_info else ""
+        if "claude" in client_name.lower():
+            tools.append(
+                types.Tool(
+                    name="search_web",
+                    description="Search the web for information (e.g., finding published papers for datasets to extract variables).",
+                    inputSchema={
+                        "type": "object",
+                        "required": ["query"],
+                        "properties": {
+                            "query": {"type": "string", "description": "The search query."}
+                        }
+                    }
+                )
+            )
+    except Exception:
+        pass
+        
+    return tools
 
 @app.list_prompts()
 async def list_prompts() -> list[types.Prompt]:
