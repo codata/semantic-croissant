@@ -687,8 +687,9 @@ def index_into_elasticsearch(url, json_data, markdown_data, expert="/croissant")
 
 def check_dataverse_direct_export(url):
     try:
+        headers = {'User-Agent': 'curl/7.68.0'}
         if "doi.org" in url:
-            res = requests.head(url, allow_redirects=True, timeout=10)
+            res = requests.head(url, allow_redirects=True, timeout=10, headers=headers)
             target_url = res.url
         else:
             target_url = url
@@ -703,7 +704,7 @@ def check_dataverse_direct_export(url):
                 for exporter in ["croissant", "schema.org"]:
                     export_url = f"{base_url}/api/datasets/export?exporter={exporter}&persistentId={persistent_id}"
                     print(f"Dataverse URL detected. Trying direct export from {export_url}")
-                    res = requests.get(export_url, timeout=15)
+                    res = requests.get(export_url, timeout=15, headers=headers)
                     
                     if res.status_code == 200:
                         if 'json' in res.headers.get('content-type', '').lower():
@@ -777,6 +778,8 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
         os.makedirs(os.path.join("data", "ca4eosc"), exist_ok=True)
         safe_name = os.path.join("data", "ca4eosc", safe_name)
         output_filename = f"{safe_name}_croissant.jsonld"
+        croissant_filename = os.path.basename(output_filename)
+        md_filename = f"{safe_name}_content.md"
         
         with open(output_filename, "w", encoding='utf-8') as f:
             f.write(output)

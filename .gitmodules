@@ -4,3 +4,6 @@
 [submodule "croissant-toolkit"]
 	path = croissant-toolkit
 	url = https://github.com/codata/croissant-toolkit
+[submodule "palefire"]
+	path = palefire
+	url = https://github.com/agstack/palefire
