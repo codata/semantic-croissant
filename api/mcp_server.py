@@ -742,6 +742,36 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
                 payload_dict["@context"] = {}
             if isinstance(payload_dict["@context"], dict):
                 payload_dict["@context"]["odrl"] = "http://www.w3.org/ns/odrl/2/"
+                payload_dict["@context"]["cdif"] = "http://www.w3.org/ns/cdif/"
+                payload_dict["@context"]["cr"] = "http://mlcommons.org/croissant/"
+                payload_dict["@context"]["sc"] = "https://schema.org/"
+            elif isinstance(payload_dict["@context"], list):
+                has_dict = False
+                for item in payload_dict["@context"]:
+                    if isinstance(item, dict):
+                        item["odrl"] = "http://www.w3.org/ns/odrl/2/"
+                        item["cdif"] = "http://www.w3.org/ns/cdif/"
+                        item["cr"] = "http://mlcommons.org/croissant/"
+                        item["sc"] = "https://schema.org/"
+                        has_dict = True
+                        break
+                if not has_dict:
+                    payload_dict["@context"].append({
+                        "odrl": "http://www.w3.org/ns/odrl/2/",
+                        "cdif": "http://www.w3.org/ns/cdif/",
+                        "cr": "http://mlcommons.org/croissant/",
+                        "sc": "https://schema.org/"
+                    })
+            elif isinstance(payload_dict["@context"], str):
+                payload_dict["@context"] = [
+                    payload_dict["@context"],
+                    {
+                        "odrl": "http://www.w3.org/ns/odrl/2/",
+                        "cdif": "http://www.w3.org/ns/cdif/",
+                        "cr": "http://mlcommons.org/croissant/",
+                        "sc": "https://schema.org/"
+                    }
+                ]
                 
             payload_dict["odrl:hasPolicy"] = {
                 "@type": "odrl:Policy",
