@@ -1,3 +1,4 @@
+import sys
 import anyio
 import click
 import httpx
@@ -416,7 +417,7 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
         safe_hash = raw_hash.replace("=", "").replace("+", "").replace("/", "")
         unf_label = f"UNF-6_{safe_hash}"
     except Exception as e:
-        print(f"Failed to generate UNF-6 hash: {e}")
+        print(f"Failed to generate UNF-6 hash: {e}", file=sys.stderr)
     
     import json
     if isinstance(jsonld_payload, str):
@@ -558,7 +559,7 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
                                 if not any(isinstance(x, dict) and x.get("name") == inherited_item["name"] for x in payload_dict["isBasedOn"]):
                                     payload_dict["isBasedOn"].append(inherited_item)
             except Exception as e:
-                print(f"Warning: Failed to fetch history for prefix session_{session_id}: {e}")
+                print(f"Warning: Failed to fetch history for prefix session_{session_id}: {e}", file=sys.stderr)
 
             ai_model = None
             if ai_model_override:
@@ -582,7 +583,7 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
                     if not ai_model:
                         ai_model = "Unknown AI Agent (via MCP)"
                 except Exception as e:
-                    print(f"Warning: Failed to extract AI model info: {e}")
+                    print(f"Warning: Failed to extract AI model info: {e}", file=sys.stderr)
                     ai_model = "Unknown AI Agent (via MCP)"
 
             if ai_model == "Unknown AI Agent (via MCP)":
@@ -813,7 +814,7 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
                         md_table += "| " + " | ".join(row) + " |\n"
                 md_content += md_table + "\n\n"
             except Exception as e:
-                print(f"Warning: Failed to render Markdown table from CSV: {e}")
+                print(f"Warning: Failed to render Markdown table from CSV: {e}", file=sys.stderr)
                 
             md_content += f"---\n**Digital Signature:** `{sig_str}`\n"
             if history_md:
@@ -866,9 +867,9 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
                     headers={"Content-Type": "application/json"}
                 )
                 if es_resp.status_code >= 400:
-                    print(f"Warning: Failed to index document into Elasticsearch ({es_resp.status_code}): {es_resp.text}")
+                    print(f"Warning: Failed to index document into Elasticsearch ({es_resp.status_code}, file=sys.stderr): {es_resp.text}")
         except Exception as es_err:
-            print(f"Warning: Failed to communicate with Elasticsearch: {es_err}")
+            print(f"Warning: Failed to communicate with Elasticsearch: {es_err}", file=sys.stderr)
         
 
         return [types.TextContent(type="text", text=f"Successfully stored in vault as {filename}")]
@@ -996,7 +997,7 @@ async def predict_missing_variable_info(variables, dataset_title="Dataset"):
                             if p.get("predicted_unit"):
                                 var["unit"] = f"{p['predicted_unit']} (Predicted by model: Ollama llama3.1)"
     except Exception as e:
-        print(f"Ollama variable prediction failed: {e}")
+        print(f"Ollama variable prediction failed: {e}", file=sys.stderr)
         
     return variables
 
@@ -1040,20 +1041,20 @@ async def extract_variables_from_croissant(dataset_id_or_url: str) -> list[types
                                     data = res.json()
                                     variables = data.get("variables", [])
                                     files = data.get("files", [])
-                                    print(f"DEBUG Step 1: variables={variables}, files={files}", flush=True)
+                                    print(f"DEBUG Step 1: variables={variables}, files={files}", flush=True, file=sys.stderr)
                                     if variables or files:
                                         if variables:
                                             variables = await predict_missing_variable_info(variables, dataset_title=dataset_id_or_url)
                                             data["variables"] = variables
                                         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
                                     else:
-                                        print("DEBUG Step 1: No variables or files, falling through...", flush=True)
+                                        print("DEBUG Step 1: No variables or files, falling through...", flush=True, file=sys.stderr)
                                         # Return raw JSON-LD so the LLM can inspect distribution files
                                         return [types.TextContent(type="text", text=json.dumps(parsed_jsonld, indent=2))]
                             except json.JSONDecodeError:
-                                print("Warning: Could not parse JSON-LD from Elasticsearch _markdown_text")
+                                print("Warning: Could not parse JSON-LD from Elasticsearch _markdown_text", file=sys.stderr)
             except Exception as e:
-                print(f"Warning: Elastic lookup failed: {e}")
+                print(f"Warning: Elastic lookup failed: {e}", file=sys.stderr)
 
             # 2. Fallback to QLever SPARQL
             response = await client.get(f"{API_BASE}/variables/sparql", params={"id": dataset_id_or_url})
@@ -1099,25 +1100,25 @@ async def extract_variables_from_croissant(dataset_id_or_url: str) -> list[types
                                     data = res.json()
                                     variables = data.get("variables", [])
                                     files = data.get("files", [])
-                                    print(f"DEBUG Step 3: variables={variables}, files={files}", flush=True)
+                                    print(f"DEBUG Step 3: variables={variables}, files={files}", flush=True, file=sys.stderr)
                                     if variables or files:
                                         if variables:
                                             variables = await predict_missing_variable_info(variables, dataset_title=data.get("identifier", dataset_id_or_url))
                                             data["variables"] = variables
                                         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
                                     else:
-                                        print("DEBUG Step 3: No variables or files, falling through...", flush=True)
+                                        print("DEBUG Step 3: No variables or files, falling through...", flush=True, file=sys.stderr)
                                         # If no specific variables were extracted, return the raw Croissant JSON-LD 
                                         # so the LLM can at least inspect the 'distribution' file objects.
                                         return [types.TextContent(type="text", text=json.dumps(parsed_jsonld, indent=2))]
                         except Exception as ex:
-                            print(f"Warning: Failed to fetch or parse Croissant export: {ex}")
+                            print(f"Warning: Failed to fetch or parse Croissant export: {ex}", file=sys.stderr)
                             
                         # Fallback to OAI_ORE if Croissant export fails
                         oai_url = f"{base_url}/api/datasets/export?exporter=OAI_ORE&persistentId={doi_part}"
                         return await extract_variables_from_oai(oai_url)
                 except Exception as e:
-                    print(f"Warning: URL redirect check failed: {e}")
+                    print(f"Warning: URL redirect check failed: {e}", file=sys.stderr)
 
                 response = await client.get(f"{API_BASE}/variables/croissant", params={"url": dataset_id_or_url})
                 response.raise_for_status()
@@ -1144,7 +1145,7 @@ async def extract_variables_from_croissant(dataset_id_or_url: str) -> list[types
                                 variables = await predict_missing_variable_info(variables, dataset_title=dataset_id_or_url)
                                 return [types.TextContent(type="text", text=json.dumps(variables, indent=2))]
                 except Exception as e:
-                    print(f"Warning: Failed to parse local file {dataset_id_or_url}: {e}")
+                    print(f"Warning: Failed to parse local file {dataset_id_or_url}: {e}", file=sys.stderr)
                     
             return [types.TextContent(type="text", text="[]")]
     except Exception as e:
@@ -1367,13 +1368,13 @@ async def finalize_keyfigures(csv_content: str, file_path: str = "") -> list[typ
         try:
             vault_result = await store_in_vault(content=csv_content, prefix="extracted_keyfigures", jsonld_payload=json.dumps(jsonld_doc), file_ext=".csv", filename_override=doc_id)
         except Exception as e:
-            print(f"Warning: Failed to save extracted keyfigures to vault: {e}")
+            print(f"Warning: Failed to save extracted keyfigures to vault: {e}", file=sys.stderr)
             vault_result = [types.TextContent(type="text", text=f"Warning: Failed to save to vault: {e}")]
             
         try:
             await ingest_to_qlever(jsonld_payload=json.dumps(jsonld_doc), rebuild=True)
         except Exception as e:
-            print(f"Warning: Failed to ingest extracted keyfigures JSON-LD to QLever: {e}")
+            print(f"Warning: Failed to ingest extracted keyfigures JSON-LD to QLever: {e}", file=sys.stderr)
             
         try:
             if variables and len(variables) > 0:
@@ -1400,9 +1401,9 @@ async def finalize_keyfigures(csv_content: str, file_path: str = "") -> list[typ
                                 
                                 client.put_object("vault", f"{doc_id}.md", io.BytesIO(new_content.encode("utf-8")), len(new_content.encode("utf-8")), content_type="text/markdown")
                         except Exception as e:
-                            print(f"Failed to update original markdown {doc_id}.md: {e}")
+                            print(f"Failed to update original markdown {doc_id}.md: {e}", file=sys.stderr)
         except Exception as e:
-            print(f"Warning: Failed to link datacard to original markdown: {e}")
+            print(f"Warning: Failed to link datacard to original markdown: {e}", file=sys.stderr)
             
         return vault_result + [types.TextContent(type="text", text="Successfully finalized key figures, saved to vault, and registered in provenance!")]
         
@@ -1441,12 +1442,12 @@ async def extract_keyfigures_tool(file_path: str = None, text_content: str = Non
                     try:
                         await store_in_vault(content=content, prefix="downloaded_page", file_ext=".md")
                     except Exception as e:
-                        print(f"Warning: Failed to save downloaded markdown to vault: {e}")
+                        print(f"Warning: Failed to save downloaded markdown to vault: {e}", file=sys.stderr)
                     # Save downloaded markdown to vault
                     try:
                         await store_in_vault(content=content, prefix="downloaded_page", file_ext=".md")
                     except Exception as e:
-                        print(f"Warning: Failed to save downloaded markdown to vault: {e}")
+                        print(f"Warning: Failed to save downloaded markdown to vault: {e}", file=sys.stderr)
             except Exception as e:
                 return [types.TextContent(type="text", text=f"Error: File not found locally and failed to download from vault: {e}")]
     
@@ -1474,7 +1475,7 @@ async def extract_keyfigures_tool(file_path: str = None, text_content: str = Non
                 client.make_bucket("vault")
             client.put_object("vault", f"{doc_hash}.md", io.BytesIO(content.encode("utf-8")), len(content.encode("utf-8")), content_type="text/markdown")
         except Exception as e:
-            print(f"Warning: Failed to save original markdown to vault via Minio: {e}")
+            print(f"Warning: Failed to save original markdown to vault via Minio: {e}", file=sys.stderr)
         
     from datetime import datetime
     retrieval_date = datetime.now().strftime('%Y-%m-%d')
@@ -2080,7 +2081,7 @@ async def check_authentication() -> str | None:
 )
 def main(port: int, transport: str) -> int:
     if not get_odrl_token():
-        print("WARNING: ~/.odrl/authorize not found. Please create it using odrl-cli or authenticate on the front page.", flush=True)
+        print("WARNING: ~/.odrl/authorize not found. Please create it using odrl-cli or authenticate on the front page.", flush=True, file=sys.stderr)
     if transport == "sse":
         from mcp.server.sse import SseServerTransport
         from starlette.applications import Starlette
@@ -2233,7 +2234,7 @@ def main(port: int, transport: str) -> int:
                             headers=headers
                         )
                 except Exception as e:
-                    print(f"Error proxying minio: {e}")
+                    print(f"Error proxying minio: {e}", file=sys.stderr)
             from starlette.responses import Response
             return Response("Not Found", status_code=404)
             
@@ -2258,7 +2259,7 @@ def main(port: int, transport: str) -> int:
                             "Content-Disposition": f"attachment; filename={filename}"
                         })
                 except Exception as e:
-                    print(f"Error proxying minio: {e}")
+                    print(f"Error proxying minio: {e}", file=sys.stderr)
             from starlette.responses import Response
             return Response("Not Found", status_code=404)
 
@@ -2303,7 +2304,7 @@ def main(port: int, transport: str) -> int:
                         media_type=content_type
                     )
                 except Exception as e:
-                    print(f"Error proxying elasticsearch: {e}")
+                    print(f"Error proxying elasticsearch: {e}", file=sys.stderr)
             from starlette.responses import Response
             return Response("Error proxying to Elasticsearch", status_code=500)
 

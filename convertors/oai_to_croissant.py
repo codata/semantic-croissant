@@ -69,6 +69,28 @@ def convert_to_croissant(doi):
         try:
             json_data = json.loads(output)
             print("✓ JSON is well-formed")
+
+            # Inject the correct Croissant/ODRL/CDIF context
+            json_data["@context"] = {
+                "@language": "en",
+                "@vocab": "https://schema.org/",
+                "cr": "http://mlcommons.org/croissant/",
+                "dct": "http://purl.org/dc/terms/",
+                "sc": "https://schema.org/",
+                "conformsTo": "dct:conformsTo",
+                "distribution": {
+                    "@id": "cr:distribution"
+                },
+                "bs4ExtractionPattern": {
+                    "@id": "sc:processingRequirement",
+                    "@type": "@json"
+                },
+                "unf": "https://guides.dataverse.org/en/6.9/developers/unf/unf-v6.html",
+                "odrl": "http://www.w3.org/ns/odrl/2/",
+                "cdif": "https://cdif.org/1.1/",
+                "did": "https://www.w3.org/ns/did/v1"
+            }
+            output = json.dumps(json_data, indent=2)
             
             # Write to temporary file for rdflib
             import tempfile
