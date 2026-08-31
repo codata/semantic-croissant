@@ -14,7 +14,7 @@ import json
 import os
 
 API_BASE = os.environ.get("API_BASE", "http://localhost:7013")
-MCP_DOMAIN = os.environ.get("MCP_DOMAIN", "ai.mediaquantum.eu")
+MCP_DOMAIN = os.environ.get("MCP_DOMAIN", "mcp.dev.codata.org")
 HOST = os.environ.get("HOST", f"https://{MCP_DOMAIN}")
 
 def get_odrl_token():

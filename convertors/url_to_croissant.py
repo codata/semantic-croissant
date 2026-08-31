@@ -25,6 +25,7 @@ from playwright.sync_api import sync_playwright
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 ELASTICSEARCH_URL = os.environ.get("ELASTICSEARCH_URL", "http://localhost:9200")
+MCP_DOMAIN = os.environ.get("MCP_DOMAIN", "mcp.dev.codata.org")
 MODEL_NAME = "gemma4-croissant"
 
 def fetch_with_playwright(url):
@@ -815,8 +816,8 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                 # Generate and upload Datacard
                 datacard_filename = vault_jsonld_filename.replace(".jsonld", "_datacard.md")
                 datacard_content = f"**Original Source:** [View URL]({url})\n\n"
-                datacard_content += f"**Markdown Document:** [View Extracted Markdown](https://ai.mediaquantum.eu/vault/{os.path.basename(md_filename)})\n\n"
-                datacard_content += f"**Metadata:** [View Croissant JSON-LD Data](https://ai.mediaquantum.eu/vault/{vault_jsonld_filename})\n\n"
+                datacard_content += f"**Markdown Document:** [View Extracted Markdown](https://{MCP_DOMAIN}/vault/{os.path.basename(md_filename)})\n\n"
+                datacard_content += f"**Metadata:** [View Croissant JSON-LD Data](https://{MCP_DOMAIN}/vault/{vault_jsonld_filename})\n\n"
                 import hashlib
                 datacard_content += f"---\n**Digital Signature:** `{hashlib.sha256(jsonld_bytes).hexdigest()}`\n"
                 
@@ -1487,8 +1488,8 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                 # Generate and upload Datacard
                 datacard_filename = vault_jsonld_filename.replace(".jsonld", "_datacard.md")
                 datacard_content = f"**Original Source:** [View URL]({url})\n\n"
-                datacard_content += f"**Markdown Document:** [View Extracted Markdown](https://ai.mediaquantum.eu/vault/{os.path.basename(md_filename)})\n\n"
-                datacard_content += f"**Metadata:** [View Croissant JSON-LD Data](https://ai.mediaquantum.eu/vault/{vault_jsonld_filename})\n\n"
+                datacard_content += f"**Markdown Document:** [View Extracted Markdown](https://{MCP_DOMAIN}/vault/{os.path.basename(md_filename)})\n\n"
+                datacard_content += f"**Metadata:** [View Croissant JSON-LD Data](https://{MCP_DOMAIN}/vault/{vault_jsonld_filename})\n\n"
                 import hashlib
                 datacard_content += f"---\n**Digital Signature:** `{hashlib.sha256(jsonld_bytes).hexdigest()}`\n"
                 
