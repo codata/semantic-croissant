@@ -1104,11 +1104,9 @@ async def extract_variables_from_croissant(dataset_id_or_url: str) -> list[types
                 
             if dataset_id_or_url.startswith("http"):
                 # Handle Dataverse DOIs by resolving redirects and delegating to the OAI/Croissant extractor
-                import urllib.request
                 try:
-                    req = urllib.request.Request(dataset_id_or_url, method="HEAD", headers={"User-Agent": "curl/7.68.0"})
-                    with urllib.request.urlopen(req) as resp:
-                        resolved_url = resp.url
+                    head_res = await client.head(dataset_id_or_url, follow_redirects=True)
+                    resolved_url = str(head_res.url)
                         
                     doi_part = None
                     base_url = None
