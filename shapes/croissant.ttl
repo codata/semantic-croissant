@@ -1,0 +1,66 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix cr: <http://mlcommons.org/croissant/> .
+@prefix schema: <https://schema.org/> .
+@prefix odrl: <http://www.w3.org/ns/odrl/2/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+schema:DatasetShape
+    a sh:NodeShape ;
+    sh:targetClass schema:Dataset ;
+    sh:property [
+        sh:path schema:name ;
+        sh:minCount 1 ;
+        sh:message "A Dataset must have at least one name." ;
+    ] ;
+    sh:property [
+        sh:path schema:description ;
+        sh:message "A Dataset should have a description." ;
+    ] ;
+    sh:property [
+        sh:path schema:url ;
+        sh:message "A Dataset should have a URL." ;
+    ] ;
+    sh:property [
+        sh:path schema:conformsTo ;
+        sh:message "A Dataset may specify conformance (e.g. to a standard)." ;
+    ] ;
+    sh:property [
+        sh:path cr:recordSet ;
+        sh:message "A Dataset may have a cr:recordSet." ;
+    ] ;
+    sh:property [
+        sh:path schema:creator ;
+        sh:message "A Dataset may have a creator." ;
+    ] ;
+    sh:property [
+        sh:path schema:distribution ;
+        sh:message "A Dataset may have a distribution." ;
+    ] ;
+    sh:property [
+        sh:path schema:isBasedOn ;
+        sh:message "A Dataset may be based on another dataset." ;
+    ] ;
+    sh:property [
+        sh:path odrl:hasPolicy ;
+        sh:message "A Dataset may have an ODRL policy." ;
+    ] ;
+    sh:property [
+        sh:path schema:license ;
+        sh:message "A Dataset may have a license." ;
+    ] ;
+    sh:property [
+        sh:path schema:variableMeasured ;
+        sh:message "A Dataset may specify measured variables." ;
+    ] ;
+    sh:property [
+        sh:path schema:service ;
+        sh:message "A Dataset may specify a service." ;
+    ] ;
+    sh:property [
+        sh:path schema:session_id ;
+        sh:message "A Dataset may specify a session ID." ;
+    ] ;
+    sh:property [
+        sh:path schema:signature ;
+        sh:message "A Dataset may specify a digital signature." ;
+    ] .

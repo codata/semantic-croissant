@@ -1,0 +1,12 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix odrl: <http://www.w3.org/ns/odrl/2/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+odrl:PolicyShape
+    a sh:NodeShape ;
+    sh:targetClass odrl:Policy ;
+    sh:property [
+        sh:path odrl:permission ;
+        sh:minCount 1 ;
+        sh:message "An ODRL Policy must contain at least one permission." ;
+    ] .
