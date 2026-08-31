@@ -794,6 +794,50 @@ async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, 
                 }]
             }
 
+            # --- SHACL VALIDATION ---
+            try:
+                from pyshacl import validate as shacl_validate
+                import os
+                
+                json_string = json.dumps(payload_dict)
+                
+                # Check Croissant shapes
+                croissant_shape_path = "/app/shapes/croissant.ttl"
+                croissant_conforms = False
+                if os.path.exists(croissant_shape_path):
+                    croissant_conforms, _, _ = shacl_validate(
+                        json_string,
+                        shacl_graph=croissant_shape_path,
+                        data_graph_format='json-ld',
+                        shacl_graph_format='turtle',
+                        inference='rdfs',
+                        debug=False
+                    )
+                
+                # Check ODRL shapes
+                odrl_shape_path = "/app/shapes/odrl.ttl"
+                odrl_conforms = False
+                if os.path.exists(odrl_shape_path):
+                    odrl_conforms, _, _ = shacl_validate(
+                        json_string,
+                        shacl_graph=odrl_shape_path,
+                        data_graph_format='json-ld',
+                        shacl_graph_format='turtle',
+                        inference='rdfs',
+                        debug=False
+                    )
+                
+                payload_dict["shacl_conformance"] = {
+                    "croissant": croissant_conforms,
+                    "odrl": odrl_conforms
+                }
+            except Exception as e:
+                import sys
+                print(f"Warning: SHACL validation failed: {e}", file=sys.stderr)
+                payload_dict["shacl_conformance"] = {
+                    "error": str(e)
+                }
+
             jsonld_payload = json.dumps(payload_dict, indent=2)
                 
         if isinstance(jsonld_payload, dict):

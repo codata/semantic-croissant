@@ -123,6 +123,7 @@ services:
       - MCP_TRANSPORT=sse
       - ELASTICSEARCH_URL=http://elasticsearch:9200
     volumes:
+      - ./shapes:/app/shapes:ro
       - ./convertors:/app/convertors:ro
       - ./agents:/app/agents:ro
       - ~/.odrl:/root/.odrl:ro
