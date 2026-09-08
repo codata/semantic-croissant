@@ -1041,3 +1041,82 @@ def get_variables_oai(url: str):
         }
     except Exception as e:
         return {"error": str(e), "questions": [], "variables": []}
+
+# --- Ollama Gateway Endpoint ---
+
+import random
+from fastapi import Header, HTTPException, Request
+from fastapi.responses import StreamingResponse
+import httpx
+
+def load_gateway_config():
+    config_path = os.path.join(os.path.dirname(__file__), "gateway_config.json")
+    if not os.path.exists(config_path):
+        return {"api_keys": [], "ollama_endpoints": []}
+    with open(config_path, "r") as f:
+        return json.load(f)
+
+@app.post("/gateway/{path:path}")
+@app.get("/gateway/{path:path}")
+@app.put("/gateway/{path:path}")
+@app.delete("/gateway/{path:path}")
+async def ollama_gateway(path: str, request: Request, x_api_key: str = Header(None, alias="X-API-Key")):
+    config = load_gateway_config()
+    allowed_keys = config.get("api_keys", [])
+    
+    # Check if header matches or Authorization Bearer token matches
+    auth_header = request.headers.get("Authorization")
+    is_authorized = False
+    
+    if x_api_key in allowed_keys:
+        is_authorized = True
+    elif auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        if token in allowed_keys:
+            is_authorized = True
+            
+    if not is_authorized:
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid API Key")
+        
+    endpoints = config.get("ollama_endpoints", [])
+    if not endpoints:
+        raise HTTPException(status_code=500, detail="Gateway Error: No backend Ollama endpoints configured")
+        
+    # Simple load balancing: select a random endpoint
+    backend_url = random.choice(endpoints)
+    # Ensure URL formatting is correct
+    if backend_url.endswith("/"):
+        backend_url = backend_url[:-1]
+        
+    target_url = f"{backend_url}/{path}"
+    
+    # Forward the request
+    client = httpx.AsyncClient()
+    
+    req_body = await request.body()
+    
+    # Exclude headers that should not be forwarded
+    headers = dict(request.headers)
+    headers.pop("host", None)
+    headers.pop("content-length", None)
+    
+    try:
+        req = client.build_request(
+            method=request.method,
+            url=target_url,
+            headers=headers,
+            content=req_body,
+            params=request.query_params
+        )
+        
+        # Transparently proxy the response back to the client (supports streaming)
+        response = await client.send(req, stream=True)
+        return StreamingResponse(
+            response.aiter_raw(),
+            status_code=response.status_code,
+            headers=dict(response.headers),
+            background=client.aclose
+        )
+    except Exception as e:
+        await client.aclose()
+        raise HTTPException(status_code=502, detail=f"Bad Gateway: Error communicating with backend ({str(e)})")

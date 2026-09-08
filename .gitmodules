@@ -7,3 +7,6 @@
 [submodule "palefire"]
 	path = palefire
 	url = https://github.com/agstack/palefire
+[submodule "lot"]
+	path = lot
+	url = https://github.com/CA4EOSC/lot

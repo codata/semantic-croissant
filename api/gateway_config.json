@@ -1,0 +1,9 @@
+{
+  "api_keys": [
+    "test-api-key-12345"
+  ],
+  "ollama_endpoints": [
+    "http://10.147.18.82:11435",
+    "http://localhost:11434"
+  ]
+}
