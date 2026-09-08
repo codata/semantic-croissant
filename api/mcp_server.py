@@ -1911,7 +1911,7 @@ async def list_tools() -> list[types.Tool]:
                 "type": "object",
                 "required": ["id"],
                 "properties": {
-                    "id": {"type": "string", "description": "The internal dataset ID (e.g. 'bn36') or the full URL (e.g. 'https://data.marine.copernicus.eu/...')"}
+                    "id": {"type": "string", "description": "The internal dataset ID (e.g. 'bn36') or the full URL (e.g. 'https://data.marine.copernicus.eu/...'). IMPORTANT: Pass the EXACT URL or ID as provided. Do not reformat it, and do not remove punctuation or slashes."}
                 }
             }
         ),
@@ -2423,6 +2423,33 @@ def main(port: int, transport: str) -> int:
             target_url = f"{backend_url}{req_path}"
             
             client = httpx.AsyncClient(timeout=None)
+            # Official Claude IDs that strict clients accept
+            VALID_CLAUDE_MODELS = [
+                "claude-3-5-sonnet-20241022",
+                "claude-3-5-sonnet-20240620",
+                "claude-3-opus-20240229",
+                "claude-3-5-haiku-20241022",
+                "claude-3-sonnet-20240229",
+                "claude-3-haiku-20240307"
+            ]
+
+            async def get_model_mapping():
+                async with httpx.AsyncClient() as temp_client:
+                    try:
+                        resp = await temp_client.get(f"{backend_url}/api/tags")
+                        tags_data = resp.json()
+                        tools_models = [m.get("name") for m in tags_data.get("models", []) if "tools" in m.get("capabilities", [])]
+                        
+                        mapping = {}
+                        for i, ollama_model in enumerate(tools_models):
+                            if i < len(VALID_CLAUDE_MODELS):
+                                mapping[VALID_CLAUDE_MODELS[i]] = ollama_model
+                        return mapping
+                    except Exception as e:
+                        print(f"Error fetching tags for mapping: {e}")
+                        # Fallback mapping if tags fail
+                        return {"claude-3-5-sonnet-20241022": "gemma4:31b"}
+
             req_body = await request.body()
             
             # Intercept POST /v1/messages to rewrite model name
@@ -2430,8 +2457,12 @@ def main(port: int, transport: str) -> int:
                 try:
                     body_json = json.loads(req_body.decode("utf-8"))
                     model = body_json.get("model", "")
-                    if model == "claude-3-5-sonnet-20241022":
-                        body_json["model"] = "gemma4:31b"
+                    
+                    # Fetch mapping dynamically
+                    mapping = await get_model_mapping()
+                    
+                    if model in mapping:
+                        body_json["model"] = mapping[model]
                         req_body = json.dumps(body_json).encode("utf-8")
                 except Exception as e:
                     print(f"Failed to rewrite model in messages payload: {e}")
@@ -2466,20 +2497,45 @@ def main(port: int, transport: str) -> int:
                 if is_models_request:
                     await response.aread()
                     try:
-                        anthropic_data = [
-                            {
+                        data = response.json()
+                        tools_models = [m.get("name") for m in data.get("models", []) if "tools" in m.get("capabilities", [])]
+                        
+                        anthropic_data = []
+                        first_id = None
+                        last_id = None
+                        
+                        for i, ollama_model in enumerate(tools_models):
+                            if i >= len(VALID_CLAUDE_MODELS):
+                                break
+                            
+                            c_id = VALID_CLAUDE_MODELS[i]
+                            if first_id is None:
+                                first_id = c_id
+                            last_id = c_id
+                            
+                            anthropic_data.append({
+                                "type": "model",
+                                "id": c_id,
+                                "display_name": f"{c_id} (Proxied: {ollama_model})",
+                                "created_at": "2024-01-01T00:00:00Z"
+                            })
+                        
+                        # Fallback if no models found
+                        if not anthropic_data:
+                            first_id = "claude-3-5-sonnet-20241022"
+                            last_id = "claude-3-5-sonnet-20241022"
+                            anthropic_data = [{
                                 "type": "model",
                                 "id": "claude-3-5-sonnet-20241022",
-                                "display_name": "Claude 3.5 Sonnet (Proxied to gemma4:31b)",
-                                "created_at": "2024-10-22T00:00:00Z"
-                            }
-                        ]
-                        
+                                "display_name": "Claude 3.5 Sonnet (Proxied: default)",
+                                "created_at": "2024-01-01T00:00:00Z"
+                            }]
+
                         response_obj = {
                             "data": anthropic_data,
                             "has_more": False,
-                            "first_id": "claude-3-5-sonnet-20241022",
-                            "last_id": "claude-3-5-sonnet-20241022"
+                            "first_id": first_id,
+                            "last_id": last_id
                         }
                         new_body = json.dumps(response_obj)
                         return Response(content=new_body, status_code=response.status_code, media_type="application/json")
@@ -2487,18 +2543,120 @@ def main(port: int, transport: str) -> int:
                         print(f"Error parsing models: {parse_e}")
                         pass
                 
-                
-                return StreamingResponse(
-                    response.aiter_raw(),
-                    status_code=response.status_code,
-                    headers=dict(response.headers),
-                    background=client.aclose
-                )
+                is_sse = "text/event-stream" in response.headers.get("content-type", "")
+                if is_sse and request.method == "POST" and target_url.endswith("/v1/messages"):
+                    async def sse_transformer():
+                        state = {"buffer": "", "in_think": False}
+                        def process_text(text: str) -> str:
+                            buffer = state["buffer"] + text
+                            in_think = state["in_think"]
+                            output = ""
+                            while True:
+                                if not in_think:
+                                    idx = buffer.find("<think>")
+                                    if idx != -1:
+                                        output += buffer[:idx] + "\n> 🧠 **Thinking Process:**\n> "
+                                        in_think = True
+                                        buffer = buffer[idx + 7:]
+                                    else:
+                                        partial = False
+                                        for i in range(1, min(len(buffer), len("<think>")) + 1):
+                                            if "<think>".startswith(buffer[-i:]):
+                                                flush_len = len(buffer) - i
+                                                output += buffer[:flush_len]
+                                                buffer = buffer[flush_len:]
+                                                partial = True
+                                                break
+                                        if not partial:
+                                            output += buffer
+                                            buffer = ""
+                                        break
+                                else:
+                                    idx = buffer.find("</think>")
+                                    if idx != -1:
+                                        think_content = buffer[:idx]
+                                        output += think_content.replace("\n", "\n> ") + "\n\n"
+                                        in_think = False
+                                        buffer = buffer[idx + 8:]
+                                    else:
+                                        partial = False
+                                        for i in range(1, min(len(buffer), len("</think>")) + 1):
+                                            if "</think>".startswith(buffer[-i:]):
+                                                flush_len = len(buffer) - i
+                                                think_content = buffer[:flush_len]
+                                                output += think_content.replace("\n", "\n> ")
+                                                buffer = buffer[flush_len:]
+                                                partial = True
+                                                break
+                                        if not partial:
+                                            output += buffer.replace("\n", "\n> ")
+                                            buffer = ""
+                                        break
+                            state["buffer"] = buffer
+                            state["in_think"] = in_think
+                            return output
+
+                        sse_buffer = ""
+                        async for chunk in response.aiter_raw():
+                            sse_buffer += chunk.decode('utf-8', errors='replace')
+                            while "\n\n" in sse_buffer:
+                                event_text, sse_buffer = sse_buffer.split("\n\n", 1)
+                                lines = event_text.split("\n")
+                                new_lines = []
+                                for line in lines:
+                                    if line.startswith("data: ") and line != "data: [DONE]":
+                                        try:
+                                            data_json = json.loads(line[6:])
+                                            if data_json.get("type") == "content_block_delta":
+                                                delta = data_json.get("delta", {})
+                                                if delta.get("type") == "text_delta":
+                                                    orig = delta.get("text", "")
+                                                    new_text = process_text(orig)
+                                                    if new_text != orig:
+                                                        delta["text"] = new_text
+                                                        line = "data: " + json.dumps(data_json)
+                                        except Exception:
+                                            pass
+                                    new_lines.append(line)
+                                yield ("\n".join(new_lines) + "\n\n").encode("utf-8")
+                                
+                    return StreamingResponse(
+                        sse_transformer(),
+                        status_code=response.status_code,
+                        headers=dict(response.headers),
+                        background=client.aclose
+                    )
+                else:
+                    return StreamingResponse(
+                        response.aiter_raw(),
+                        status_code=response.status_code,
+                        headers=dict(response.headers),
+                        background=client.aclose
+                    )
             except Exception as e:
                 import traceback
                 traceback.print_exc()
                 await client.aclose()
                 return Response(json.dumps({"detail": f"Bad Gateway: Error communicating with backend {target_url} ({str(e)})"}), status_code=502, media_type="application/json")
+
+        async def handle_mcp_messages(request):
+            body_bytes = await request.body()
+            try:
+                import json
+                data = json.loads(body_bytes)
+                if data.get("method") == "server/discover":
+                    # Ignore unsupported methods that crash the MCP SDK loop
+                    from starlette.responses import Response
+                    return Response(status_code=202)
+            except Exception:
+                pass
+                
+            async def new_receive():
+                return {"type": "http.request", "body": body_bytes, "more_body": False}
+                
+            from starlette.responses import Response
+            await sse.handle_post_message(request.scope, new_receive, request._send)
+            return Response(status_code=202)
 
         starlette_app = Starlette(
             debug=True,
@@ -2519,8 +2677,9 @@ def main(port: int, transport: str) -> int:
                 Route("/mcp", endpoint=handle_streamable_http, methods=["GET", "POST", "DELETE"]),
                 Route("/mcp/", endpoint=handle_streamable_http, methods=["GET", "POST", "DELETE"]),
                 Route("/mcp/sse", endpoint=handle_sse),
-                Route("/mcp", endpoint=handle_sse),
-                Mount("/mcp/messages/", app=sse.handle_post_message),
+                
+                # Wrap sse.handle_post_message to intercept server/discover to avoid Pydantic ValidationError crashes
+                Route("/mcp/messages/", endpoint=handle_mcp_messages, methods=["POST"]),
             ],
         )
 

@@ -26,7 +26,7 @@ ACCESS_TOKEN = croissant_7643543846_Zs6nw7yi3Z9m
 HOST_NAME = server-croissant-live
 
 [runtime]
-SERVER_CONTAINER = semantic-croissant-server-croissant-live-1
+SERVER_CONTAINER = codata-server
 SYSTEM = native
 """
     with open(QLEVER_FILE, "w") as f:
@@ -48,7 +48,7 @@ def rebuild_index():
         
         # 2. Restart QLever Server
         subprocess.run(
-            ["docker", "restart", "semantic-croissant-server-croissant-live-1"],
+            ["docker", "restart", "codata-server"],
             check=True
         )
         print("Index rebuild completed and server restarted.", flush=True)
@@ -109,7 +109,7 @@ async def add_record(request: Request, background_tasks: BackgroundTasks, rebuil
         if nt_data.strip():
             insert_query = f"INSERT DATA {{ {nt_data} }}".encode("utf-8")
             req = urllib.request.Request(
-                "http://server-croissant-live:7011/", 
+                "http://server:7041/", 
                 data=insert_query,
                 headers={
                     "Content-type": "application/sparql-update",
@@ -168,7 +168,7 @@ def search_datasets(q: str):
         }} LIMIT 5000
         """
         
-        url = "http://server-croissant-live:7011/"
+        url = "http://server:7041/"
         data = urllib.parse.urlencode({"query": query}).encode('ascii')
         req = urllib.request.Request(url, data=data, headers={"User-Agent": "curl/7.68.0"})
         try:
@@ -228,7 +228,7 @@ def get_datasets_properties(dataset_ids):
     """
     
     encoded = urllib.parse.urlencode({"query": sparql}).encode("utf-8")
-    url = "http://server-croissant-live:7011/"
+    url = "http://server:7041/"
     req = urllib.request.Request(
         url, 
         data=encoded,
@@ -342,6 +342,9 @@ from fastapi.responses import PlainTextResponse
 @app.get("/croissant")
 def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page: int = 1, format: str = "json-ld"):
     if id:
+        if id.startswith("doi:"):
+            id = "https://doi.org/" + id[4:]
+            
         # User requested a specific dataset ID
         filter_str = f"_:{id}" if id.startswith("bn") else id
         filter_str_alt = filter_str.replace("https://", "http://") if "https://" in filter_str else filter_str.replace("http://", "https://")
@@ -422,7 +425,7 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
         
         def run_q(query):
             encoded = urllib.parse.urlencode({"query": query})
-            url = f"http://server-croissant-live:7011/?{encoded}"
+            url = f"http://server:7041/?{encoded}"
             req = urllib.request.Request(url, headers={"Accept": "application/json"})
             with urllib.request.urlopen(req) as response:
                 return json.loads(response.read().decode()).get("results", {}).get("bindings", [])
@@ -599,7 +602,7 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
                 OFFSET {offset}
                 """
                 encoded_query = urllib.parse.urlencode({"query": sparql}).encode("utf-8")
-                url = "http://server-croissant-live:7011/"
+                url = "http://server:7041/"
                 req = urllib.request.Request(
                     url, 
                     data=encoded_query,
@@ -740,7 +743,7 @@ def get_variables_sparql(id: str):
         }} LIMIT 1
         """
         enc_res = urllib.parse.urlencode({"query": resolve_query}).encode("utf-8")
-        req_res = urllib.request.Request("http://server-croissant-live:7011/", data=enc_res, headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"})
+        req_res = urllib.request.Request("http://server:7041/", data=enc_res, headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"})
         try:
             with urllib.request.urlopen(req_res) as response_res:
                 res_bindings = json.loads(response_res.read().decode()).get("results", {}).get("bindings", [])
@@ -802,7 +805,7 @@ def get_variables_sparql(id: str):
     """
     
     encoded = urllib.parse.urlencode({"query": query}).encode("utf-8")
-    url = "http://server-croissant-live:7011/"
+    url = "http://server:7041/"
     req = urllib.request.Request(
         url, 
         data=encoded,
