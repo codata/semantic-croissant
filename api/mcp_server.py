@@ -2380,6 +2380,126 @@ def main(port: int, transport: str) -> int:
             from starlette.responses import Response
             return Response("Error proxying to Elasticsearch", status_code=500)
 
+        async def proxy_gateway(request):
+            import random
+            from starlette.responses import StreamingResponse, Response
+            
+            config_path = os.path.join(os.path.dirname(__file__), "gateway_config.json")
+            if not os.path.exists(config_path):
+                config = {"api_keys": [], "ollama_endpoints": []}
+            else:
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+                    
+            allowed_keys = config.get("api_keys", [])
+            x_api_key = request.headers.get("X-API-Key")
+            auth_header = request.headers.get("Authorization")
+            is_authorized = False
+            
+            if x_api_key in allowed_keys:
+                is_authorized = True
+            elif auth_header and auth_header.startswith("Bearer "):
+                token = auth_header.split(" ")[1]
+                if token in allowed_keys:
+                    is_authorized = True
+                    
+            if not is_authorized:
+                return Response(json.dumps({"detail": "Unauthorized: Invalid API Key"}), status_code=401, media_type="application/json")
+                
+            endpoints = config.get("ollama_endpoints", [])
+            if not endpoints:
+                return Response(json.dumps({"detail": "Gateway Error: No backend Ollama endpoints configured"}), status_code=500, media_type="application/json")
+                
+            backend_url = random.choice(endpoints)
+            if backend_url.endswith("/"):
+                backend_url = backend_url[:-1]
+                
+            req_path = request.url.path
+            if req_path.startswith("/gateway"):
+                req_path = req_path[len("/gateway"):]
+            if not req_path.startswith("/"):
+                req_path = "/" + req_path
+                
+            target_url = f"{backend_url}{req_path}"
+            
+            client = httpx.AsyncClient(timeout=None)
+            req_body = await request.body()
+            
+            # Intercept POST /v1/messages to rewrite model name
+            if request.method == "POST" and target_url.endswith("/v1/messages"):
+                try:
+                    body_json = json.loads(req_body.decode("utf-8"))
+                    model = body_json.get("model", "")
+                    if model == "claude-3-5-sonnet-20241022":
+                        body_json["model"] = "gemma4:31b"
+                        req_body = json.dumps(body_json).encode("utf-8")
+                except Exception as e:
+                    print(f"Failed to rewrite model in messages payload: {e}")
+            
+            try:
+                # Intercept GET /v1/models to fetch from /api/tags instead so we can filter by tool capabilities
+                is_models_request = False
+                if request.method == "GET" and target_url.endswith("/v1/models"):
+                    is_models_request = True
+                    target_url = f"{backend_url}/api/tags"
+
+                # Forward all headers except host and content-length
+                headers = dict(request.headers)
+                headers.pop("host", None)
+                headers.pop("content-length", None)
+                
+                # Update content-length if we modified the body
+                if request.method == "POST" and target_url.endswith("/v1/messages"):
+                    headers["content-length"] = str(len(req_body))
+                
+                req = client.build_request(
+                    method=request.method,
+                    url=target_url,
+                    headers=headers,
+                    content=req_body,
+                    params=request.query_params
+                )
+                
+                response = await client.send(req, stream=True)
+                
+                # Intercept /api/tags (which was originally /v1/models) to convert to Anthropic format and filter tools
+                if is_models_request:
+                    await response.aread()
+                    try:
+                        anthropic_data = [
+                            {
+                                "type": "model",
+                                "id": "claude-3-5-sonnet-20241022",
+                                "display_name": "Claude 3.5 Sonnet (Proxied to gemma4:31b)",
+                                "created_at": "2024-10-22T00:00:00Z"
+                            }
+                        ]
+                        
+                        response_obj = {
+                            "data": anthropic_data,
+                            "has_more": False,
+                            "first_id": "claude-3-5-sonnet-20241022",
+                            "last_id": "claude-3-5-sonnet-20241022"
+                        }
+                        new_body = json.dumps(response_obj)
+                        return Response(content=new_body, status_code=response.status_code, media_type="application/json")
+                    except Exception as parse_e:
+                        print(f"Error parsing models: {parse_e}")
+                        pass
+                
+                
+                return StreamingResponse(
+                    response.aiter_raw(),
+                    status_code=response.status_code,
+                    headers=dict(response.headers),
+                    background=client.aclose
+                )
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                await client.aclose()
+                return Response(json.dumps({"detail": f"Bad Gateway: Error communicating with backend {target_url} ({str(e)})"}), status_code=502, media_type="application/json")
+
         starlette_app = Starlette(
             debug=True,
             lifespan=lifespan,
@@ -2391,6 +2511,10 @@ def main(port: int, transport: str) -> int:
                 Route("/downloads/{filename}", endpoint=proxy_downloads),
                 Route("/expert/{index_name}", endpoint=proxy_expert, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
                 Route("/expert/{index_name}/{path:path}", endpoint=proxy_expert, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
+                Route("/gateway", endpoint=proxy_gateway, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
+                Route("/gateway/{path:path}", endpoint=proxy_gateway, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
+                Route("/v1/models", endpoint=proxy_gateway, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
+                Route("/v1/messages", endpoint=proxy_gateway, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
                 Mount("/messages/", app=sse.handle_post_message),
                 Route("/mcp", endpoint=handle_streamable_http, methods=["GET", "POST", "DELETE"]),
                 Route("/mcp/", endpoint=handle_streamable_http, methods=["GET", "POST", "DELETE"]),

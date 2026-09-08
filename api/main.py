@@ -1056,11 +1056,15 @@ def load_gateway_config():
     with open(config_path, "r") as f:
         return json.load(f)
 
+@app.post("/gateway")
+@app.get("/gateway")
+@app.put("/gateway")
+@app.delete("/gateway")
 @app.post("/gateway/{path:path}")
 @app.get("/gateway/{path:path}")
 @app.put("/gateway/{path:path}")
 @app.delete("/gateway/{path:path}")
-async def ollama_gateway(path: str, request: Request, x_api_key: str = Header(None, alias="X-API-Key")):
+async def ollama_gateway(request: Request, path: str = "", x_api_key: str = Header(None, alias="X-API-Key")):
     config = load_gateway_config()
     allowed_keys = config.get("api_keys", [])
     
@@ -1088,7 +1092,7 @@ async def ollama_gateway(path: str, request: Request, x_api_key: str = Header(No
     if backend_url.endswith("/"):
         backend_url = backend_url[:-1]
         
-    target_url = f"{backend_url}/{path}"
+    target_url = f"{backend_url}/{path}" if path else backend_url
     
     # Forward the request
     client = httpx.AsyncClient()
