@@ -477,6 +477,25 @@
                 promptInput.value = '';
                 promptInput.style.height = 'auto';
                 
+                // Intercept static search queries to bypass LLM
+                const searchPrefix = "Search Croissant datasets for:";
+                if (text.startsWith(searchPrefix)) {
+                    const query = text.substring(searchPrefix.length).trim();
+                    if (query) {
+                        const ui = appendMessage('assistant', '<p>Searching Elasticsearch<span class="typing"><span>.</span><span>.</span><span>.</span></span></p>');
+                        
+                        executeTool('elasticsearch_fulltext_search', { q: query, format: "vault_list", limit: 10 }, ui.contentDiv).then(result => {
+                            let resText = "No records found.";
+                            if (result && result.length > 0 && result[0].text) resText = result[0].text;
+                            resText = resText.replace(/\n---\nSYSTEM INSTRUCTION FOR LLM:.*$/g, '');
+                            const backBtnHTML = '<button onclick="this.closest(\'.message\').remove()" style="margin-bottom:15px; padding:6px 12px; background:var(--button-bg); color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.9rem;">&larr; Back</button>\n\n';
+                            ui.contentDiv.innerHTML = backBtnHTML + marked.parse(resText);
+                            chatHistory.scrollTop = chatHistory.scrollHeight;
+                        });
+                        return; // Stop execution to bypass LLM
+                    }
+                }
+                
                 // Add to messages array
                 messages.push({ role: 'user', content: text });
             } else {
