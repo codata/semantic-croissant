@@ -383,7 +383,7 @@ async def verify_document_provenance(filename: str) -> list[types.TextContent]:
     except Exception as e:
         return [types.TextContent(type="text", text=f"Error verifying document provenance: {str(e)}")]
 
-async def store_in_vault(content: str, prefix: str, jsonld_payload: str = None, ai_model_override: str = None, file_ext: str = ".md", filename_override: str = None) -> list[types.TextContent]:
+async def store_in_vault(content: str, prefix: str = "custom", jsonld_payload: str = None, ai_model_override: str = None, file_ext: str = ".md", filename_override: str = None) -> list[types.TextContent]:
     import datetime, io, os
     from minio import Minio
     global SERVER_USER_INFO
@@ -955,7 +955,9 @@ async def get_croissant_dataset(id: str) -> list[types.TextContent]:
         async with httpx.AsyncClient(timeout=30.0, headers=get_auth_headers(get_auth_headers())) as client:
             response = await client.get(f"{API_BASE}/croissant", params={"id": id})
             response.raise_for_status()
-            return [types.TextContent(type="text", text=json.dumps(response.json(), indent=2))]
+            data = response.json()
+            tool_response_text = f"SUCCESS! Dataset metadata retrieved.\n\nCRITICAL INSTRUCTION: You MUST now generate a formatted Markdown response for the user that summarizes this dataset. Include the Title, Description, Creator, and URL.\n\nDATASET JSON-LD:\n{json.dumps(data, indent=2)}"
+            return [types.TextContent(type="text", text=tool_response_text)]
     except Exception as e:
         return [types.TextContent(type="text", text=json.dumps({"error": f"Failed to fetch dataset: {str(e)}"}))]
 
@@ -1683,7 +1685,7 @@ Here is detailed information about how every tool works:
 - search_croissant_datasets: Search for datasets across the Semantic Croissant database using keywords.
 - elasticsearch_fulltext_search: Query the Elasticsearch index directly for indexed Croissant datasets (includes full-text search over full Markdown and metadata).
 - ask_expert: Query one of the semantic expert indices (e.g., 'dataverse', 'openml', 'honduras') for highly specific knowledge and datasets.
-- get_croissant_dataset: Get the full Croissant JSON-LD payload for a specific dataset ID.
+- get_croissant_dataset: Get the full Croissant JSON-LD payload for a specific dataset ID. IMPORTANT: You MUST read the JSON payload and print a summary of the dataset (Title, Description, Creator, URL) for the user in readable Markdown. Do not hide the payload.
 - hazards_info_profile: Search for Hazard Information Profiles (HIPs) based on a query.
 - hazards_translation: Get translations for Hazard Information Profiles into a specific language.
 - extract_variables_from_croissant: Fetch a dataset's metadata and extract its variables and files.
@@ -1744,7 +1746,7 @@ Here is detailed information about how every tool works:
         )
     elif name == "read_vault_article":
         return await read_vault_article(
-            url_or_filename=arguments.get("url_or_filename", arguments.get("filename"))
+            url_or_filename=arguments.get("filename", "")
         )
     elif name == "list_vault_documents":
         return await list_vault_documents(
@@ -1753,7 +1755,7 @@ Here is detailed information about how every tool works:
     elif name == "save_to_vault":
         return await store_in_vault(
             content=arguments.get("content"),
-            prefix=arguments.get("prefix", "claude_chat"),
+            prefix=arguments.get("prefix", "custom"),
             jsonld_payload=arguments.get("jsonld_payload"),
             ai_model_override=arguments.get("ai_model_override")
         )
@@ -1889,9 +1891,9 @@ async def list_tools() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "url_or_filename": {"type": ["string", "null"], "description": "The URL of the article, or its exact filename in the vault."},
-                    "filename": {"type": ["string", "null"], "description": "The exact filename in the vault."}
-                }
+                    "filename": {"type": "string", "description": "The exact filename in the vault, raw document ID, or URL of the article."}
+                },
+                "required": ["filename"]
             }
         ),
         types.Tool(
@@ -1906,7 +1908,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="get_croissant_dataset",
-            description="Retrieve the full detailed Croissant JSON-LD metadata for a specific dataset. You can pass either its internal ID or its exact source/content URL.",
+            description="Retrieve the full detailed Croissant JSON-LD metadata for a specific dataset. You can pass either its internal ID or its exact source/content URL. IMPORTANT: When you receive the dataset metadata from this tool, you MUST format and show the dataset details (Title, Description, Creator, URL, etc.) to the user in readable Markdown.",
             inputSchema={
                 "type": "object",
                 "required": ["id"],
@@ -2045,11 +2047,11 @@ async def list_tools() -> list[types.Tool]:
                 "type": "object",
                 "properties": {
                     "content": {"type": "string", "description": "The text content to store in the vault."},
-                    "prefix": {"type": "string", "description": "REQUIRED: You MUST generate a short, descriptive snake_case summary of the data/chat (e.g. 'extracting_ai_factory_numbers') and provide it here. Do NOT use generic prefixes!"},
+                    "prefix": {"type": "string", "description": "OPTIONAL: A short, descriptive snake_case summary of the data/chat. Defaults to 'custom' if missing."},
                     "jsonld_payload": {"type": "object", "description": "REQUIRED Croissant JSON-LD string or JSON object to save alongside the markdown file. CRITICAL: You MUST write out the FULL, COMPLETE JSON-LD payload. Do NOT truncate it. Do NOT use placeholders like '...rest of the variables...'. Output every single variable fully!"},
                     "ai_model_override": {"type": "string", "description": "If your client does not expose its identity via MCP clientInfo (i.e. 'Unknown AI Agent'), you MUST provide your AI vendor and model here (e.g. 'Anthropic Claude 3.5 Sonnet', 'LM Studio Llama 3')."}
                 },
-                "required": ["prefix", "content", "jsonld_payload"]
+                "required": ["content", "jsonld_payload"]
             }
         ),
         types.Tool(
@@ -2438,7 +2440,15 @@ def main(port: int, transport: str) -> int:
                     try:
                         resp = await temp_client.get(f"{backend_url}/api/tags")
                         tags_data = resp.json()
-                        tools_models = [m.get("name") for m in tags_data.get("models", []) if "tools" in m.get("capabilities", [])]
+                        all_models = [m.get("name") for m in tags_data.get("models", [])]
+                        tools_models = []
+                        for priority_m in ["deepseek-r1:14b", "gpt-oss:latest"]:
+                            if priority_m in all_models:
+                                tools_models.append(priority_m)
+                        for m in tags_data.get("models", []):
+                            name = m.get("name")
+                            if name not in tools_models and "tools" in m.get("capabilities", []):
+                                tools_models.append(name)
                         
                         mapping = {}
                         for i, ollama_model in enumerate(tools_models):
@@ -2498,7 +2508,15 @@ def main(port: int, transport: str) -> int:
                     await response.aread()
                     try:
                         data = response.json()
-                        tools_models = [m.get("name") for m in data.get("models", []) if "tools" in m.get("capabilities", [])]
+                        all_models = [m.get("name") for m in data.get("models", [])]
+                        tools_models = []
+                        for priority_m in ["deepseek-r1:14b", "gpt-oss:latest"]:
+                            if priority_m in all_models:
+                                tools_models.append(priority_m)
+                        for m in data.get("models", []):
+                            name = m.get("name")
+                            if name not in tools_models and "tools" in m.get("capabilities", []):
+                                tools_models.append(name)
                         
                         anthropic_data = []
                         first_id = None
@@ -2516,7 +2534,7 @@ def main(port: int, transport: str) -> int:
                             anthropic_data.append({
                                 "type": "model",
                                 "id": c_id,
-                                "display_name": f"{c_id} (Proxied: {ollama_model})",
+                                "display_name": f"{c_id} (Inference: {ollama_model})",
                                 "created_at": "2024-01-01T00:00:00Z"
                             })
                         
@@ -2527,7 +2545,7 @@ def main(port: int, transport: str) -> int:
                             anthropic_data = [{
                                 "type": "model",
                                 "id": "claude-3-5-sonnet-20241022",
-                                "display_name": "Claude 3.5 Sonnet (Proxied: default)",
+                                "display_name": "Claude 3.5 Sonnet (Inference: default)",
                                 "created_at": "2024-01-01T00:00:00Z"
                             }]
 
@@ -2598,7 +2616,7 @@ def main(port: int, transport: str) -> int:
 
                         sse_buffer = ""
                         async for chunk in response.aiter_raw():
-                            sse_buffer += chunk.decode('utf-8', errors='replace')
+                            sse_buffer += chunk.decode('utf-8', errors='replace').replace('\r\n', '\n')
                             while "\n\n" in sse_buffer:
                                 event_text, sse_buffer = sse_buffer.split("\n\n", 1)
                                 lines = event_text.split("\n")
@@ -2620,6 +2638,13 @@ def main(port: int, transport: str) -> int:
                                     new_lines.append(line)
                                 yield ("\n".join(new_lines) + "\n\n").encode("utf-8")
                                 
+                        # Flush the remainder if there is any (and if we finished in the middle of a think block, close it out)
+                        if state["in_think"]:
+                            pass # We don't yield anything extra here, but a robust implementation might flush
+                        if sse_buffer:
+                            # if it's incomplete, we still try to send it
+                            yield sse_buffer.encode("utf-8")
+                                
                     return StreamingResponse(
                         sse_transformer(),
                         status_code=response.status_code,
@@ -2639,24 +2664,45 @@ def main(port: int, transport: str) -> int:
                 await client.aclose()
                 return Response(json.dumps({"detail": f"Bad Gateway: Error communicating with backend {target_url} ({str(e)})"}), status_code=502, media_type="application/json")
 
-        async def handle_mcp_messages(request):
-            body_bytes = await request.body()
+        async def handle_mcp_messages_asgi(scope, receive, send):
+            # Intercept ASGI body
+            body_bytes = b""
+            more_body = True
+            
+            # Read the entire body
+            # Note: For large bodies, this might be memory intensive, but MCP messages are typically small
+            temp_receive = receive
+            while more_body:
+                message = await temp_receive()
+                if message["type"] == "http.request":
+                    body_bytes += message.get("body", b"")
+                    more_body = message.get("more_body", False)
+                elif message["type"] == "http.disconnect":
+                    return
+
             try:
                 import json
                 data = json.loads(body_bytes)
                 if data.get("method") == "server/discover":
-                    # Ignore unsupported methods that crash the MCP SDK loop
-                    from starlette.responses import Response
-                    return Response(status_code=202)
+                    # Ignore unsupported methods by sending 202
+                    await send({"type": "http.response.start", "status": 202, "headers": []})
+                    await send({"type": "http.response.body", "body": b"", "more_body": False})
+                    return
             except Exception:
                 pass
                 
+            # Create a mock receive function that yields the buffered body
+            body_sent = False
             async def new_receive():
-                return {"type": "http.request", "body": body_bytes, "more_body": False}
+                nonlocal body_sent
+                if not body_sent:
+                    body_sent = True
+                    return {"type": "http.request", "body": body_bytes, "more_body": False}
+                import asyncio
+                await asyncio.Event().wait()
+                return {"type": "http.disconnect"}
                 
-            from starlette.responses import Response
-            await sse.handle_post_message(request.scope, new_receive, request._send)
-            return Response(status_code=202)
+            await sse.handle_post_message(scope, new_receive, send)
 
         starlette_app = Starlette(
             debug=True,
@@ -2679,7 +2725,7 @@ def main(port: int, transport: str) -> int:
                 Route("/mcp/sse", endpoint=handle_sse),
                 
                 # Wrap sse.handle_post_message to intercept server/discover to avoid Pydantic ValidationError crashes
-                Route("/mcp/messages/", endpoint=handle_mcp_messages, methods=["POST"]),
+                Mount("/mcp/messages/", app=handle_mcp_messages_asgi),
             ],
         )
 
