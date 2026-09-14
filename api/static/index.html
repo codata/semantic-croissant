@@ -364,6 +364,7 @@
         document.getElementById('menu-history').addEventListener('click', (e) => {
             e.preventDefault();
             
+            chatHistoryStorage = JSON.parse(localStorage.getItem('ai_studio_history') || '[]');
             const ui = appendMessage('assistant', '<p>Loading your conversation history...</p>');
             
             if (chatHistoryStorage.length === 0) {
@@ -716,6 +717,12 @@
                 // If a tool was called, execute it and automatically send the result
                 if (currentToolCall && currentToolCall.name) {
                     const resultContent = await executeTool(currentToolCall.name, currentToolCall.input, contentDiv);
+                    
+                    // Save any text generated before the tool call
+                    if (currentInteraction && fullResponse.trim() !== '') {
+                        currentInteraction.response += fullResponse + "\n\n";
+                        localStorage.setItem('ai_studio_history', JSON.stringify(chatHistoryStorage));
+                    }
                     
                     // Append user message with tool result
                     messages.push({
