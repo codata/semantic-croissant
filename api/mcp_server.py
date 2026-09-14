@@ -2453,10 +2453,16 @@ def main(port: int, transport: str) -> int:
                     is_models_request = True
                     target_url = f"{backend_url}/api/tags"
 
-                # Forward all headers except host and content-length
+                # Forward all headers except host and content-length, and strip CORS headers to prevent backend 403s
                 headers = dict(request.headers)
                 headers.pop("host", None)
                 headers.pop("content-length", None)
+                headers.pop("origin", None)
+                headers.pop("referer", None)
+                # Strip Sec-Fetch headers just in case
+                for k in list(headers.keys()):
+                    if k.lower().startswith("sec-fetch-"):
+                        headers.pop(k, None)
                 
                 # Update content-length if we modified the body
                 if request.method == "POST" and target_url.endswith("/v1/messages"):
