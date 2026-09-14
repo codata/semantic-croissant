@@ -2537,6 +2537,13 @@ def main(port: int, transport: str) -> int:
                 # Update content-length if we modified the body
                 if request.method == "POST" and target_url.endswith("/v1/messages"):
                     headers["content-length"] = str(len(req_body))
+                    
+                # Inject backend API key if we are authenticating via ODRL or local environment
+                if env_key:
+                    if "x-api-key" not in [k.lower() for k in headers.keys()]:
+                        headers["X-API-Key"] = env_key
+                    if "authorization" not in [k.lower() for k in headers.keys()]:
+                        headers["Authorization"] = f"Bearer {env_key}"
                 
                 req = client.build_request(
                     method=request.method,
