@@ -579,6 +579,7 @@
                     response: ""
                 };
                 chatHistoryStorage.push(currentInteraction);
+                localStorage.setItem('ai_studio_history', JSON.stringify(chatHistoryStorage));
                 
                 // Add to messages array
                 messages.push({ role: 'user', content: text });
