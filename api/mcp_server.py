@@ -2323,6 +2323,23 @@ def main(port: int, transport: str) -> int:
             from starlette.responses import Response
             return Response("Not Found", status_code=404)
             
+        async def vault_es_doc(request):
+            es_id = request.path_params["es_id"]
+            es_url = "http://elasticsearch:9200"
+            async with httpx.AsyncClient() as client:
+                try:
+                    r = await client.get(f"{es_url}/croissant/_doc/{es_id}")
+                    if r.status_code == 200:
+                        from starlette.responses import Response
+                        md_text = r.json().get("_source", {}).get("_markdown_text", "")
+                        return Response(content=md_text, media_type="text/markdown")
+                    from starlette.responses import Response
+                    return Response(content="Not Found in Elasticsearch", status_code=404)
+                except Exception as e:
+                    from starlette.responses import Response
+                    return Response(content=f"Error reading from Elasticsearch: {str(e)}", status_code=500)
+                    
+
         async def proxy_downloads(request):
             filename = request.path_params["filename"]
             minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
