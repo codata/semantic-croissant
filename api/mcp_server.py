@@ -2422,6 +2422,9 @@ def main(port: int, transport: str) -> int:
                     config = json.load(f)
                     
             allowed_keys = config.get("api_keys", [])
+            env_key = os.environ.get("OLLAMA_API_KEY")
+            if env_key and env_key not in allowed_keys:
+                allowed_keys.append(env_key)
             x_api_key = request.headers.get("X-API-Key")
             auth_header = request.headers.get("Authorization")
             is_authorized = False
@@ -2441,6 +2444,10 @@ def main(port: int, transport: str) -> int:
                 return Response(json.dumps({"detail": "Unauthorized: Invalid API Key"}), status_code=401, media_type="application/json")
                 
             endpoints = config.get("ollama_endpoints", [])
+            env_endpoint = os.environ.get("OLLAMA_HOST")
+            if env_endpoint and env_endpoint not in endpoints:
+                endpoints.append(env_endpoint)
+                
             if not endpoints:
                 return Response(json.dumps({"detail": "Gateway Error: No backend Ollama endpoints configured"}), status_code=500, media_type="application/json")
                 
