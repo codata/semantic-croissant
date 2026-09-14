@@ -1,3 +1,4 @@
+import os
 import json
 import urllib.request
 from api.main import extract_variables_from_croissant_data

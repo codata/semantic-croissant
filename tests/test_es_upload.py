@@ -15,7 +15,7 @@ def test_upload():
         "markdown": ""
     }
     
-    es_url = "http://localhost:9200"
+    es_url = f"{os.environ.get('ES_URL', 'http://localhost:9200')}"
     index_name = "expert_openml"
     doc_id = url.replace("https://", "").replace("http://", "").replace("/", "_")
     

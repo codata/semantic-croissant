@@ -1,3 +1,4 @@
+import os
 from jsonschema import validate
 schema = {
     "type": "object",

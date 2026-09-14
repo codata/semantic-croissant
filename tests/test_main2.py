@@ -1,3 +1,4 @@
+import os
 import urllib.request
 import json
 url = "https://archaeology.datastations.nl/api/datasets/export?exporter=croissant&persistentId=doi:10.17026/DANS-2CK-VMR4"

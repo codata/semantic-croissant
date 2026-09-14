@@ -1,3 +1,4 @@
+import os
 import markdown
 from xml.etree import ElementTree as ET
 

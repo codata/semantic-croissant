@@ -1,3 +1,4 @@
+import os
 import asyncio
 from mcp.client.sse import sse_client
 from mcp import ClientSession
@@ -13,7 +14,7 @@ payload = {
 }
 
 async def main():
-    async with sse_client("http://localhost:7070/sse") as (read, write):
+    async with sse_client(f"{os.environ.get('MCP_URL', 'http://localhost:7070')}/sse") as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             print("Initialized")

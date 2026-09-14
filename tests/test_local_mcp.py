@@ -1,3 +1,4 @@
+import os
 import asyncio
 import httpx
 import json
@@ -7,7 +8,7 @@ async def main():
         print("Connecting to local MCP SSE endpoint...")
         try:
             headers = {"Accept": "text/event-stream"}
-            async with client.stream("GET", "http://localhost:7070/sse", headers=headers) as response:
+            async with client.stream("GET", f"{os.environ.get('MCP_URL', 'http://localhost:7070')}/sse", headers=headers) as response:
                 print("Connected! Headers:", response.headers)
                 return
         except Exception as e:

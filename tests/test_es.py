@@ -1,3 +1,4 @@
+import os
 import asyncio
 import httpx
 import json
@@ -6,7 +7,7 @@ from api.main import extract_variables_from_croissant_data
 async def main():
     dataset_id_or_url = "https://doi.org/10.7910/DVN/PUWWV9"
     async with httpx.AsyncClient(timeout=30.0) as client:
-        es_res = await client.post("http://localhost:9200/_search", json={
+        es_res = await client.post(f"{os.environ.get('ES_URL', 'http://localhost:9200')}/_search", json={
             "query": {
                 "multi_match": {
                     "query": dataset_id_or_url,

@@ -1,14 +1,14 @@
 from minio import Minio
-import os
-try:
-    client = Minio(
-        "localhost:9005",
-        access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"),
-        secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"),
-        secure=False
-    )
-    objects = client.list_objects("vault", prefix="uc3_ground_subsidence", recursive=True)
-    for obj in objects:
-        print(obj.object_name)
-except Exception as e:
-    print(e)
+from datetime import timedelta
+import httpx
+import asyncio
+
+async def test():
+    m_client = Minio("localhost:9025", access_key="minioadmin", secret_key="minioadmin", secure=False)
+    url = m_client.presigned_get_object("vault", "ueaGDTjRoC1Y0S55f9qxCA.md", expires=timedelta(hours=1))
+    print("URL:", url)
+    async with httpx.AsyncClient() as c:
+        r = await c.get(url)
+        print("Status:", r.status_code)
+        
+asyncio.run(test())

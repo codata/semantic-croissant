@@ -1,3 +1,4 @@
+import os
 import asyncio
 import httpx
 from mcp.client.sse import sse_client
@@ -6,7 +7,7 @@ from mcp.types import Implementation
 import json
 
 async def run():
-    url = "http://localhost:7070/sse"
+    url = f"{os.environ.get('MCP_URL', 'http://localhost:7070')}/sse"
     async with sse_client(url) as streams:
         async with ClientSession(streams[0], streams[1]) as session:
             await session.initialize()

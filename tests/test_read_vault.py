@@ -1,22 +1,12 @@
 import asyncio
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+import os
+import sys
 
-async def run():
-    server_params = StdioServerParameters(
-        command="python",
-        args=["api/main.py"],
-        env=None
-    )
+sys.path.append(os.path.abspath("api"))
+from mcp_server import read_vault_article
 
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            print("Initialized")
-            result = await session.call_tool("read_vault_article", arguments={
-                "url_or_filename": "eu_ai_factories_host_country_and_investment_map_final_UNF-6_mpFcb1f9sTIvzCxWykkqVA_anonymous_20260809_215305.md"
-            })
-            print(f"Result: {result}")
+async def test_read():
+    res = await read_vault_article("HETXv4zTX2TzUOWZvcuNNA.md")
+    print(res[0].text[:500])
 
-if __name__ == "__main__":
-    asyncio.run(run())
+asyncio.run(test_read())

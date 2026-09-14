@@ -1,14 +1,40 @@
 import asyncio
-from mcp.client.sse import sse_client
-from mcp import ClientSession
-import sys
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
 async def main():
-    async with sse_client("http://localhost:7070/sse") as (read, write):
+    server_params = StdioServerParameters(
+        command="python",
+        args=["api/mcp_server.py"]
+    )
+    async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            print("Initialized")
-            result = await session.call_tool("extract_variables_from_croissant", {"dataset_id_or_url": "https://doi.org/10.7910/DVN/PUWWV9"})
-            print(f"Result: {result}")
+            
+            # test without override
+            print("=== Testing without override ===")
+            try:
+                res = await session.call_tool("save_to_vault", arguments={
+                    "prefix": "test_save",
+                    "content": "test content",
+                    "jsonld_payload": "{}"
+                })
+                print(res.content[0].text)
+            except Exception as e:
+                print(e)
+                
+            # test with override
+            print("\n=== Testing with override ===")
+            try:
+                res = await session.call_tool("save_to_vault", arguments={
+                    "prefix": "test_save",
+                    "content": "test content",
+                    "jsonld_payload": "{}",
+                    "ai_model_override": "LM Studio Llama 3"
+                })
+                print(res.content[0].text)
+            except Exception as e:
+                print(e)
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

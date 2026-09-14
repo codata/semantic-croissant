@@ -1,10 +1,11 @@
+import os
 import asyncio
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 import sys
 
 async def main():
-    url = "http://localhost:7070/sse"
+    url = f"{os.environ.get('MCP_URL', 'http://localhost:7070')}/sse"
     print(f"Connecting to MCP server at {url}...")
     
     try:
