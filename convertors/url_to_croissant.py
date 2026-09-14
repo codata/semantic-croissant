@@ -28,7 +28,7 @@ OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
 OLLAMA_HEADERS = {"Authorization": f"Bearer {OLLAMA_API_KEY}"} if OLLAMA_API_KEY else {}
 ELASTICSEARCH_URL = os.environ.get("ELASTICSEARCH_URL", "http://localhost:9200")
 MCP_DOMAIN = os.environ.get("MCP_DOMAIN", "mcp.dev.codata.org")
-MODEL_NAME = "gemma4-croissant"
+MODEL_NAME = os.environ.get("MODEL_NAME", "gemma4:latest")
 
 def fetch_with_playwright(url):
     print(f"  -> Fetching with Playwright fallback: {url}")
