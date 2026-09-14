@@ -132,19 +132,13 @@ async def elasticsearch_fulltext_search(q: str, limit: int = 10, format: str = "
         if not hits:
             return [types.TextContent(type="text", text="No datasets found matching your keywords in Elasticsearch.")]
             
-        results = [hit["_source"] for hit in hits]
+        results = []
+        for hit in hits:
+            src = hit["_source"]
+            src["_es_id"] = hit["_id"]
+            results.append(src)
         
         if format == "vault_list":
-            import hashlib, base64
-            def compute_unf6(content):
-                if not content: return None
-                words = sorted(content.split())
-                c = b""
-                for w in words:
-                    c += w.encode("utf-8") + b"\n\x00"
-                d = hashlib.sha256(c).digest()[:16]
-                raw_hash = base64.b64encode(d).decode("ascii")
-                return raw_hash.replace("=", "").replace("+", "").replace("/", "")
 
             md = ["<div style='display:flex; flex-direction:column; gap:12px;'>"]
             for r in results:
@@ -155,10 +149,10 @@ async def elasticsearch_fulltext_search(q: str, limit: int = 10, format: str = "
                 if len(desc) > 120: desc = desc[:117] + "..."
                 
                 markdown_content = r.get("_markdown_text")
-                vault_hash = compute_unf6(markdown_content)
+                es_id = r.get("_es_id")
                 
-                if vault_hash:
-                    vault_link = f"/vault/{vault_hash}.md"
+                if markdown_content and es_id:
+                    vault_link = f"/vault/doc/{es_id}"
                     link_html = f"<a href='{vault_link}' target='_blank' style='text-decoration:none; font-size:1.8rem; transition:transform 0.2s;' onmouseover=\"this.style.transform='scale(1.2)'\" onmouseout=\"this.style.transform='scale(1)'\" title='Open Markdown'>📖</a>"
                 else:
                     link_html = "<span style='opacity:0.3; font-size:1.8rem;' title='No Markdown Available'>🚫</span>"
@@ -2779,6 +2773,7 @@ def main(port: int, transport: str) -> int:
             routes=[
                 Route("/", endpoint=index),
                 Route("/sse", endpoint=handle_sse),
+                Route("/vault/doc/{es_id}", endpoint=vault_es_doc),
                 Route("/vault/{filename}", endpoint=proxy_vault),
                 Route("/downloads/{filename}", endpoint=proxy_downloads),
                 Route("/expert/{index_name}", endpoint=proxy_expert, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
