@@ -2513,6 +2513,20 @@ def main(port: int, transport: str) -> int:
                                 "created_at": "2024-01-01T00:00:00Z"
                             })
                         
+                        # Also add all original models for internal UI selection
+                        for m in data.get("models", []):
+                            m_name = m.get("name")
+                            if first_id is None:
+                                first_id = m_name
+                            last_id = m_name
+                            
+                            anthropic_data.append({
+                                "type": "model",
+                                "id": m_name,
+                                "display_name": f"{m_name}",
+                                "created_at": "2024-01-01T00:00:00Z"
+                            })
+                        
                         # Fallback if no models found
                         if not anthropic_data:
                             first_id = "claude-3-5-sonnet-20241022"
@@ -2717,14 +2731,12 @@ def main(port: int, transport: str) -> int:
                 Route("/downloads/{filename}", endpoint=proxy_downloads),
                 Route("/expert/{index_name}", endpoint=proxy_expert, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
                 Route("/expert/{index_name}/{path:path}", endpoint=proxy_expert, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
+                Route("/gateway/v1/tools", endpoint=gateway_tools, methods=["GET"]),
+                Route("/gateway/v1/tools/execute", endpoint=gateway_tools_execute, methods=["POST"]),
                 Route("/gateway", endpoint=proxy_gateway, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
                 Route("/gateway/{path:path}", endpoint=proxy_gateway, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
                 Route("/v1/models", endpoint=proxy_gateway, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
                 Route("/v1/messages", endpoint=proxy_gateway, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
-                Route("/gateway/v1/models", endpoint=proxy_gateway, methods=["GET"]),
-                Route("/gateway/v1/messages", endpoint=proxy_gateway, methods=["POST"]),
-                Route("/gateway/v1/tools", endpoint=gateway_tools, methods=["GET"]),
-                Route("/gateway/v1/tools/execute", endpoint=gateway_tools_execute, methods=["POST"]),
                 Mount("/messages/", app=sse.handle_post_message),
                 Route("/mcp", endpoint=handle_streamable_http, methods=["GET", "POST", "DELETE"]),
                 Route("/mcp/", endpoint=handle_streamable_http, methods=["GET", "POST", "DELETE"]),
