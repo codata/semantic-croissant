@@ -432,6 +432,10 @@ async def verify_document_provenance(filename: str) -> list[types.TextContent]:
 async def store_in_vault(content: str, prefix: str = "custom", jsonld_payload: str = None, ai_model_override: str = None, file_ext: str = ".md", filename_override: str = None) -> list[types.TextContent]:
     import datetime, io, os
     from minio import Minio
+    
+    if content is None:
+        content = ""
+        
     global SERVER_USER_INFO
     
     username = "anonymous"
@@ -463,6 +467,7 @@ async def store_in_vault(content: str, prefix: str = "custom", jsonld_payload: s
         safe_hash = raw_hash.replace("=", "").replace("+", "").replace("/", "")
         unf_label = f"UNF-6_{safe_hash}"
     except Exception as e:
+        import sys
         print(f"Failed to generate UNF-6 hash: {e}", file=sys.stderr)
     
     import json
