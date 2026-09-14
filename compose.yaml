@@ -27,7 +27,6 @@ services:
     ports:
       - "${QLEVER_SERVER_PORT:-7011}:7011"
     env_file:
-      - ./${PROFILE_NAME:-croissant-live}.env
       - ./profiles/${PROFILE_NAME:-croissant-live}.env
     environment:
       - INDEXING=true
@@ -46,7 +45,6 @@ services:
     ports:
       - "${QLEVER_UI_PORT:-7012}:7012"
     env_file:
-      - ./${PROFILE_NAME:-croissant-live}.env
       - ./profiles/${PROFILE_NAME:-croissant-live}.env
     volumes:
       - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-croissant-live}/ui:/app/db
@@ -82,7 +80,6 @@ services:
     ports:
       - "${API_PORT:-7013}:8000"
     env_file:
-      - ./${PROFILE_NAME:-croissant-live}.env
       - ./profiles/${PROFILE_NAME:-croissant-live}.env
     environment:
       - ELASTICSEARCH_URL=http://elasticsearch:9200
@@ -108,7 +105,6 @@ services:
     ports:
       - "${MCP_PORT:-7070}:7070"
     env_file:
-      - ./${PROFILE_NAME:-croissant-live}.env
       - ./profiles/${PROFILE_NAME:-croissant-live}.env
     environment:
       - API_BASE=http://api:8000
