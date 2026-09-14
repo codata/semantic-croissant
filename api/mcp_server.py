@@ -164,16 +164,16 @@ async def elasticsearch_fulltext_search(q: str, limit: int = 10, format: str = "
                     link_html = "<span style='opacity:0.3; font-size:1.8rem;' title='No Markdown Available'>🚫</span>"
                     
                 card = f"""
-                <div style='border:1px solid #e0e0e0; border-radius:8px; padding:12px; background:linear-gradient(145deg, #ffffff, #f5f7fa); box-shadow:0 4px 6px rgba(0,0,0,0.04); display:flex; align-items:center; gap:16px; transition:all 0.2s ease;' onmouseover="this.style.boxShadow='0 6px 12px rgba(0,0,0,0.08)'; this.style.transform='translateY(-2px)'" onmouseout="this.style.boxShadow='0 4px 6px rgba(0,0,0,0.04)'; this.style.transform='translateY(0)'">
-                    <div style='flex-shrink:0; display:flex; align-items:center; justify-content:center; width:40px; height:40px;'>
-                        {link_html}
-                    </div>
-                    <div style='flex-grow:1; min-width:0;'>
-                        <h4 style='margin:0 0 4px 0; font-size:1rem; color:#1a1a1a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;' title='{name.replace("'", "&#39;")}'>{name}</h4>
-                        <p style='margin:0; font-size:0.85rem; color:#555; line-height:1.4;'>{desc}</p>
-                    </div>
-                </div>
-                """
+<div style='border:1px solid #e0e0e0; border-radius:8px; padding:12px; background:linear-gradient(145deg, #ffffff, #f5f7fa); box-shadow:0 4px 6px rgba(0,0,0,0.04); display:flex; align-items:center; gap:16px; transition:all 0.2s ease;' onmouseover="this.style.boxShadow='0 6px 12px rgba(0,0,0,0.08)'; this.style.transform='translateY(-2px)'" onmouseout="this.style.boxShadow='0 4px 6px rgba(0,0,0,0.04)'; this.style.transform='translateY(0)'">
+    <div style='flex-shrink:0; display:flex; align-items:center; justify-content:center; width:40px; height:40px;'>
+        {link_html}
+    </div>
+    <div style='flex-grow:1; min-width:0;'>
+        <h4 style='margin:0 0 4px 0; font-size:1rem; color:#1a1a1a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;' title='{name.replace("'", "&#39;")}'>{name}</h4>
+        <p style='margin:0; font-size:0.85rem; color:#555; line-height:1.4;'>{desc}</p>
+    </div>
+</div>
+"""
                 md.append(card)
             md.append("</div>")
             return [types.TextContent(type="text", text="\n".join(md))]
