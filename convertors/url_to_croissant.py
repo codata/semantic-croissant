@@ -766,8 +766,17 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
             
         output = json.dumps(json_data, indent=2)
         
-        import secrets
-        safe_name = secrets.token_urlsafe(16)
+        import hashlib, base64
+        def compute_unf6(content):
+            words = sorted(content.split())
+            c = b""
+            for w in words:
+                c += w.encode("utf-8") + b"\n\x00"
+            d = hashlib.sha256(c).digest()[:16]
+            raw_hash = base64.b64encode(d).decode("ascii")
+            return raw_hash.replace("=", "").replace("+", "").replace("/", "")
+            
+        safe_name = compute_unf6(output)
         
         os.makedirs(os.path.join("data", "ca4eosc"), exist_ok=True)
         safe_name = os.path.join("data", "ca4eosc", safe_name)
@@ -918,8 +927,17 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
         return
 
     # Generate a safe filename based on the URL
-    import secrets
-    safe_name = secrets.token_urlsafe(16)
+    import hashlib, base64
+    def compute_unf6(content):
+        words = sorted(content.split())
+        c = b""
+        for w in words:
+            c += w.encode("utf-8") + b"\n\x00"
+        d = hashlib.sha256(c).digest()[:16]
+        raw_hash = base64.b64encode(d).decode("ascii")
+        return raw_hash.replace("=", "").replace("+", "").replace("/", "")
+        
+    safe_name = compute_unf6(markdown_data)
         
     os.makedirs(os.path.join("data", "ca4eosc"), exist_ok=True)
     safe_name = os.path.join("data", "ca4eosc", safe_name)
