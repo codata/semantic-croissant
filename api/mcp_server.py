@@ -2636,7 +2636,40 @@ def main(port: int, transport: str) -> int:
                 is_sse = "text/event-stream" in response.headers.get("content-type", "")
                 if is_sse and request.method == "POST" and target_url.endswith("/v1/messages"):
                     async def sse_transformer():
+                        import asyncio, datetime, sys
+                        
+                        async def index_history(prompt_body_bytes, response_text):
+                            global SERVER_USER_INFO
+                            username = "anonymous"
+                            if SERVER_USER_INFO:
+                                username = SERVER_USER_INFO.get("preferred_username", SERVER_USER_INFO.get("name", "anonymous"))
+                            
+                            es_url = os.environ.get("ELASTICSEARCH_URL", "http://localhost:9200").rstrip("/")
+                            es_index = "history"
+                            
+                            try:
+                                prompt_json = json.loads(prompt_body_bytes.decode("utf-8"))
+                            except:
+                                prompt_json = {"raw": prompt_body_bytes.decode("utf-8", errors="ignore")}
+                                
+                            doc = {
+                                "username": username,
+                                "model": prompt_json.get("model", "unknown"),
+                                "prompt": prompt_json,
+                                "response": response_text,
+                                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                            }
+                            
+                            try:
+                                import httpx
+                                async with httpx.AsyncClient() as temp_client:
+                                    await temp_client.put(f"{es_url}/{es_index}")
+                                    await temp_client.post(f"{es_url}/{es_index}/_doc", json=doc)
+                            except Exception as e:
+                                print(f"Failed to index history to ES: {e}", file=sys.stderr)
+
                         state = {"buffer": "", "in_think": False}
+                        full_llm_text = ""
                         def process_text(text: str) -> str:
                             buffer = state["buffer"] + text
                             in_think = state["in_think"]
@@ -2701,6 +2734,7 @@ def main(port: int, transport: str) -> int:
                                                 delta = data_json.get("delta", {})
                                                 if delta.get("type") == "text_delta":
                                                     orig = delta.get("text", "")
+                                                    full_llm_text += orig
                                                     new_text = process_text(orig)
                                                     if new_text != orig:
                                                         delta["text"] = new_text
@@ -2716,6 +2750,9 @@ def main(port: int, transport: str) -> int:
                         if sse_buffer:
                             # if it's incomplete, we still try to send it
                             yield sse_buffer.encode("utf-8")
+                            
+                        # Trigger background indexing
+                        asyncio.create_task(index_history(req_body, full_llm_text))
                                 
                     return StreamingResponse(
                         sse_transformer(),
