@@ -24,6 +24,8 @@ from youtube_transcript_api import YouTubeTranscriptApi
 from playwright.sync_api import sync_playwright
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
+OLLAMA_HEADERS = {"Authorization": f"Bearer {OLLAMA_API_KEY}"} if OLLAMA_API_KEY else {}
 ELASTICSEARCH_URL = os.environ.get("ELASTICSEARCH_URL", "http://localhost:9200")
 MCP_DOMAIN = os.environ.get("MCP_DOMAIN", "mcp.dev.codata.org")
 MODEL_NAME = "gemma4-croissant"
@@ -469,7 +471,7 @@ def translate_to_english(text):
     }
     print(f"DEBUG: Payload sent to Ollama: {repr(payload)}")
     try:
-        res = requests.post(f"{ollama_host}/api/generate", json=payload, timeout=600)
+        res = requests.post(f"{ollama_host}/api/generate", json=payload, headers=OLLAMA_HEADERS, timeout=600)
         if res.status_code == 200:
             translated = res.json().get('response', '').strip()
             print(f"DEBUG: Translated response from Ollama: {repr(translated[:100])}")
@@ -1061,7 +1063,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                 "options": { "temperature": 0.5, "num_predict": 256 }
             }
             try:
-                res_chunk = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload_chunk, timeout=600)
+                res_chunk = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload_chunk, headers=OLLAMA_HEADERS, timeout=600)
                 res_chunk.raise_for_status()
                 response_text = res_chunk.json().get('response', '').strip()
                 
@@ -1147,7 +1149,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
             }
             try:
                 print(f"Sending chunk {i} to Ollama for dry-run ingestion...")
-                res_ingest = requests.post(f"{OLLAMA_HOST}/api/generate", json=ingest_payload, timeout=120)
+                res_ingest = requests.post(f"{OLLAMA_HOST}/api/generate", json=ingest_payload, headers=OLLAMA_HEADERS, timeout=120)
                 res_ingest.raise_for_status()
                 print(f"Ollama ingestion response: {res_ingest.json().get('response', '').strip()}")
             except Exception as e:
@@ -1193,7 +1195,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                 }
             }
             
-            response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=600)
+            response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, headers=OLLAMA_HEADERS, timeout=600)
             response.raise_for_status()
             end_time = time.time()
             
@@ -1516,7 +1518,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
             }
             try:
                 print("Sending indexing request with Croissant provenance...")
-                res_index = requests.post(f"{OLLAMA_HOST}/api/generate", json=index_payload, timeout=600)
+                res_index = requests.post(f"{OLLAMA_HOST}/api/generate", json=index_payload, headers=OLLAMA_HEADERS, timeout=600)
                 res_index.raise_for_status()
                 print("✓ Successfully indexed document with provenance data!")
             except Exception as e:
