@@ -134,6 +134,31 @@ async def elasticsearch_fulltext_search(q: str, limit: int = 10, format: str = "
             
         results = [hit["_source"] for hit in hits]
         
+        if format == "vault_list":
+            import hashlib, base64
+            def compute_unf6(content):
+                if not content: return None
+                words = sorted(content.split())
+                c = b""
+                for w in words:
+                    c += w.encode("utf-8") + b"\n\x00"
+                d = hashlib.sha256(c).digest()[:16]
+                raw_hash = base64.b64encode(d).decode("ascii")
+                return raw_hash.replace("=", "").replace("+", "").replace("/", "")
+
+            md = ["# Vault Records\n"]
+            for r in results:
+                name = r.get("name") or r.get("schema:name") or r.get("title") or r.get("dcterms:title") or "Unknown Dataset"
+                markdown_content = r.get("_markdown_text")
+                vault_hash = compute_unf6(markdown_content)
+                
+                if vault_hash:
+                    vault_link = f"/vault/{vault_hash}.md"
+                    md.append(f"- [{name}]({vault_link})")
+                else:
+                    md.append(f"- {name} *(No Vault Markdown)*")
+            return [types.TextContent(type="text", text="\n".join(md))]
+        
         # Clean internal indexing fields from user display
         for r in results:
             r.pop("_full_text", None)

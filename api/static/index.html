@@ -339,7 +339,7 @@
             const ui = appendMessage('assistant', '<p>Fetching vault records from Elasticsearch<span class="typing"><span>.</span><span>.</span><span>.</span></span></p>');
             
             // Bypass LLM and call the search tool directly with a wildcard query
-            const result = await executeTool('elasticsearch_fulltext_search', { q: "*", format: "markdown", limit: 10 }, ui.contentDiv);
+            const result = await executeTool('elasticsearch_fulltext_search', { q: "*", format: "vault_list", limit: 10 }, ui.contentDiv);
             
             let resText = "No records found.";
             if (result && result.length > 0 && result[0].text) resText = result[0].text;
@@ -347,7 +347,10 @@
             // Strip the system instructions from the markdown text
             resText = resText.replace(/\n---\nSYSTEM INSTRUCTION FOR LLM:.*$/g, '');
             
-            ui.contentDiv.innerHTML = marked.parse(resText);
+            // Add a Back button
+            const backBtnHTML = '<button onclick="this.closest(\'.message\').remove()" style="margin-bottom:15px; padding:6px 12px; background:var(--button-bg); color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.9rem;">&larr; Back</button>\n\n';
+            
+            ui.contentDiv.innerHTML = backBtnHTML + marked.parse(resText);
             chatHistory.scrollTop = chatHistory.scrollHeight;
         });
         
