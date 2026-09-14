@@ -231,6 +231,19 @@
         .send-btn:hover:not(:disabled) {
             background-color: #006bb3;
         }
+
+        @keyframes blink {
+            0% { opacity: 0.2; }
+            20% { opacity: 1; }
+            100% { opacity: 0.2; }
+        }
+        .typing span {
+            animation: blink 1.4s infinite both;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        .typing span:nth-child(2) { animation-delay: 0.2s; }
+        .typing span:nth-child(3) { animation-delay: 0.4s; }
     </style>
 </head>
 <body>
@@ -368,7 +381,7 @@
         async function executeTool(toolName, args, contentDiv) {
             const toolId = 'tool-' + Math.random().toString(36).substr(2, 9);
             contentDiv.innerHTML += `<div id="${toolId}" style="background:#f0f0f0; padding:10px; border-radius:5px; margin-top:10px; font-family:monospace; font-size:12px; border-left: 3px solid #0066cc;">
-                <span style="font-weight:bold; color:#0066cc;">⚙️ Running tool: ${toolName}</span> <span class="typing">...</span>
+                <span style="font-weight:bold; color:#0066cc;">⚙️ Running tool: ${toolName}</span> <span class="typing"><span>.</span><span>.</span><span>.</span></span>
                 <details style="margin-top:5px; cursor:pointer; color:#555;"><summary>View Arguments</summary><pre style="font-size:10px; white-space:pre-wrap;">${JSON.stringify(args, null, 2)}</pre></details>
             </div>`;
             chatHistory.scrollTop = chatHistory.scrollHeight;
@@ -430,10 +443,10 @@
             // Create placeholder for assistant response
             let contentDiv = null;
             if (!isToolCallback) {
-                const ui = appendMessage('assistant', '<p class="typing">...</p>');
+                const ui = appendMessage('assistant', '<p class="typing"><span>.</span><span>.</span><span>.</span></p>');
                 contentDiv = ui.contentDiv;
             } else {
-                const ui = appendMessage('assistant', '<p class="typing">Processing tool result...</p>');
+                const ui = appendMessage('assistant', '<p class="typing">Processing tool result<span>.</span><span>.</span><span>.</span></p>');
                 contentDiv = ui.contentDiv;
             }
 
