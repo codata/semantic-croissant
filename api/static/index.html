@@ -366,23 +366,45 @@
         }
         
         async function executeTool(toolName, args, contentDiv) {
-            contentDiv.innerHTML += `<div style="background:#f0f0f0; padding:10px; border-radius:5px; margin-top:10px; font-family:monospace; font-size:12px;">Running tool: ${toolName}...</div>`;
+            const toolId = 'tool-' + Math.random().toString(36).substr(2, 9);
+            contentDiv.innerHTML += `<div id="${toolId}" style="background:#f0f0f0; padding:10px; border-radius:5px; margin-top:10px; font-family:monospace; font-size:12px; border-left: 3px solid #0066cc;">
+                <span style="font-weight:bold; color:#0066cc;">⚙️ Running tool: ${toolName}</span> <span class="typing">...</span>
+                <details style="margin-top:5px; cursor:pointer; color:#555;"><summary>View Arguments</summary><pre style="font-size:10px; white-space:pre-wrap;">${JSON.stringify(args, null, 2)}</pre></details>
+            </div>`;
             chatHistory.scrollTop = chatHistory.scrollHeight;
             
+            let result;
             try {
                 const res = await fetch('/gateway/v1/tools/execute', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name: toolName, arguments: args })
                 });
+                
                 if (!res.ok) {
-                    throw new Error(`Execution failed: ${res.statusText}`);
+                    const errText = await res.text();
+                    result = [{ type: "text", text: `Error: ${res.status} - ${errText}` }];
+                } else {
+                    result = await res.json();
                 }
-                const result = await res.json();
-                return result; // array of content blocks
             } catch (err) {
-                return [{ type: "text", text: `Error: ${err.message}` }];
+                result = [{ type: "text", text: `Error: ${err.message}` }];
             }
+
+            const toolDiv = document.getElementById(toolId);
+            if (toolDiv) {
+                let resText = "No output";
+                if (result && result.length > 0 && result[0].text) resText = result[0].text;
+                // Escape HTML tags to prevent rendering issues in pre block
+                resText = resText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                
+                toolDiv.innerHTML = `
+                    <span style="font-weight:bold; color:#008800;">✅ Tool finished: ${toolName}</span>
+                    <details style="margin-top:5px; cursor:pointer; color:#555;"><summary>View Result</summary><pre style="font-size:10px; white-space:pre-wrap; max-height:200px; overflow-y:auto; background:#fff; padding:5px; border:1px solid #ccc;">${resText}</pre></details>
+                `;
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            }
+            return result;
         }
 
         async function sendMessage(isToolCallback = false, toolCallbackData = null) {
@@ -424,6 +446,7 @@
 
                 const payload = {
                     model: model,
+                    system: "You are the Semantic Croissant AI Assistant, connected to an MCP (Model Context Protocol) server. You have access to various tools to interact with the system, such as reading from the vault (read_vault_article), searching the web, and extracting variables. YOU MUST USE THESE TOOLS when the user asks you to read, search, or fetch data. Do not refuse to read the vault; instead, use the read_vault_article tool.",
                     messages: messages,
                     stream: true,
                     max_tokens: 4096
@@ -517,6 +540,11 @@
                 
                 // Save assistant message to history
                 messages.push({ role: 'assistant', content: assistantMessageContent });
+
+                // Hide empty assistant messages that resulted from processing a tool
+                if (isToolCallback && fullResponse.trim() === '' && (!currentToolCall || !currentToolCall.name)) {
+                    contentDiv.parentElement.style.display = 'none';
+                }
                 
                 // If a tool was called, execute it and automatically send the result
                 if (currentToolCall && currentToolCall.name) {
