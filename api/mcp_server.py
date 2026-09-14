@@ -2505,6 +2505,7 @@ def main(port: int, transport: str) -> int:
                         return {"claude-3-5-sonnet-20241022": "gemma4:31b"}
 
             req_body = await request.body()
+            original_req_body = req_body
             
             # Intercept POST /v1/messages to rewrite model name
             if request.method == "POST" and target_url.endswith("/v1/messages"):
@@ -2751,8 +2752,8 @@ def main(port: int, transport: str) -> int:
                             # if it's incomplete, we still try to send it
                             yield sse_buffer.encode("utf-8")
                             
-                        # Trigger background indexing
-                        asyncio.create_task(index_history(req_body, full_llm_text))
+                        # Trigger background indexing using the original request body
+                        asyncio.create_task(index_history(original_req_body, full_llm_text))
                                 
                     return StreamingResponse(
                         sse_transformer(),
