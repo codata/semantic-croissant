@@ -766,23 +766,14 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
             
         output = json.dumps(json_data, indent=2)
         
-        parsed_url = urllib.parse.urlparse(url)
-        safe_name = parsed_url.netloc + parsed_url.path
-        safe_name = safe_name.replace("/", "_").replace(".", "_")
-        if parsed_url.query:
-            qs = urllib.parse.parse_qsl(parsed_url.query)
-            for k, v in qs:
-                safe_name += "_" + v
-        import re
-        safe_name = re.sub(r'[^a-zA-Z0-9_]', '_', safe_name)
-        if not safe_name:
-            safe_name = "url_output"
-            
+        import secrets
+        safe_name = secrets.token_urlsafe(16)
+        
         os.makedirs(os.path.join("data", "ca4eosc"), exist_ok=True)
         safe_name = os.path.join("data", "ca4eosc", safe_name)
-        output_filename = f"{safe_name}_croissant.jsonld"
+        output_filename = f"{safe_name}.jsonld"
         croissant_filename = os.path.basename(output_filename)
-        md_filename = f"{safe_name}_content.md"
+        md_filename = f"{safe_name}.md"
         
         with open(output_filename, "w", encoding='utf-8') as f:
             f.write(output)
@@ -927,18 +918,14 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
         return
 
     # Generate a safe filename based on the URL
-    parsed_url = urllib.parse.urlparse(url)
-    safe_name = parsed_url.netloc + parsed_url.path
-    import re
-    safe_name = re.sub(r'[^a-zA-Z0-9_]', '_', safe_name)
-    if not safe_name:
-        safe_name = "url_output"
+    import secrets
+    safe_name = secrets.token_urlsafe(16)
         
     os.makedirs(os.path.join("data", "ca4eosc"), exist_ok=True)
     safe_name = os.path.join("data", "ca4eosc", safe_name)
 
-    md_filename = f"{safe_name}_content.md"
-    croissant_filename = os.path.basename(f"{safe_name}_croissant.jsonld")
+    md_filename = f"{safe_name}.md"
+    croissant_filename = os.path.basename(f"{safe_name}.jsonld")
     header = f"# Document: {url}\n\n* **Croissant Metadata**: [{croissant_filename}](./{croissant_filename})\n\n"
     
     # Don't duplicate if already present
