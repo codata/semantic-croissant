@@ -2211,56 +2211,20 @@ def main(port: int, transport: str) -> int:
             return Response()
                 
         async def index(request):
-            html_content = f"""
-            <!DOCTYPE html>
-            <html lang="en">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Semantic Croissant MCP Server</title>
-                <style>
-                    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 2rem; color: #333; }}
-                    h1 {{ color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; }}
-                    .card {{ background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; margin-bottom: 20px; }}
-                    code {{ background: #eef1f5; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.9em; }}
-                    .endpoint {{ font-weight: bold; color: #0056b3; }}
-                    .btn {{ display: inline-block; padding: 10px 15px; margin-right: 10px; background: #0056b3; color: white; text-decoration: none; border-radius: 4px; }}
-                    .btn:hover {{ background: #004494; }}
-                </style>
-            </head>
-            <body>
-                <h1>🥐 Semantic Croissant MCP Server</h1>
-                <p>Welcome! This is a Model Context Protocol (MCP) server that exposes the internal Semantic Croissant dataset catalog.</p>
-                
-                <div class="card">
-                    <h2>Authentication (ODRL)</h2>
-                    <p>Status: <strong>{'Authenticated via ~/.odrl/authorize' if get_odrl_token() else 'Not Authenticated'}</strong></p>
-                    <p>Link your identity to ODRL policies:</p>
-                    <a href="https://odrl.dev.codata.org/vcs" class="btn">Login with Google</a>
-                    <a href="https://odrl.dev.codata.org/vcs" class="btn">Login with GitHub</a>
-                </div>
-
-                <div class="card">
-                    <h2>Available Tools</h2>
-                    <ul>
-                        <li><code>search_croissant_datasets(q, limit, page)</code>: Search for datasets using natural language keywords (e.g. "climate change vietnam"). It leverages QLever's internal ranking system to find the most relevant datasets.</li>
-                        <li><code>get_croissant_dataset(id)</code>: Retrieve the full, detailed JSON-LD Metadata catalog for a specific dataset ID.</li>
-                        <li><code>/expert/{index}</code>: Directly query specialized Elasticsearch indices (croissant, dataverse, ollama, huggingface, openml, hips) using standard HTTP requests (e.g. <code>/expert/croissant/_search</code>).</li>
-                    </ul>
-                </div>
-                
-                <div class="card">
-                    <h2>Connection Details</h2>
-                    <p>This server provides an SSE (Server-Sent Events) transport for MCP.</p>
-                    <p><strong>SSE Endpoint:</strong> <span class="endpoint">https://{{MCP_DOMAIN}}/mcp/sse</span></p>
-                </div>
-                
-                <p><small>Powered by <a href="https://github.com/ad-freiburg/qlever">QLever</a> and the standard python MCP SDK.</small></p>
-            </body>
-            </html>
-            """
+            import os
             from starlette.responses import HTMLResponse
-            return HTMLResponse(html_content)
+            index_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
+            
+            if os.path.exists(index_path):
+                with open(index_path, "r", encoding="utf-8") as f:
+                    html_content = f.read()
+                
+                auth_status = '<span style="color: #4CAF50;">Authenticated via ~/.odrl/authorize</span>' if get_odrl_token() else '<span style="color: #F44336;">Not Authenticated</span>'
+                html_content = html_content.replace('{{AUTH_STATUS}}', auth_status)
+                
+                return HTMLResponse(html_content)
+            else:
+                return HTMLResponse("<h1>Error: UI not found. Missing static/index.html</h1>", status_code=404)
             
         async def proxy_vault(request):
             filename = request.path_params["filename"]
