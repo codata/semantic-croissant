@@ -2481,7 +2481,7 @@ def main(port: int, transport: str) -> int:
                         tags_data = resp.json()
                         all_models = [m.get("name") for m in tags_data.get("models", [])]
                         tools_models = []
-                        for priority_m in ["deepseek-r1:14b", "gpt-oss:latest"]:
+                        for priority_m in ["gpt-oss:latest"]:
                             if priority_m in all_models:
                                 tools_models.append(priority_m)
                         for m in tags_data.get("models", []):
