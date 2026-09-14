@@ -1196,7 +1196,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                     "temperature": current_temperature,
                     "repeat_penalty": 1.1,
                     "num_predict": 8192,
-                    "num_ctx": 40960
+                    "num_ctx": 8192
                 }
             }
             
