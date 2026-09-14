@@ -334,10 +334,21 @@
             sendMessage();
         });
         
-        document.getElementById('menu-vault').addEventListener('click', (e) => {
+        document.getElementById('menu-vault').addEventListener('click', async (e) => {
             e.preventDefault();
-            promptInput.value = "List all available documents in the vault";
-            sendMessage();
+            const ui = appendMessage('assistant', '<p>Fetching vault records from Elasticsearch<span class="typing"><span>.</span><span>.</span><span>.</span></span></p>');
+            
+            // Bypass LLM and call the search tool directly with a wildcard query
+            const result = await executeTool('elasticsearch_fulltext_search', { q: "*", format: "markdown", limit: 50 }, ui.contentDiv);
+            
+            let resText = "No records found.";
+            if (result && result.length > 0 && result[0].text) resText = result[0].text;
+            
+            // Strip the system instructions from the markdown text
+            resText = resText.replace(/\n---\nSYSTEM INSTRUCTION FOR LLM:.*$/g, '');
+            
+            ui.contentDiv.innerHTML = marked.parse(resText);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
         });
         
         document.getElementById('menu-search').addEventListener('click', (e) => {
