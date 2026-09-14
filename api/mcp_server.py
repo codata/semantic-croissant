@@ -2161,6 +2161,7 @@ def main(port: int, transport: str) -> int:
         from starlette.applications import Starlette
         from starlette.routing import Mount, Route
         from starlette.middleware import Middleware
+        from starlette.middleware.cors import CORSMiddleware
         import uvicorn
         import contextlib
 
@@ -2707,7 +2708,10 @@ def main(port: int, transport: str) -> int:
         starlette_app = Starlette(
             debug=True,
             lifespan=lifespan,
-            middleware=[Middleware(StripCharsetMiddleware)],
+            middleware=[
+                Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]),
+                Middleware(StripCharsetMiddleware)
+            ],
             routes=[
                 Route("/", endpoint=index),
                 Route("/sse", endpoint=handle_sse),
