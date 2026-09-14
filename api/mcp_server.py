@@ -2370,6 +2370,10 @@ def main(port: int, transport: str) -> int:
                 if token in allowed_keys:
                     is_authorized = True
                     
+            if not is_authorized and get_odrl_token():
+                # Allow access to the gateway if the server is authenticated via ODRL
+                is_authorized = True
+                    
             if not is_authorized:
                 return Response(json.dumps({"detail": "Unauthorized: Invalid API Key"}), status_code=401, media_type="application/json")
                 
