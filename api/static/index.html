@@ -276,6 +276,14 @@
     </div>
 
     <div class="main-content">
+        <!-- Static Menu -->
+        <div class="static-menu" style="display: flex; justify-content: center; gap: 15px; padding: 15px; background: var(--panel-bg); border-bottom: 1px solid var(--border-color); font-size: 0.95rem;">
+            <a href="#" id="menu-about" style="color: var(--accent-color); text-decoration: none; font-weight: 600;">About</a> <span style="color: #ccc;">|</span>
+            <a href="#" id="menu-vault" style="color: var(--accent-color); text-decoration: none; font-weight: 600;">Vault</a> <span style="color: #ccc;">|</span>
+            <a href="#" id="menu-search" style="color: var(--accent-color); text-decoration: none; font-weight: 600;">Search</a> <span style="color: #ccc;">|</span>
+            <a href="#" id="menu-settings" style="color: var(--accent-color); text-decoration: none; font-weight: 600;">Settings</a>
+        </div>
+
         <div class="chat-history" id="chat-history">
             <div class="message assistant">
                 <div class="avatar">AI</div>
@@ -316,7 +324,32 @@
         // Auto-resize textarea
         promptInput.addEventListener('input', function() {
             this.style.height = 'auto';
-            this.style.height = (this.scrollHeight) + 'px';
+            promptInput.style.height = (promptInput.scrollHeight) + 'px';
+        });
+
+        // Static Menu Events
+        document.getElementById('menu-about').addEventListener('click', (e) => {
+            e.preventDefault();
+            promptInput.value = "What is the Semantic Croissant AI Studio?";
+            sendMessage();
+        });
+        
+        document.getElementById('menu-vault').addEventListener('click', (e) => {
+            e.preventDefault();
+            promptInput.value = "List all available documents in the vault";
+            sendMessage();
+        });
+        
+        document.getElementById('menu-search').addEventListener('click', (e) => {
+            e.preventDefault();
+            promptInput.value = "Search Croissant datasets for: ";
+            promptInput.focus();
+        });
+        
+        document.getElementById('menu-settings').addEventListener('click', (e) => {
+            e.preventDefault();
+            promptInput.value = "Show settings";
+            sendMessage();
         });
 
         // Load models on startup
