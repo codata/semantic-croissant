@@ -339,7 +339,7 @@
             const ui = appendMessage('assistant', '<p>Fetching vault records from Elasticsearch<span class="typing"><span>.</span><span>.</span><span>.</span></span></p>');
             
             // Bypass LLM and call the search tool directly with a wildcard query
-            const result = await executeTool('elasticsearch_fulltext_search', { q: "*", format: "markdown", limit: 50 }, ui.contentDiv);
+            const result = await executeTool('elasticsearch_fulltext_search', { q: "*", format: "markdown", limit: 10 }, ui.contentDiv);
             
             let resText = "No records found.";
             if (result && result.length > 0 && result[0].text) resText = result[0].text;

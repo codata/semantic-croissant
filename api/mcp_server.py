@@ -100,15 +100,23 @@ async def search_croissant_datasets(q: str, limit: int = 10, page: int = 1, form
 async def elasticsearch_fulltext_search(q: str, limit: int = 10, format: str = "json-ld") -> list[types.TextContent]:
     es_url = os.environ.get("ELASTICSEARCH_URL", "http://localhost:9200").rstrip("/")
     try:
-        payload = {
-            "size": limit,
-            "query": {
-                "multi_match": {
-                    "query": q,
-                    "fields": ["_full_text", "_markdown_text", "name", "description", "schema:name", "schema:description", "title", "dcterms:title", "dsDescription.dsDescriptionValue", "citation:dsDescriptionValue"]
+        if q == "*":
+            payload = {
+                "size": limit,
+                "query": {
+                    "match_all": {}
                 }
             }
-        }
+        else:
+            payload = {
+                "size": limit,
+                "query": {
+                    "multi_match": {
+                        "query": q,
+                        "fields": ["_full_text", "_markdown_text", "name", "description", "schema:name", "schema:description", "title", "dcterms:title", "dsDescription.dsDescriptionValue", "citation:dsDescriptionValue"]
+                    }
+                }
+            }
         async with httpx.AsyncClient(timeout=30.0, headers=get_auth_headers(get_auth_headers())) as client:
             response = await client.post(
                 f"{es_url}/croissant/_search",
