@@ -532,7 +532,7 @@ async def store_in_vault(content: str, prefix: str = "custom", jsonld_payload: s
                         
                 # Extract any vault links explicitly passed by the AI agent in the payload
                 import re
-                vault_links = re.findall(r'https://mcp\.dev\.codata\.org/vault/([^"\'\s]+)', json.dumps(payload_dict))
+                vault_links = re.findall(rf'https://{MCP_DOMAIN.replace(".", r"\.")}/vault/([^"\'\s]+)', json.dumps(payload_dict))
                 for link_filename in vault_links:
                     if link_filename.endswith(".md") and link_filename != filename:
                         parts = link_filename.replace(".md", "").split("_")

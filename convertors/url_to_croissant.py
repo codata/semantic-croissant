@@ -813,7 +813,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                     length=len(jsonld_bytes),
                     content_type="application/ld+json"
                 )
-                print(f"Croissant JSON-LD successfully uploaded to vault: https://mcp.dev.codata.org/vault/{vault_jsonld_filename}")
+                print(f"Croissant JSON-LD successfully uploaded to vault: https://{MCP_DOMAIN}/vault/{vault_jsonld_filename}")
                 
                 # Generate and upload Datacard
                 datacard_filename = vault_jsonld_filename.replace(".jsonld", "_datacard.md")
@@ -831,7 +831,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                     length=len(dc_bytes),
                     content_type="text/markdown"
                 )
-                print(f"Datacard successfully uploaded to vault: https://mcp.dev.codata.org/vault/{datacard_filename}")
+                print(f"Datacard successfully uploaded to vault: https://{MCP_DOMAIN}/vault/{datacard_filename}")
         except Exception as e:
             print(f"Warning: Failed to upload JSON-LD/Datacard to MinIO vault: {e}")
         
@@ -982,7 +982,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                 length=len(md_bytes),
                 content_type="text/markdown"
             )
-            print(f"Extracted markdown successfully uploaded to vault: https://mcp.dev.codata.org/vault/{vault_filename}")
+            print(f"Extracted markdown successfully uploaded to vault: https://{MCP_DOMAIN}/vault/{vault_filename}")
     except Exception as e:
         print(f"Warning: Failed to upload markdown to MinIO vault: {e}")
 
@@ -1013,7 +1013,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                     length=len(en_bytes),
                     content_type="text/markdown"
                 )
-                print(f"Translated markdown successfully uploaded to vault: https://mcp.dev.codata.org/vault/{vault_en_filename}")
+                print(f"Translated markdown successfully uploaded to vault: https://{MCP_DOMAIN}/vault/{vault_en_filename}")
             except Exception as e:
                 print(f"Warning: Failed to upload translated markdown to MinIO vault: {e}")
 
@@ -1241,7 +1241,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                 print("✓ JSON is well-formed")
                 
                 # Inject link to the generated markdown file(s)
-                original_vault_url = f"https://mcp.dev.codata.org/vault/{os.path.basename(original_md_filename)}"
+                original_vault_url = f"https://{MCP_DOMAIN}/vault/{os.path.basename(original_md_filename)}"
                 doc_links = [{
                     "@type": "CreativeWork",
                     "name": "Scraped Markdown Content",
@@ -1250,7 +1250,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                 }]
                 
                 if original_md_filename != md_filename:
-                    translated_vault_url = f"https://mcp.dev.codata.org/vault/{os.path.basename(md_filename)}"
+                    translated_vault_url = f"https://{MCP_DOMAIN}/vault/{os.path.basename(md_filename)}"
                     doc_links.append({
                         "@type": "CreativeWork",
                         "name": "Translated Markdown Content (English)",
@@ -1289,7 +1289,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                         doc_links.append({
                             "@type": "CreativeWork",
                             "name": sib['title'],
-                            "contentUrl": f"https://mcp.dev.codata.org/vault/{os.path.basename(sib_md_filename)}",
+                            "contentUrl": f"https://{MCP_DOMAIN}/vault/{os.path.basename(sib_md_filename)}",
                             "encodingFormat": "text/markdown"
                         })
                 
@@ -1490,7 +1490,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                     length=len(jsonld_bytes),
                     content_type="application/ld+json"
                 )
-                print(f"Croissant JSON-LD successfully uploaded to vault: https://mcp.dev.codata.org/vault/{vault_jsonld_filename}")
+                print(f"Croissant JSON-LD successfully uploaded to vault: https://{MCP_DOMAIN}/vault/{vault_jsonld_filename}")
                 
                 # Generate and upload Datacard
                 datacard_filename = vault_jsonld_filename.replace(".jsonld", "_datacard.md")
@@ -1508,7 +1508,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                     length=len(dc_bytes),
                     content_type="text/markdown"
                 )
-                print(f"Datacard successfully uploaded to vault: https://mcp.dev.codata.org/vault/{datacard_filename}")
+                print(f"Datacard successfully uploaded to vault: https://{MCP_DOMAIN}/vault/{datacard_filename}")
         except Exception as e:
             print(f"Warning: Failed to upload JSON-LD/Datacard to MinIO vault: {e}")
         
