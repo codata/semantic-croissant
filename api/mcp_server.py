@@ -146,17 +146,36 @@ async def elasticsearch_fulltext_search(q: str, limit: int = 10, format: str = "
                 raw_hash = base64.b64encode(d).decode("ascii")
                 return raw_hash.replace("=", "").replace("+", "").replace("/", "")
 
-            md = ["# Vault Records\n"]
+            md = ["<div style='display:flex; flex-direction:column; gap:12px;'>"]
             for r in results:
                 name = r.get("name") or r.get("schema:name") or r.get("title") or r.get("dcterms:title") or "Unknown Dataset"
+                desc = r.get("description") or r.get("schema:description") or "No description provided."
+                # Clean up description html tags and truncate
+                desc = desc.replace("<", "&lt;").replace(">", "&gt;")
+                if len(desc) > 120: desc = desc[:117] + "..."
+                
                 markdown_content = r.get("_markdown_text")
                 vault_hash = compute_unf6(markdown_content)
                 
                 if vault_hash:
                     vault_link = f"/vault/{vault_hash}.md"
-                    md.append(f"- [{name}]({vault_link})")
+                    link_html = f"<a href='{vault_link}' target='_blank' style='text-decoration:none; font-size:1.8rem; transition:transform 0.2s;' onmouseover=\"this.style.transform='scale(1.2)'\" onmouseout=\"this.style.transform='scale(1)'\" title='Open Markdown'>📖</a>"
                 else:
-                    md.append(f"- {name} *(No Vault Markdown)*")
+                    link_html = "<span style='opacity:0.3; font-size:1.8rem;' title='No Markdown Available'>🚫</span>"
+                    
+                card = f"""
+                <div style='border:1px solid #e0e0e0; border-radius:8px; padding:12px; background:linear-gradient(145deg, #ffffff, #f5f7fa); box-shadow:0 4px 6px rgba(0,0,0,0.04); display:flex; align-items:center; gap:16px; transition:all 0.2s ease;' onmouseover="this.style.boxShadow='0 6px 12px rgba(0,0,0,0.08)'; this.style.transform='translateY(-2px)'" onmouseout="this.style.boxShadow='0 4px 6px rgba(0,0,0,0.04)'; this.style.transform='translateY(0)'">
+                    <div style='flex-shrink:0; display:flex; align-items:center; justify-content:center; width:40px; height:40px;'>
+                        {link_html}
+                    </div>
+                    <div style='flex-grow:1; min-width:0;'>
+                        <h4 style='margin:0 0 4px 0; font-size:1rem; color:#1a1a1a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;' title='{name.replace("'", "&#39;")}'>{name}</h4>
+                        <p style='margin:0; font-size:0.85rem; color:#555; line-height:1.4;'>{desc}</p>
+                    </div>
+                </div>
+                """
+                md.append(card)
+            md.append("</div>")
             return [types.TextContent(type="text", text="\n".join(md))]
         
         # Clean internal indexing fields from user display
