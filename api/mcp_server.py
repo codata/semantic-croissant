@@ -2720,40 +2720,42 @@ def main(port: int, transport: str) -> int:
                             state["in_think"] = in_think
                             return output
 
-                        sse_buffer = ""
-                        async for chunk in response.aiter_raw():
-                            sse_buffer += chunk.decode('utf-8', errors='replace').replace('\r\n', '\n')
-                            while "\n\n" in sse_buffer:
-                                event_text, sse_buffer = sse_buffer.split("\n\n", 1)
-                                lines = event_text.split("\n")
-                                new_lines = []
-                                for line in lines:
-                                    if line.startswith("data: ") and line != "data: [DONE]":
-                                        try:
-                                            data_json = json.loads(line[6:])
-                                            if data_json.get("type") == "content_block_delta":
-                                                delta = data_json.get("delta", {})
-                                                if delta.get("type") == "text_delta":
-                                                    orig = delta.get("text", "")
-                                                    full_llm_text += orig
-                                                    new_text = process_text(orig)
-                                                    if new_text != orig:
-                                                        delta["text"] = new_text
-                                                        line = "data: " + json.dumps(data_json)
-                                        except Exception:
-                                            pass
-                                    new_lines.append(line)
-                                yield ("\n".join(new_lines) + "\n\n").encode("utf-8")
-                                
-                        # Flush the remainder if there is any (and if we finished in the middle of a think block, close it out)
-                        if state["in_think"]:
-                            pass # We don't yield anything extra here, but a robust implementation might flush
-                        if sse_buffer:
-                            # if it's incomplete, we still try to send it
-                            yield sse_buffer.encode("utf-8")
-                            
-                        # Trigger background indexing using the original request body
-                        asyncio.create_task(index_history(original_req_body, full_llm_text))
+                        try:
+                            sse_buffer = ""
+                            async for chunk in response.aiter_raw():
+                                sse_buffer += chunk.decode('utf-8', errors='replace').replace('\r\n', '\n')
+                                while "\n\n" in sse_buffer:
+                                    event_text, sse_buffer = sse_buffer.split("\n\n", 1)
+                                    lines = event_text.split("\n")
+                                    new_lines = []
+                                    for line in lines:
+                                        if line.startswith("data: ") and line != "data: [DONE]":
+                                            try:
+                                                data_json = json.loads(line[6:])
+                                                if data_json.get("type") == "content_block_delta":
+                                                    delta = data_json.get("delta", {})
+                                                    if delta.get("type") == "text_delta":
+                                                        orig = delta.get("text", "")
+                                                        full_llm_text += orig
+                                                        new_text = process_text(orig)
+                                                        if new_text != orig:
+                                                            delta["text"] = new_text
+                                                            line = "data: " + json.dumps(data_json)
+                                            except Exception:
+                                                pass
+                                        new_lines.append(line)
+                                    yield ("\n".join(new_lines) + "\n\n").encode("utf-8")
+                                    
+                            # Flush the remainder if there is any (and if we finished in the middle of a think block, close it out)
+                            if state["in_think"]:
+                                pass # We don't yield anything extra here, but a robust implementation might flush
+                            if sse_buffer:
+                                # if it's incomplete, we still try to send it
+                                yield sse_buffer.encode("utf-8")
+                        finally:
+                            # Trigger background indexing using the original request body
+                            if full_llm_text:
+                                asyncio.create_task(index_history(original_req_body, full_llm_text))
                                 
                     return StreamingResponse(
                         sse_transformer(),
