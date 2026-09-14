@@ -2584,7 +2584,7 @@ def main(port: int, transport: str) -> int:
                             last_id = c_id
                             
                             anthropic_data.append({
-                                "type": "model",
+                                "object": "model",
                                 "id": c_id,
                                 "display_name": f"{c_id} (Inference: {ollama_model})",
                                 "created_at": "2024-01-01T00:00:00Z"
@@ -2598,7 +2598,7 @@ def main(port: int, transport: str) -> int:
                             last_id = m_name
                             
                             anthropic_data.append({
-                                "type": "model",
+                                "object": "model",
                                 "id": m_name,
                                 "display_name": f"{m_name}",
                                 "created_at": "2024-01-01T00:00:00Z"
@@ -2609,13 +2609,14 @@ def main(port: int, transport: str) -> int:
                             first_id = "claude-3-5-sonnet-20241022"
                             last_id = "claude-3-5-sonnet-20241022"
                             anthropic_data = [{
-                                "type": "model",
+                                "object": "model",
                                 "id": "claude-3-5-sonnet-20241022",
                                 "display_name": "Claude 3.5 Sonnet (Inference: default)",
                                 "created_at": "2024-01-01T00:00:00Z"
                             }]
 
                         response_obj = {
+                            "object": "list",
                             "data": anthropic_data,
                             "has_more": False,
                             "first_id": first_id,
