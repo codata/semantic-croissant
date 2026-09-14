@@ -2679,6 +2679,30 @@ def main(port: int, transport: str) -> int:
                 
             await sse.handle_post_message(scope, new_receive, send)
 
+        async def gateway_tools(request):
+            tools = await list_tools()
+            tools_json = []
+            for t in tools:
+                tools_json.append({
+                    "name": t.name,
+                    "description": t.description,
+                    "input_schema": t.inputSchema
+                })
+            return Response(json.dumps(tools_json), media_type="application/json")
+            
+        async def gateway_tools_execute(request):
+            data = await request.json()
+            tool_name = data.get("name")
+            arguments = data.get("arguments", {})
+            try:
+                result = await call_tool(tool_name, arguments)
+                result_json = [{"type": "text", "text": c.text} for c in result]
+                return Response(json.dumps(result_json), media_type="application/json")
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                return Response(json.dumps([{"type": "text", "text": f"Error executing tool: {e}"}]), status_code=500, media_type="application/json")
+
         starlette_app = Starlette(
             debug=True,
             lifespan=lifespan,
@@ -2697,6 +2721,10 @@ def main(port: int, transport: str) -> int:
                 Route("/gateway/{path:path}", endpoint=proxy_gateway, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
                 Route("/v1/models", endpoint=proxy_gateway, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
                 Route("/v1/messages", endpoint=proxy_gateway, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
+                Route("/gateway/v1/models", endpoint=proxy_gateway, methods=["GET"]),
+                Route("/gateway/v1/messages", endpoint=proxy_gateway, methods=["POST"]),
+                Route("/gateway/v1/tools", endpoint=gateway_tools, methods=["GET"]),
+                Route("/gateway/v1/tools/execute", endpoint=gateway_tools_execute, methods=["POST"]),
                 Mount("/messages/", app=sse.handle_post_message),
                 Route("/mcp", endpoint=handle_streamable_http, methods=["GET", "POST", "DELETE"]),
                 Route("/mcp/", endpoint=handle_streamable_http, methods=["GET", "POST", "DELETE"]),

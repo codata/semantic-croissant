@@ -298,6 +298,7 @@
         const apiKeyInput = document.getElementById('api-key');
         
         let messages = [];
+        let availableTools = [];
 
         // Auto-resize textarea
         promptInput.addEventListener('input', function() {
@@ -328,7 +329,20 @@
             }
         }
         
+        async function loadTools() {
+            try {
+                const res = await fetch('/gateway/v1/tools');
+                if (res.ok) {
+                    availableTools = await res.json();
+                    console.log("Loaded tools:", availableTools.length);
+                }
+            } catch (err) {
+                console.error("Failed to load tools", err);
+            }
+        }
+        
         loadModels();
+        loadTools();
 
         function appendMessage(role, content) {
             const msgDiv = document.createElement('div');
@@ -348,38 +362,58 @@
             
             // Scroll to bottom
             chatHistory.scrollTop = chatHistory.scrollHeight;
-            return contentDiv;
+            return { msgDiv, contentDiv };
+        }
+        
+        async function executeTool(toolName, args, contentDiv) {
+            contentDiv.innerHTML += `<div style="background:#f0f0f0; padding:10px; border-radius:5px; margin-top:10px; font-family:monospace; font-size:12px;">Running tool: ${toolName}...</div>`;
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+            
+            try {
+                const res = await fetch('/gateway/v1/tools/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: toolName, arguments: args })
+                });
+                if (!res.ok) {
+                    throw new Error(`Execution failed: ${res.statusText}`);
+                }
+                const result = await res.json();
+                return result; // array of content blocks
+            } catch (err) {
+                return [{ type: "text", text: `Error: ${err.message}` }];
+            }
         }
 
-        async function sendMessage() {
-            const text = promptInput.value.trim();
-            if (!text) return;
+        async function sendMessage(isToolCallback = false, toolCallbackData = null) {
+            if (!isToolCallback) {
+                const text = promptInput.value.trim();
+                if (!text) return;
+                
+                // Add to UI
+                appendMessage('user', text);
+                promptInput.value = '';
+                promptInput.style.height = 'auto';
+                
+                // Add to messages array
+                messages.push({ role: 'user', content: text });
+            } else {
+                // If it's a tool callback, messages array already has the user's tool_result
+            }
             
             const model = modelSelect.value || "claude-3-5-sonnet-20241022";
             const apiKey = apiKeyInput.value.trim();
-            
-            // Add to UI
-            appendMessage('user', text);
-            promptInput.value = '';
-            promptInput.style.height = 'auto';
             sendBtn.disabled = true;
             
-            // Add to messages array
-            messages.push({ role: 'user', content: text });
-            
             // Create placeholder for assistant response
-            const msgDiv = document.createElement('div');
-            msgDiv.className = `message assistant`;
-            const avatarDiv = document.createElement('div');
-            avatarDiv.className = 'avatar';
-            avatarDiv.textContent = 'AI';
-            const contentDiv = document.createElement('div');
-            contentDiv.className = 'message-content';
-            contentDiv.innerHTML = '<p class="typing">...</p>';
-            msgDiv.appendChild(avatarDiv);
-            msgDiv.appendChild(contentDiv);
-            chatHistory.appendChild(msgDiv);
-            chatHistory.scrollTop = chatHistory.scrollHeight;
+            let contentDiv = null;
+            if (!isToolCallback) {
+                const ui = appendMessage('assistant', '<p class="typing">...</p>');
+                contentDiv = ui.contentDiv;
+            } else {
+                const ui = appendMessage('assistant', '<p class="typing">Processing tool result...</p>');
+                contentDiv = ui.contentDiv;
+            }
 
             try {
                 const headers = { 'Content-Type': 'application/json' };
@@ -388,15 +422,20 @@
                     headers['X-API-Key'] = apiKey;
                 }
 
+                const payload = {
+                    model: model,
+                    messages: messages,
+                    stream: true,
+                    max_tokens: 4096
+                };
+                if (availableTools.length > 0) {
+                    payload.tools = availableTools;
+                }
+
                 const response = await fetch('/gateway/v1/messages', {
                     method: 'POST',
                     headers: headers,
-                    body: JSON.stringify({
-                        model: model,
-                        messages: messages,
-                        stream: true,
-                        max_tokens: 4096
-                    })
+                    body: JSON.stringify(payload)
                 });
 
                 if (!response.ok) {
@@ -409,6 +448,9 @@
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder("utf-8");
                 let fullResponse = "";
+                
+                let currentToolCall = null;
+                let assistantMessageContent = []; // To store in messages array
                 
                 contentDiv.innerHTML = '';
 
@@ -423,10 +465,48 @@
                         if (line.startsWith('data: ') && line !== 'data: [DONE]') {
                             try {
                                 const data = JSON.parse(line.slice(6));
-                                if (data.type === 'content_block_delta' && data.delta && data.delta.text) {
-                                    fullResponse += data.delta.text;
-                                    contentDiv.innerHTML = marked.parse(fullResponse);
-                                    chatHistory.scrollTop = chatHistory.scrollHeight;
+                                
+                                if (data.type === 'content_block_start') {
+                                    if (data.content_block && data.content_block.type === 'tool_use') {
+                                        currentToolCall = {
+                                            type: 'tool_use',
+                                            id: data.content_block.id,
+                                            name: data.content_block.name,
+                                            input_json: ""
+                                        };
+                                        assistantMessageContent.push(currentToolCall);
+                                    } else if (data.content_block && data.content_block.type === 'text') {
+                                        assistantMessageContent.push({ type: 'text', text: data.content_block.text });
+                                    }
+                                }
+                                
+                                else if (data.type === 'content_block_delta') {
+                                    if (data.delta && data.delta.type === 'text_delta') {
+                                        fullResponse += data.delta.text;
+                                        contentDiv.innerHTML = marked.parse(fullResponse);
+                                        chatHistory.scrollTop = chatHistory.scrollHeight;
+                                        
+                                        // Update the last text block in assistantMessageContent
+                                        for (let i = assistantMessageContent.length - 1; i >= 0; i--) {
+                                            if (assistantMessageContent[i].type === 'text') {
+                                                assistantMessageContent[i].text += data.delta.text;
+                                                break;
+                                            }
+                                        }
+                                    } else if (data.delta && data.delta.type === 'input_json_delta' && currentToolCall) {
+                                        currentToolCall.input_json += data.delta.partial_json;
+                                    }
+                                }
+                                
+                                else if (data.type === 'content_block_stop') {
+                                    if (currentToolCall) {
+                                        try {
+                                            currentToolCall.input = JSON.parse(currentToolCall.input_json);
+                                            delete currentToolCall.input_json; // clean up
+                                        } catch (e) {
+                                            console.error("Failed to parse tool JSON", currentToolCall.input_json);
+                                        }
+                                    }
                                 }
                             } catch (e) {
                                 // Ignore parse errors for incomplete chunks
@@ -435,20 +515,42 @@
                     }
                 }
                 
-                // Final render with highlights
-                contentDiv.innerHTML = marked.parse(fullResponse);
-                messages.push({ role: 'assistant', content: fullResponse });
+                // Save assistant message to history
+                messages.push({ role: 'assistant', content: assistantMessageContent });
+                
+                // If a tool was called, execute it and automatically send the result
+                if (currentToolCall && currentToolCall.name) {
+                    const resultContent = await executeTool(currentToolCall.name, currentToolCall.input, contentDiv);
+                    
+                    // Append user message with tool result
+                    messages.push({
+                        role: 'user',
+                        content: [
+                            {
+                                type: 'tool_result',
+                                tool_use_id: currentToolCall.id,
+                                content: resultContent
+                            }
+                        ]
+                    });
+                    
+                    // Recursive call to send the tool result back
+                    await sendMessage(true);
+                    return;
+                }
                 
             } catch (err) {
                 console.error(err);
-                contentDiv.innerHTML = `<p style="color: #ff6b6b;">Connection failed: ${err.message}</p>`;
+                if (contentDiv) {
+                    contentDiv.innerHTML += `<p style="color: #ff6b6b;">Connection failed: ${err.message}</p>`;
+                }
             } finally {
                 sendBtn.disabled = false;
-                promptInput.focus();
+                if (!isToolCallback) promptInput.focus();
             }
         }
 
-        sendBtn.addEventListener('click', sendMessage);
+        sendBtn.addEventListener('click', () => sendMessage(false));
         
         promptInput.addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
