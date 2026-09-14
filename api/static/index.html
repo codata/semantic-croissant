@@ -443,10 +443,10 @@
             // Create placeholder for assistant response
             let contentDiv = null;
             if (!isToolCallback) {
-                const ui = appendMessage('assistant', '<p class="typing"><span>.</span><span>.</span><span>.</span></p>');
+                const ui = appendMessage('assistant', '<p>Thinking<span class="typing"><span>.</span><span>.</span><span>.</span></span></p>');
                 contentDiv = ui.contentDiv;
             } else {
-                const ui = appendMessage('assistant', '<p class="typing">Processing tool result<span>.</span><span>.</span><span>.</span></p>');
+                const ui = appendMessage('assistant', '<p>Processing tool result<span class="typing"><span>.</span><span>.</span><span>.</span></span></p>');
                 contentDiv = ui.contentDiv;
             }
 
@@ -488,7 +488,7 @@
                 let currentToolCall = null;
                 let assistantMessageContent = []; // To store in messages array
                 
-                contentDiv.innerHTML = '';
+                // Do not clear contentDiv immediately so the Thinking indicator stays visible
 
                 while (true) {
                     const { done, value } = await reader.read();
@@ -549,6 +549,11 @@
                             }
                         }
                     }
+                }
+                
+                // If stream finished and no text was generated, clear the typing indicator
+                if (fullResponse.trim() === '') {
+                    contentDiv.innerHTML = '';
                 }
                 
                 // Save assistant message to history
