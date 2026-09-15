@@ -246,6 +246,12 @@ def get_datasets_properties(dataset_ids):
 import httpx
 from fastapi.responses import StreamingResponse
 
+
+from fastapi.responses import FileResponse
+@app.get("/vault/doc/{filename:path}")
+async def view_vault_doc(filename: str):
+    return FileResponse("api/static/doc_viewer.html")
+
 @app.get("/vault/{filename:path}")
 async def get_vault_file(filename: str):
     minio_base = os.environ.get("MINIO_URL", "http://minio:9000")

@@ -361,13 +361,37 @@
             sendMessage();
         });
         
-        document.getElementById('menu-history').addEventListener('click', (e) => {
+        document.getElementById('menu-history').addEventListener('click', async (e) => {
             e.preventDefault();
             
             chatHistoryStorage = JSON.parse(localStorage.getItem('ai_studio_history') || '[]');
             const ui = appendMessage('assistant', '<p>Loading your conversation history...</p>');
             
-            if (chatHistoryStorage.length === 0) {
+            let remoteHistory = [];
+            try {
+                const resp = await fetch('/vault/history');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    remoteHistory = data.history || [];
+                }
+            } catch (err) {
+                console.error("Failed to fetch remote history", err);
+            }
+            
+            const combined = [...chatHistoryStorage];
+            // merge remote history
+            for (const item of remoteHistory) {
+                combined.push({
+                    prompt: item.prompt.raw || JSON.stringify(item.prompt),
+                    response: item.response,
+                    date: item.timestamp
+                });
+            }
+            
+            // sort descending
+            combined.sort((a, b) => new Date(b.date) - new Date(a.date));
+            
+            if (combined.length === 0) {
                 ui.contentDiv.innerHTML = '<p>No history found on this device.</p>';
                 chatHistory.scrollTop = chatHistory.scrollHeight;
                 return;
@@ -375,8 +399,7 @@
             
             let historyHTML = `<h3>Your Prompt History</h3><ul style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:15px;">`;
             
-            // Render from newest to oldest
-            const sortedHistory = [...chatHistoryStorage].reverse();
+            const sortedHistory = combined;
             
             sortedHistory.forEach((item, index) => {
                 const dateStr = new Date(item.date).toLocaleString();
@@ -384,12 +407,21 @@
                 const safePrompt = item.prompt.replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 const shortPrompt = safePrompt.length > 80 ? safePrompt.substring(0, 80) + '...' : safePrompt;
                 
+                let docLink = "";
+                const idMatch = (item.prompt + " " + (item.response || "")).match(/[a-zA-Z0-9_-]{16,32}/);
+                if (idMatch) {
+                    docLink = `<a href="/vault/doc/${idMatch[0]}" target="_blank" onclick="event.stopPropagation();" style="font-size:0.9rem; font-weight:normal; text-decoration:underline;">View document</a>`;
+                }
+                
                 historyHTML += `
                 <li style="background:var(--panel-bg); border:1px solid var(--border-color); border-radius:6px; padding:12px;">
                     <div style="font-size:0.85rem; color:#888; margin-bottom:5px;">${dateStr}</div>
                     <div style="font-weight:600; margin-bottom:10px; font-size:1.05rem;">Q: ${shortPrompt}</div>
                     <details style="cursor:pointer;">
-                        <summary style="color:var(--accent-color); font-weight:600; outline:none;">View Answer from LLM</summary>
+                        <summary style="color:var(--accent-color); font-weight:600; outline:none; display:flex; align-items:center; gap:15px;">
+                            <span>Answer from AI</span>
+                            ${docLink}
+                        </summary>
                         <div style="margin-top:10px; padding:10px; background:#ffffff; color:#333333; border-radius:4px; font-size:0.95rem; border-left: 3px solid var(--accent-color); max-height:400px; overflow-y:auto;" class="message-content">
                             ${marked.parse(item.response || "No response recorded.")}
                         </div>

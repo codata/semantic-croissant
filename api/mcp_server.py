@@ -430,7 +430,7 @@ async def verify_document_provenance(filename: str) -> list[types.TextContent]:
         return [types.TextContent(type="text", text=f"Error verifying document provenance: {str(e)}")]
 
 async def store_in_vault(content: str, prefix: str = "custom", jsonld_payload: str = None, ai_model_override: str = None, file_ext: str = ".md", filename_override: str = None) -> list[types.TextContent]:
-    import datetime, io, os
+    import sys, datetime, io, os
     from minio import Minio
     
     if content is None:
@@ -925,7 +925,8 @@ async def store_in_vault(content: str, prefix: str = "custom", jsonld_payload: s
             original_md = filename.replace(".csv", ".md")
             md_content = f"**Original Source:** [View Markdown Document]({HOST}/vault/{original_md})\n\n"
             md_content += f"**Raw Data:** [View Extracted CSV]({HOST}/vault/{filename})\n\n"
-            md_content += f"**Metadata:** [View Croissant JSON-LD Data]({HOST}/vault/{json_filename})\n\n"
+            btn_html = f"<button onclick=\"fetch('/vault/public/{json_filename.replace('.jsonld','')}', {{method:'POST'}}).then(()=>{{alert('Document shared publicly!');this.disabled=true;this.innerText='Shared'}})\" style=\"margin-left:10px; padding:2px 8px; border-radius:4px; border:1px solid #ccc; cursor:pointer; background:#eee; font-size:0.85rem;\">Make public</button>"
+            md_content += f"**Metadata:** [View Croissant JSON-LD Data]({HOST}/vault/{json_filename}) {btn_html}\n\n"
             
             import csv, io
             md_table = "### Extracted Key Figures\n\n"
@@ -956,7 +957,8 @@ async def store_in_vault(content: str, prefix: str = "custom", jsonld_payload: s
             content = f"[View Documentation (Markdown)]({HOST}/vault/{md_filename})\n\n" + md_content
         else:
             # Traditional markdown processing
-            content = f"[View Croissant JSON-LD Data]({HOST}/vault/{json_filename})\n\n" + content
+            btn_html = f"<button onclick=\"fetch('/vault/public/{json_filename.replace('.jsonld','')}', {{method:'POST'}}).then(()=>{{alert('Document shared publicly!');this.disabled=true;this.innerText='Shared'}})\" style=\"margin-left:10px; padding:2px 8px; border-radius:4px; border:1px solid #ccc; cursor:pointer; background:#eee; font-size:0.85rem;\">Make public</button>"
+            content = f"[View Croissant JSON-LD Data]({HOST}/vault/{json_filename}) {btn_html}\n\n" + content
             content += f"\n\n---\n**Digital Signature:** `{sig_str}`\n"
             if history_md:
                 content += history_md
@@ -977,6 +979,8 @@ async def store_in_vault(content: str, prefix: str = "custom", jsonld_payload: s
             es_index = safe_username
             
             es_doc = payload_dict.copy()
+            if isinstance(es_doc.get("@context"), dict):
+                es_doc["@context"] = json.dumps(es_doc["@context"])
             es_doc["_markdown_text"] = content
             es_doc["vault_filename"] = filename
             
@@ -1001,7 +1005,129 @@ async def store_in_vault(content: str, prefix: str = "custom", jsonld_payload: s
     except Exception as e:
         return [types.TextContent(type="text", text=f"Error storing in vault: {str(e)}")]
 
+async def update_vault_document(target_id: str, referenced_ids: list[str], new_content: str = None, new_jsonld: str = None, review_status: str = None) -> list[types.TextContent]:
+    import sys, datetime, io, os, json, re, hashlib
+    from minio import Minio
+    
+    minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
+    endpoint = minio_base.replace("http://", "").replace("https://", "")
+    
+    try:
+        client = Minio(
+            endpoint,
+            access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"),
+            secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"),
+            secure=False
+        )
+        
+        # 1. Fetch original JSON-LD and Markdown
+        try:
+            resp_md = client.get_object("vault", f"{target_id}.md")
+            original_md = resp_md.read().decode("utf-8")
+            resp_md.close()
+            resp_md.release_conn()
+        except Exception as e:
+            return [types.TextContent(type="text", text=f"Error: target_id '{target_id}' .md not found in vault: {e}")]
+            
+        try:
+            resp_jsonld = client.get_object("vault", f"{target_id}.jsonld")
+            original_jsonld = json.loads(resp_jsonld.read().decode("utf-8"))
+            resp_jsonld.close()
+            resp_jsonld.release_conn()
+        except Exception as e:
+            return [types.TextContent(type="text", text=f"Error: target_id '{target_id}' .jsonld not found in vault: {e}")]
+            
+        # 2. Update content if provided
+        final_md = new_content if new_content is not None else original_md
+        
+        # 3. Use new jsonld if provided, else original
+        final_jsonld = json.loads(new_jsonld) if new_jsonld is not None else original_jsonld
+        
+        # 4. Generate new version ID
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        hash_input = f"{target_id}_{timestamp}".encode('utf-8')
+        import base64
+        new_id = base64.urlsafe_b64encode(hashlib.md5(hash_input).digest()).decode('utf-8').rstrip('=')
+        
+        # 5. Build isBasedOn list
+        if "isBasedOn" not in final_jsonld:
+            final_jsonld["isBasedOn"] = []
+        elif not isinstance(final_jsonld["isBasedOn"], list):
+            final_jsonld["isBasedOn"] = [final_jsonld["isBasedOn"]]
+            
+        # Ensure target_id is referenced
+        refs = set(referenced_ids)
+        refs.add(target_id)
+        
+        for ref_id in refs:
+            # Try to fetch creator for the referenced object
+            ref_creator = [{"@id": "#unknown", "@type": "Person", "name": "unknown"}]
+            try:
+                r = client.get_object("vault", f"{ref_id}.jsonld")
+                rj = json.loads(r.read().decode("utf-8"))
+                r.close()
+                r.release_conn()
+                if "creator" in rj:
+                    ref_creator = rj["creator"]
+            except Exception:
+                pass
+                
+            new_item = {
+                "@type": "CreativeWork",
+                "name": f"{ref_id}.md",
+                "url": f"{HOST}/vault/{ref_id}.md",
+                "creator": ref_creator
+            }
+            if review_status:
+                new_item["reviewStatus"] = review_status
+            if not any(isinstance(x, dict) and x.get("name") == new_item["name"] for x in final_jsonld["isBasedOn"]):
+                final_jsonld["isBasedOn"].append(new_item)
+                
+        # 6. Save new objects
+        md_bytes = final_md.encode("utf-8")
+        client.put_object(
+            "vault",
+            f"{new_id}.md",
+            io.BytesIO(md_bytes),
+            len(md_bytes),
+            content_type="text/markdown"
+        )
+        
+        jsonld_bytes = json.dumps(final_jsonld, indent=2).encode("utf-8")
+        client.put_object(
+            "vault",
+            f"{new_id}.jsonld",
+            io.BytesIO(jsonld_bytes),
+            len(jsonld_bytes),
+            content_type="application/ld+json"
+        )
+        
+        # 7. Update Elasticsearch
+        es_url = os.environ.get("ELASTICSEARCH_URL", "http://elasticsearch:9200")
+        es_index = "croissant"
+        try:
+            import httpx
+            es_doc = final_jsonld.copy()
+            if isinstance(es_doc.get("@context"), dict):
+                es_doc["@context"] = json.dumps(es_doc["@context"])
+            es_doc["_markdown_text"] = final_md
+            es_doc["vault_filename"] = f"{new_id}.md"
+            
+            async with httpx.AsyncClient() as es_client:
+                await es_client.put(f"{es_url}/{es_index}")
+                es_resp = await es_client.put(
+                    f"{es_url}/{es_index}/_doc/{new_id}",
+                    json=es_doc,
+                    headers={"Content-Type": "application/json"}
+                )
+        except Exception as e:
+            print(f"Failed to update ES: {e}", file=sys.stderr)
+            
+        return [types.TextContent(type="text", text=f"Successfully created new version in vault as {new_id}")]
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"Error updating vault document: {str(e)}")]
 async def get_croissant_dataset(id: str) -> list[types.TextContent]:
+
     try:
         async with httpx.AsyncClient(timeout=30.0, headers=get_auth_headers(get_auth_headers())) as client:
             response = await client.get(f"{API_BASE}/croissant", params={"id": id})
@@ -1521,7 +1647,8 @@ async def finalize_keyfigures(csv_content: str, file_path: str = "") -> list[typ
                             if "**Datacard:**" not in doc_content:
                                 header_links = f"**Datacard:** [View Datacard]({HOST}/vault/{csv_hash}_datacard.md)\n"
                                 header_links += f"**Raw Data:** [View Extracted CSV]({HOST}/vault/{csv_hash}.csv)\n"
-                                header_links += f"**Metadata:** [View Croissant JSON-LD Data]({HOST}/vault/{csv_hash}.jsonld)\n\n---\n\n"
+                                btn_html = f"<button onclick=\"fetch('/vault/public/{csv_hash}', {{method:'POST'}}).then(()=>{{alert('Document shared publicly!');this.disabled=true;this.innerText='Shared'}})\" style=\"margin-left:10px; padding:2px 8px; border-radius:4px; border:1px solid #ccc; cursor:pointer; background:#eee; font-size:0.85rem;\">Make public</button>"
+                                header_links += f"**Metadata:** [View Croissant JSON-LD Data]({HOST}/vault/{csv_hash}.jsonld) {btn_html}\n\n---\n\n"
                                 new_content = header_links + doc_content
                                 
                                 client.put_object("vault", f"{doc_id}.md", io.BytesIO(new_content.encode("utf-8")), len(new_content.encode("utf-8")), content_type="text/markdown")
@@ -1803,6 +1930,13 @@ Here is detailed information about how every tool works:
         return await list_vault_documents(
             prefix=arguments.get("prefix", "")
         )
+    elif name == "update_vault_document":
+        return await update_vault_document(
+            target_id=arguments.get("target_id"),
+            referenced_ids=arguments.get("referenced_ids", []),
+            new_content=arguments.get("new_content"),
+            new_jsonld=arguments.get("new_jsonld")
+        )
     elif name == "save_to_vault":
         return await store_in_vault(
             content=arguments.get("content"),
@@ -1945,6 +2079,24 @@ async def list_tools() -> list[types.Tool]:
                     "filename": {"type": "string", "description": "The exact filename in the vault, raw document ID, or URL of the article."}
                 },
                 "required": ["filename"]
+            }
+        ),
+        types.Tool(
+            name="update_vault_document",
+            description="Creates a new version of an existing vault document, explicitly updating its provenance relationships (like linking to id1 and id2) and content. Returns the new document ID.",
+            inputSchema={
+                "type": "object",
+                "required": ["target_id", "referenced_ids"],
+                "properties": {
+                    "target_id": {"type": "string", "description": "The existing vault document ID to update (e.g. 'id1')."},
+                    "referenced_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "A list of other vault document IDs this version references or is based on (e.g. ['id2'])."
+                    },
+                    "new_content": {"type": ["string", "null"], "description": "Optional new markdown content. If omitted, the original is preserved."},
+                    "new_jsonld": {"type": ["string", "null"], "description": "Optional new complete JSON-LD payload string. If omitted, the original JSON-LD is preserved but updated with the new references."}
+                }
             }
         ),
         types.Tool(
@@ -2277,6 +2429,151 @@ def main(port: int, transport: str) -> int:
             else:
                 return HTMLResponse("<h1>Error: UI not found. Missing static/index.html</h1>", status_code=404)
             
+        async def vault_get_history(request):
+            import httpx
+            es_url = "http://elasticsearch:9200"
+            query = {
+                "size": 50,
+                "sort": [{"timestamp": {"order": "desc"}}]
+            }
+            async with httpx.AsyncClient() as client:
+                try:
+                    resp = await client.post(f"{es_url}/history/_search", json=query)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        hits = data.get("hits", {}).get("hits", [])
+                        results = [hit["_source"] for hit in hits]
+                        from starlette.responses import JSONResponse
+                        return JSONResponse({"history": results})
+                except Exception as e:
+                    import sys
+                    print(f"Error fetching history: {e}", file=sys.stderr)
+            from starlette.responses import JSONResponse
+            return JSONResponse({"history": []})
+        async def vault_make_public(request):
+            es_id = request.path_params["es_id"]
+            import datetime, httpx, json
+            doc = {
+                "username": "Shared Document",
+                "model": "system",
+                "prompt": {"raw": f"User shared document {es_id}"},
+                "response": f"Check this public document: [View Document]({HOST}/vault/doc/{es_id})",
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            }
+            es_url = "http://elasticsearch:9200"
+            async with httpx.AsyncClient() as client:
+                try:
+                    await client.put(f"{es_url}/history")
+                    await client.post(f"{es_url}/history/_doc", json=doc)
+                except Exception as e:
+                    import sys
+                    print(f"Error making public: {e}", file=sys.stderr)
+            from starlette.responses import JSONResponse
+            return JSONResponse({"status": "ok"})
+            
+        
+        async def vault_ask(request):
+            try:
+                data = await request.json()
+                question = data.get("question", "").strip()
+                context_text = data.get("context", "").strip()
+                if not question:
+                    from starlette.responses import JSONResponse
+                    return JSONResponse({"success": False, "error": "No question provided"})
+                    
+                import os, httpx
+                ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+                ollama_token = os.environ.get("OLLAMA_TOKEN")
+                headers = {}
+                if ollama_token:
+                    headers["Authorization"] = f"Bearer {ollama_token}"
+                    
+                prompt = f"Context:\n{context_text}\n\nQuestion: {question}\n\nPlease answer the question based ONLY on the context provided above."
+                
+                async with httpx.AsyncClient(timeout=120.0, headers=headers) as client:
+                    res = await client.post(f"{ollama_host}/api/generate", json={
+                        "model": "llama3.1",
+                        "prompt": prompt,
+                        "stream": False
+                    })
+                    if res.status_code == 200:
+                        from starlette.responses import JSONResponse
+                        return JSONResponse({"success": True, "answer": res.json().get("response", "")})
+                    else:
+                        from starlette.responses import JSONResponse
+                        return JSONResponse({"success": False, "error": f"Ollama error: {res.status_code}"})
+            except Exception as e:
+                from starlette.responses import JSONResponse
+                return JSONResponse({"success": False, "error": str(e)})
+
+        async def vault_approve_highlight(request):
+            from starlette.responses import JSONResponse
+            try:
+                data = await request.json()
+                snippet_text = data.get("text", "").strip()
+                action = data.get("action", "approve").lower()
+                if not snippet_text:
+                    return JSONResponse({"success": False, "error": "No text provided"})
+                    
+                es_id = request.path_params["es_id"]
+                if es_id.endswith(".md"):
+                    es_id = es_id[:-3]
+                
+                import datetime, json, re, os
+                # We fetch the original JSON-LD to get the creator/model
+                minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
+                HOST = os.environ.get("MCP_DOMAIN", "ai.codata.org")
+                if not HOST.startswith("http"):
+                    HOST = f"https://{HOST}"
+                    
+                status_label = "Approved" if action == "approve" else "Rejected"
+                prefix = "approved_snippet" if action == "approve" else "rejected_snippet"
+                
+                snippet_jsonld = {
+                    "@context": {
+                        "@vocab": "https://schema.org/",
+                        "cr": "http://mlcommons.org/croissant/"
+                    },
+                    "@type": "cr:Dataset",
+                    "name": f"{status_label} Snippet from {es_id}",
+                    "description": snippet_text[:200] + ("..." if len(snippet_text) > 200 else ""),
+                    "dateCreated": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "reviewStatus": "rejected" if action == "reject" else "approved",
+                    "isBasedOn": {
+                        "@type": "CreativeWork",
+                        "url": f"{HOST}/vault/doc/{es_id}",
+                        "name": f"Original Vault Document ({es_id})"
+                    }
+                }
+                
+                # Append reference to original document in the markdown text
+                snippet_text_with_ref = f"{snippet_text}\n\n---\n*Source Document:* [View Original]({HOST}/vault/doc/{es_id})"
+                
+                res = await store_in_vault(content=snippet_text_with_ref, prefix=prefix, jsonld_payload=json.dumps(snippet_jsonld))
+                res_text = res[0].text
+                if "Successfully stored" not in res_text:
+                    return JSONResponse({"success": False, "error": res_text})
+                    
+                m = re.search(r"as ([a-zA-Z0-9_-]+)\.md", res_text)
+                if not m:
+                    return JSONResponse({"success": False, "error": "Could not parse new snippet ID"})
+                snippet_id = m.group(1)
+                
+                update_res = await update_vault_document(target_id=es_id, referenced_ids=[snippet_id], review_status=action)
+                update_text = update_res[0].text
+                if "Successfully created new version" not in update_text:
+                    return JSONResponse({"success": False, "error": update_text})
+                    
+                m2 = re.search(r"as ([a-zA-Z0-9_-]+)", update_text)
+                updated_orig_id = m2.group(1) if m2 else es_id
+                
+                return JSONResponse({"success": True, "new_id": snippet_id, "updated_orig_id": updated_orig_id})
+            except Exception as e:
+                from starlette.responses import JSONResponse
+                import traceback
+                traceback.print_exc()
+                return JSONResponse({"success": False, "error": str(e)})
+            
         async def proxy_vault(request):
             filename = request.path_params["filename"]
             minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
@@ -2285,50 +2582,63 @@ def main(port: int, transport: str) -> int:
             endpoint = minio_base.replace("http://", "").replace("https://", "")
             try:
                 m_client = Minio(endpoint, access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"), secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"), secure=False)
-                minio_url = m_client.presigned_get_object("vault", filename, expires=timedelta(hours=1))
-            except Exception:
-                minio_url = f"{minio_base}/vault/{filename}"
+                response = m_client.get_object("vault", filename)
+                data = response.read()
+                response.close()
+                response.release_conn()
                 
-            async with httpx.AsyncClient() as client:
-                try:
-                    r = await client.get(minio_url)
-                    if r.status_code == 200:
-                        from starlette.responses import Response
-                        
-                        # Implement FAIR Signposting Profile Level 1 headers
-                        # Using MCP_DOMAIN for generating the canonical URIs
-                        base_url = f"https://{MCP_DOMAIN}"
-                        signposting_links = [
-                            f'<{base_url}/vault/{filename}>; rel="cite-as"',
-                            f'<{base_url}/vault/{filename}.jsonld>; rel="describedby" type="application/ld+json"',
-                            f'<{base_url}/vault/{filename}>; rel="item" type="text/markdown"',
-                            '<https://schema.org/Dataset>; rel="type"',
-                            '<https://creativecommons.org/licenses/by/4.0/>; rel="license"'
-                        ]
-                        
-                        headers = {
-                            "Link": ", ".join(signposting_links),
-                            "X-Fair-Signposting": "enabled"
-                        }
-                        
-                        media_type = "text/markdown; charset=utf-8"
-                        if filename.endswith(".jsonld") or filename.endswith(".jsonld.gz"):
-                            media_type = "application/ld+json; charset=utf-8"
-                        
-                        if filename.endswith(".gz"):
-                            headers["Content-Encoding"] = "gzip"
-                        
-                        return Response(
-                            r.content, 
-                            media_type=media_type, 
-                            headers=headers
-                        )
-                except Exception as e:
-                    print(f"Error proxying minio: {e}", file=sys.stderr)
+                from starlette.responses import Response
+                
+                # Implement FAIR Signposting Profile Level 1 headers
+                # Using MCP_DOMAIN for generating the canonical URIs
+                base_url = f"https://{MCP_DOMAIN}"
+                signposting_links = [
+                    f'<{base_url}/vault/{filename}>; rel="cite-as"',
+                    f'<{base_url}/vault/{filename}.jsonld>; rel="describedby" type="application/ld+json"',
+                    f'<{base_url}/vault/{filename}>; rel="item" type="text/markdown"',
+                    '<https://schema.org/Dataset>; rel="type"',
+                    '<https://creativecommons.org/licenses/by/4.0/>; rel="license"'
+                ]
+                
+                headers = {
+                    "Link": ", ".join(signposting_links),
+                    "X-Fair-Signposting": "enabled"
+                }
+                
+                media_type = "text/markdown; charset=utf-8"
+                if filename.endswith(".jsonld") or filename.endswith(".jsonld.gz"):
+                    media_type = "application/ld+json; charset=utf-8"
+                elif filename.endswith(".csv"):
+                    media_type = "text/csv"
+                
+                if filename.endswith(".gz"):
+                    headers["Content-Encoding"] = "gzip"
+                
+                return Response(
+                    content=data, 
+                    media_type=media_type, 
+                    headers=headers
+                )
+            except Exception as e:
+                print(f"Error proxying minio: {e}", file=sys.stderr)
+            
             from starlette.responses import Response
             return Response("Not Found", status_code=404)
             
-        async def vault_es_doc(request):
+        
+        async def vault_es_doc_html(request):
+            import os
+            from starlette.responses import HTMLResponse
+            index_path = "/app/static/doc_viewer.html"
+            with open(index_path, "r", encoding="utf-8") as f:
+                html_content = f.read()
+            logo_url = os.environ.get("VAULT_LOGO_URL", "https://codata.org/wp-content/uploads/2019/12/codata_new_logo-1.png")
+            logo_html = f'<img src="{logo_url}" style="height:45px; object-fit:contain; margin-right:10px;" alt="Logo" />' if logo_url else ""
+            html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
+            return HTMLResponse(content=html_content)
+            
+        async def vault_es_doc_raw(request):
+
             es_id = request.path_params["es_id"]
             es_url = "http://elasticsearch:9200"
             async with httpx.AsyncClient() as client:
@@ -2338,11 +2648,37 @@ def main(port: int, transport: str) -> int:
                         from starlette.responses import Response
                         md_text = r.json().get("_source", {}).get("_markdown_text", "")
                         return Response(content=md_text, media_type="text/markdown")
+                    
+                    # Fallback to MinIO Vault
+                    minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
+                    try:
+                        from minio import Minio
+                        from datetime import timedelta
+                        endpoint = minio_base.replace("http://", "").replace("https://", "")
+                        m_client = Minio(endpoint, access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"), secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"), secure=False)
+                        
+                        for ext in [".md", ".jsonld", ".csv", ""]:
+                            try:
+                                response = m_client.get_object("vault", es_id + ext)
+                                data = response.read()
+                                response.close()
+                                response.release_conn()
+                                
+                                from starlette.responses import Response
+                                media_type = "text/markdown"
+                                if ext == ".jsonld": media_type = "application/ld+json"
+                                elif ext == ".csv": media_type = "text/csv"
+                                return Response(content=data, media_type=media_type)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+
                     from starlette.responses import Response
-                    return Response(content="Not Found in Elasticsearch", status_code=404)
+                    return Response(content="Not Found in Elasticsearch or Vault", status_code=404)
                 except Exception as e:
                     from starlette.responses import Response
-                    return Response(content=f"Error reading from Elasticsearch: {str(e)}", status_code=500)
+                    return Response(content=f"Error reading document: {str(e)}", status_code=500)
                     
 
         async def proxy_downloads(request):
@@ -2850,7 +3186,13 @@ def main(port: int, transport: str) -> int:
             routes=[
                 Route("/", endpoint=index),
                 Route("/sse", endpoint=handle_sse),
-                Route("/vault/doc/{es_id}", endpoint=vault_es_doc),
+                Route("/vault/doc/{es_id}", endpoint=vault_es_doc_html),
+                Route("/vault/history", endpoint=vault_get_history, methods=["GET"]),
+                Route("/vault/public/{es_id}", endpoint=vault_make_public, methods=["POST"]),
+                Route("/vault/ask", endpoint=vault_ask, methods=["POST"]),
+                Route("/vault/approve/{es_id}", endpoint=vault_approve_highlight, methods=["POST"]),
+                Route("/vault/doc/raw/{es_id}", endpoint=vault_es_doc_raw),
+                Route("/vault/print/{es_id}", endpoint=vault_es_doc_raw),
                 Route("/vault/{filename}", endpoint=proxy_vault),
                 Route("/downloads/{filename}", endpoint=proxy_downloads),
                 Route("/expert/{index_name}", endpoint=proxy_expert, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
