@@ -2591,7 +2591,7 @@ def main(port: int, transport: str) -> int:
                         jdata = json.loads(data)
                         if "isBasedOn" in jdata:
                             for item in jdata["isBasedOn"]:
-                                if isinstance(item, dict) and "Snippet from" in item.get("name", ""):
+                                if isinstance(item, dict) and ("Snippet from" in item.get("name", "") or "reviewStatus" in item):
                                     # This is an annotation snippet. Fetch its content.
                                     snippet_url = item.get("url", "")
                                     if snippet_url:
@@ -2603,8 +2603,8 @@ def main(port: int, transport: str) -> int:
                                             s_res.release_conn()
                                             # Clean up the text
                                             s_text = re.sub(r"^\[View Croissant JSON-LD Data\].*?</button>\s*", "", s_data, flags=re.DOTALL|re.IGNORECASE)
-                                            s_text = re.sub(r"\s*---\s*\*Source Document:\* \[View Original\].*?(?=\s*---|$)", "", s_text, flags=re.DOTALL|re.IGNORECASE)
-                                            s_text = re.sub(r"\s*---\s*\*\*Digital Signature:\*\* `.*?`\s*$", "", s_text, flags=re.DOTALL|re.IGNORECASE)
+                                            s_text = re.sub(r"\s*---\s*\*Source Document:\* \[View Original\].*$", "", s_text, flags=re.DOTALL|re.IGNORECASE)
+                                            s_text = re.sub(r"\s*---\s*\*\*Digital Signature:\*\*.*$", "", s_text, flags=re.DOTALL|re.IGNORECASE)
                                             item["annotationText"] = s_text.strip()
                                         except Exception as e:
                                             item["annotationTextError"] = str(e)
@@ -2667,14 +2667,18 @@ def main(port: int, transport: str) -> int:
 
             es_id = request.path_params["es_id"]
             es_url = "http://elasticsearch:9200"
+            md_text = None
+            media_type = "text/markdown"
+            
             async with httpx.AsyncClient() as client:
                 try:
                     r = await client.get(f"{es_url}/croissant/_doc/{es_id}")
                     if r.status_code == 200:
-                        from starlette.responses import Response
-                        md_text = r.json().get("_source", {}).get("_markdown_text", "")
-                        return Response(content=md_text, media_type="text/markdown")
+                        md_text = r.json().get("_source", {}).get("_markdown_text", None)
+                except Exception:
+                    pass
                     
+                if not md_text:
                     # Fallback to MinIO Vault
                     minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
                     try:
@@ -2690,21 +2694,65 @@ def main(port: int, transport: str) -> int:
                                 response.close()
                                 response.release_conn()
                                 
-                                from starlette.responses import Response
-                                media_type = "text/markdown"
+                                md_text = data.decode("utf-8") if not ext.endswith(".csv") else data
                                 if ext == ".jsonld": media_type = "application/ld+json"
                                 elif ext == ".csv": media_type = "text/csv"
-                                return Response(content=data, media_type=media_type)
+                                break
                             except Exception:
                                 pass
                     except Exception:
                         pass
-
+                
+                if md_text is None:
                     from starlette.responses import Response
                     return Response(content="Not Found in Elasticsearch or Vault", status_code=404)
-                except Exception as e:
-                    from starlette.responses import Response
-                    return Response(content=f"Error reading document: {str(e)}", status_code=500)
+                    
+                # Append annotations for AI if it's markdown and explicitly requested via /vault/print
+                if media_type == "text/markdown" and isinstance(md_text, str) and request.url.path.startswith("/vault/print"):
+                    import json, re
+                    try:
+                        minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
+                        from minio import Minio
+                        endpoint = minio_base.replace("http://", "").replace("https://", "")
+                        m_client = Minio(endpoint, access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"), secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"), secure=False)
+                        
+                        resp = m_client.get_object("vault", es_id + ".jsonld")
+                        jdata = json.loads(resp.read().decode("utf-8"))
+                        resp.close()
+                        resp.release_conn()
+                        
+                        annotations = []
+                        if "isBasedOn" in jdata:
+                            for item in jdata["isBasedOn"]:
+                                if isinstance(item, dict) and ("Snippet from" in item.get("name", "") or "reviewStatus" in item):
+                                    snippet_url = item.get("url", "")
+                                    status = item.get("reviewStatus", "unknown")
+                                    if snippet_url:
+                                        snippet_id = snippet_url.split("/")[-1]
+                                        try:
+                                            s_res = m_client.get_object("vault", snippet_id)
+                                            s_data = s_res.read().decode("utf-8")
+                                            s_res.close()
+                                            s_res.release_conn()
+                                            s_text = re.sub(r"^\[View Croissant JSON-LD Data\].*?</button>\s*", "", s_data, flags=re.DOTALL|re.IGNORECASE)
+                                            s_text = re.sub(r"\s*---\s*\*Source Document:\* \[View Original\].*?(?=\s*---|$)", "", s_text, flags=re.DOTALL|re.IGNORECASE)
+                                            s_text = re.sub(r"\s*---\s*\*\*Digital Signature:\*\* `.*?`\s*$", "", s_text, flags=re.DOTALL|re.IGNORECASE)
+                                            annotations.append((status, s_text.strip()))
+                                        except Exception:
+                                            pass
+                        
+                        if annotations:
+                            md_text += "\n\n---\n\n### AI Model Context: Review Status Annotations\n\n"
+                            md_text += "*The following sections are snippets of the above document that have been explicitly approved or rejected during human review. When analyzing this document, please factor in this approval/rejection context:*\n\n"
+                            for idx, (status, text) in enumerate(annotations):
+                                md_text += f"#### Annotation {idx+1} (Status: {status.upper()})\n"
+                                md_text += f"> {text.replace(chr(10), chr(10)+'> ')}\n\n"
+                    except Exception as e:
+                        import sys
+                        print(f"Error fetching annotations for raw print: {e}", file=sys.stderr)
+                        
+                from starlette.responses import Response
+                return Response(content=md_text, media_type=media_type)
                     
 
         async def proxy_downloads(request):
