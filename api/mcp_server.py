@@ -2507,8 +2507,10 @@ def main(port: int, transport: str) -> int:
             from starlette.responses import JSONResponse
             try:
                 data = await request.json()
-                snippet_text = data.get("text", "").strip()
-                action = data.get("action", "approve").lower()
+                snippet_text = (data.get("text") or "").strip()
+                action = (data.get("action") or "approve").lower()
+                note_text = (data.get("note") or "").strip()
+                
                 if not snippet_text:
                     return JSONResponse({"success": False, "error": "No text provided"})
                     
@@ -2523,8 +2525,22 @@ def main(port: int, transport: str) -> int:
                 if not HOST.startswith("http"):
                     HOST = f"https://{HOST}"
                     
-                status_label = "Approved" if action == "approve" else "Rejected"
-                prefix = "approved_snippet" if action == "approve" else "rejected_snippet"
+                status_label = "Approved"
+                prefix = "approved_snippet"
+                review_status = "approved"
+                
+                if action == "reject":
+                    status_label = "Rejected"
+                    prefix = "rejected_snippet"
+                    review_status = "rejected"
+                elif action == "hide":
+                    status_label = "Hidden"
+                    prefix = "hidden_snippet"
+                    review_status = "hide"
+                elif action == "note":
+                    status_label = "Note"
+                    prefix = "note_snippet"
+                    review_status = "note"
                 
                 snippet_jsonld = {
                     "@context": {
@@ -2535,7 +2551,7 @@ def main(port: int, transport: str) -> int:
                     "name": f"{status_label} Snippet from {es_id}",
                     "description": snippet_text[:200] + ("..." if len(snippet_text) > 200 else ""),
                     "dateCreated": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                    "reviewStatus": "rejected" if action == "reject" else "approved",
+                    "reviewStatus": review_status,
                     "isBasedOn": {
                         "@type": "CreativeWork",
                         "url": f"{HOST}/vault/doc/{es_id}",
@@ -2544,7 +2560,11 @@ def main(port: int, transport: str) -> int:
                 }
                 
                 # Append reference to original document in the markdown text
-                snippet_text_with_ref = f"{snippet_text}\n\n---\n*Source Document:* [View Original]({HOST}/vault/doc/{es_id})"
+                final_text = snippet_text
+                if action == "note" and note_text:
+                    final_text = f"**User Note:** {note_text}\n\n---\n*Source Text:*\n{snippet_text}"
+                    
+                snippet_text_with_ref = f"{final_text}\n\n---\n*Source Document:* [View Original]({HOST}/vault/doc/{es_id})"
                 
                 res = await store_in_vault(content=snippet_text_with_ref, prefix=prefix, jsonld_payload=json.dumps(snippet_jsonld))
                 res_text = res[0].text
