@@ -1044,10 +1044,8 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
         final_jsonld = json.loads(new_jsonld) if new_jsonld is not None else original_jsonld
         
         # 4. Generate new version ID
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        hash_input = f"{target_id}_{timestamp}".encode('utf-8')
-        import base64
-        new_id = base64.urlsafe_b64encode(hashlib.md5(hash_input).digest()).decode('utf-8').rstrip('=')
+        # We overwrite the original document instead of generating a new version
+        new_id = target_id
         
         # 5. Build isBasedOn list
         if "isBasedOn" not in final_jsonld:
@@ -1055,9 +1053,8 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
         elif not isinstance(final_jsonld["isBasedOn"], list):
             final_jsonld["isBasedOn"] = [final_jsonld["isBasedOn"]]
             
-        # Ensure target_id is referenced
+        # Ensure new snippets are referenced
         refs = set(referenced_ids)
-        refs.add(target_id)
         
         for ref_id in refs:
             # Try to fetch creator for the referenced object
@@ -2586,6 +2583,35 @@ def main(port: int, transport: str) -> int:
                 data = response.read()
                 response.close()
                 response.release_conn()
+                
+                # If JSON-LD, intercept and inject annotations
+                if filename.endswith(".jsonld"):
+                    import json, re
+                    try:
+                        jdata = json.loads(data)
+                        if "isBasedOn" in jdata:
+                            for item in jdata["isBasedOn"]:
+                                if isinstance(item, dict) and "Snippet from" in item.get("name", ""):
+                                    # This is an annotation snippet. Fetch its content.
+                                    snippet_url = item.get("url", "")
+                                    if snippet_url:
+                                        snippet_id = snippet_url.split("/")[-1]
+                                        try:
+                                            s_res = m_client.get_object("vault", snippet_id)
+                                            s_data = s_res.read().decode("utf-8")
+                                            s_res.close()
+                                            s_res.release_conn()
+                                            # Clean up the text
+                                            s_text = re.sub(r"^\[View Croissant JSON-LD Data\].*?</button>\s*", "", s_data, flags=re.DOTALL|re.IGNORECASE)
+                                            s_text = re.sub(r"\s*---\s*\*Source Document:\* \[View Original\].*?(?=\s*---|$)", "", s_text, flags=re.DOTALL|re.IGNORECASE)
+                                            s_text = re.sub(r"\s*---\s*\*\*Digital Signature:\*\* `.*?`\s*$", "", s_text, flags=re.DOTALL|re.IGNORECASE)
+                                            item["annotationText"] = s_text.strip()
+                                        except Exception as e:
+                                            item["annotationTextError"] = str(e)
+                        data = json.dumps(jdata, indent=2).encode("utf-8")
+                    except Exception as e:
+                        import sys
+                        print(f"Error intercepting jsonld: {e}", file=sys.stderr)
                 
                 from starlette.responses import Response
                 
