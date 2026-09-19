@@ -19,7 +19,9 @@ MCP_DOMAIN = os.environ.get("MCP_DOMAIN", "mcp.dev.codata.org")
 HOST = os.environ.get("HOST", f"https://{MCP_DOMAIN}")
 
 def get_odrl_token():
-    auth_file = os.path.expanduser("~/.odrl/authorize")
+    auth_file = "/app/.odrl/authorize"
+    if not os.path.exists(auth_file):
+        auth_file = os.path.expanduser("~/.odrl/authorize")
     if os.path.exists(auth_file):
         try:
             with open(auth_file, "r") as f:
@@ -29,7 +31,9 @@ def get_odrl_token():
     return None
 
 def get_user_info_from_odrl():
-    auth_file = os.path.expanduser("~/.odrl/authorize")
+    auth_file = "/app/.odrl/authorize"
+    if not os.path.exists(auth_file):
+        auth_file = os.path.expanduser("~/.odrl/authorize")
     if os.path.exists(auth_file):
         try:
             with open(auth_file, "r") as f:
@@ -96,6 +100,142 @@ async def search_croissant_datasets(q: str, limit: int = 10, page: int = 1, form
         return [types.TextContent(type="text", text="\n".join(md))]
     except Exception as e:
         return [types.TextContent(type="text", text=f"Failed to search datasets: {str(e)}")]
+
+
+async def get_collection_documents(collection_id: str, limit: int = 50) -> list[types.TextContent]:
+    es_url = os.environ.get("ELASTICSEARCH_URL", "http://elasticsearch:9200").rstrip("/")
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            # 1. Get collection to find items
+            col_resp = await client.get(f"{es_url}/collections/_doc/{collection_id}")
+            if col_resp.status_code != 200:
+                return [types.TextContent(type="text", text=f"Collection '{collection_id}' not found.")]
+            
+            col_data = col_resp.json()
+            items = col_data.get("_source", {}).get("items", [])
+            if not items:
+                return [types.TextContent(type="text", text=f"Collection '{collection_id}' has no documents.")]
+                
+            # 2. Get summaries of documents from croissant index
+            # We limit to requested limit to prevent context overflow
+            doc_ids = items[:limit]
+            
+            payload = {
+                "query": {
+                    "terms": {
+                        "_id": doc_ids
+                    }
+                },
+                "size": limit,
+                "_source": ["name", "description", "url"]
+            }
+            
+            docs_resp = await client.post(f"{es_url}/croissant/_search", json=payload)
+            if docs_resp.status_code != 200:
+                return [types.TextContent(type="text", text=f"Failed to fetch documents from index: {docs_resp.text}")]
+                
+            hits = docs_resp.json().get("hits", {}).get("hits", [])
+            # Create a lookup map for ES hits
+            es_docs = {h.get("_id"): h for h in hits}
+            
+            md = [f"### Documents in Collection '{col_data.get('_source', {}).get('name', collection_id)}' (Showing {len(doc_ids)} of {len(items)})"]
+            
+            HOST = os.environ.get("HOST", "http://localhost:8000")
+            for doc_id in doc_ids:
+                if doc_id in es_docs:
+                    h = es_docs[doc_id]
+                    s = h.get("_source", {})
+                    name = s.get("name", "Unknown Title")
+                    desc = str(s.get("description", ""))
+                    if len(desc) > 200:
+                        desc = desc[:197] + "..."
+                else:
+                    # Attempt to fetch metadata from MinIO vault directly
+                    name = "Vault Document"
+                    desc = "Metadata not available in search index."
+                    try:
+                        from minio import Minio
+                        import json, re
+                        endpoint = os.environ.get("MINIO_URL", "http://minio:9000").replace("http://", "").replace("https://", "")
+                        m_client = Minio(endpoint, access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"), secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"), secure=False)
+                        
+                        try:
+                            # Try JSONLD first for exact name
+                            j_resp = m_client.get_object("vault", doc_id + ".jsonld")
+                            j_data = json.loads(j_resp.read().decode("utf-8"))
+                            j_resp.close()
+                            j_resp.release_conn()
+                            if "name" in j_data:
+                                name = j_data["name"]
+                                desc = str(j_data.get("description", "Fetched from Vault."))
+                        except Exception:
+                            # Fallback to MD
+                            md_resp = m_client.get_object("vault", doc_id + ".md")
+                            md_data = md_resp.read().decode("utf-8")
+                            md_resp.close()
+                            md_resp.release_conn()
+                            # Find first h1
+                            h1_match = re.search(r'^#\s+(.+)$', md_data, flags=re.MULTILINE)
+                            if h1_match:
+                                name = h1_match.group(1).strip()
+                            desc = "Fetched from Vault (Markdown document)."
+                            
+                        if len(desc) > 200:
+                            desc = desc[:197] + "..."
+                    except Exception as e:
+                        pass
+                    
+                doc_link = f"[{name}]({HOST}/vault/doc/{doc_id})"
+                md.append(f"- **{doc_link}** (ID: {doc_id})\n  {desc}")
+                
+            return [types.TextContent(type="text", text="\n\n".join(md))]
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"Error retrieving collection documents: {str(e)}")]
+
+async def search_collections(q: str, limit: int = 10) -> list[types.TextContent]:
+    es_url = os.environ.get("ELASTICSEARCH_URL", "http://elasticsearch:9200").rstrip("/")
+    try:
+        import httpx
+        payload = {"size": limit, "query": {"query_string": {"query": q}}} if q != "*" else {"size": limit, "query": {"match_all": {}}}
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(f"{es_url}/collections/_search", json=payload)
+            if resp.status_code != 200:
+                return [types.TextContent(type="text", text=f"Error searching collections: {resp.text}")]
+            data = resp.json()
+            hits = data.get("hits", {}).get("hits", [])
+            if not hits:
+                return [types.TextContent(type="text", text="No collections found.")]
+            md = []
+            for h in hits:
+                s = h.get("_source", {})
+                HOST = os.environ.get("HOST", "http://localhost:8000")
+                md.append(f"- [**{s.get('name', 'Unknown')}**]({HOST}/groups/{h.get('_id')}) (ID: {h.get('_id')}): {s.get('description', '')}")
+            return [types.TextContent(type="text", text="\n".join(md))]
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"Failed to search collections: {str(e)}")]
+
+async def search_groups(q: str, limit: int = 10) -> list[types.TextContent]:
+    es_url = os.environ.get("ELASTICSEARCH_URL", "http://elasticsearch:9200").rstrip("/")
+    try:
+        import httpx
+        payload = {"size": limit, "query": {"query_string": {"query": q}}} if q != "*" else {"size": limit, "query": {"match_all": {}}}
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(f"{es_url}/groups/_search", json=payload)
+            if resp.status_code != 200:
+                return [types.TextContent(type="text", text=f"Error searching groups: {resp.text}")]
+            data = resp.json()
+            hits = data.get("hits", {}).get("hits", [])
+            if not hits:
+                return [types.TextContent(type="text", text="No groups found.")]
+            md = []
+            for h in hits:
+                s = h.get("_source", {})
+                HOST = os.environ.get("HOST", "http://localhost:8000")
+                md.append(f"- [**{s.get('name', 'Unknown')}**]({HOST}/groups/{h.get('_id')}) (ID: {h.get('_id')}): {s.get('description', '')}")
+            return [types.TextContent(type="text", text="\n".join(md))]
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"Failed to search groups: {str(e)}")]
 
 async def elasticsearch_fulltext_search(q: str, limit: int = 10, format: str = "json-ld") -> list[types.TextContent]:
     es_url = os.environ.get("ELASTICSEARCH_URL", "http://localhost:9200").rstrip("/")
@@ -198,6 +338,61 @@ async def elasticsearch_fulltext_search(q: str, limit: int = 10, format: str = "
     except Exception as e:
         return [types.TextContent(type="text", text=f"Failed to query Elasticsearch: {str(e)}")]
 
+async def build_collection_from_expert(collection_name: str, expert_index: str, query: str) -> list[types.TextContent]:
+    es_url = os.environ.get("ELASTICSEARCH_URL", "http://elasticsearch:9200").rstrip("/")
+    import uuid, datetime, json, httpx, io
+    from minio import Minio
+    
+    try:
+        # Step 1: Query the expert
+        payload = {
+            "size": 25,
+            "query": {
+                "multi_match": {
+                    "query": query,
+                    "fields": ["_full_text", "_markdown_text", "name", "description", "schema:name", "schema:description", "title", "dcterms:title", "dsDescription.dsDescriptionValue", "citation:dsDescriptionValue"]
+                }
+            }
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            docs_resp = await client.post(f"{es_url}/{expert_index}/_search", json=payload)
+            if docs_resp.status_code != 200:
+                return [types.TextContent(type="text", text=f"Failed to query expert '{expert_index}': {docs_resp.text}")]
+                
+            hits = docs_resp.json().get("hits", {}).get("hits", [])
+            doc_ids = [h.get("_id") for h in hits if h.get("_id")]
+            
+            if not doc_ids:
+                return [types.TextContent(type="text", text=f"Expert '{expert_index}' returned no documents for query '{query}'. Collection not created.")]
+                
+            # Step 2: Create collection
+            cid = str(uuid.uuid4())
+            col_data = {
+                "id": cid,
+                "name": collection_name,
+                "description": f"Automatically generated collection from expert '{expert_index}' for query '{query}'.",
+                "created_at": datetime.datetime.utcnow().isoformat() + "Z",
+                "items": doc_ids
+            }
+            
+            # Save to MinIO
+            minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
+            endpoint = minio_base.replace("http://", "").replace("https://", "")
+            m_client = Minio(endpoint, access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"), secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"), secure=False)
+            
+            content_bytes = json.dumps(col_data).encode("utf-8")
+            m_client.put_object("collections", f"{cid}.json", io.BytesIO(content_bytes), len(content_bytes), content_type="application/json")
+            
+            # Save to ES
+            await client.put(f"{es_url}/collections/_doc/{cid}", json=col_data)
+            
+            HOST = os.environ.get("HOST", "https://ai.codata.org")
+            return [types.TextContent(type="text", text=f"Success! Created collection '{collection_name}' (ID: {cid}) and filled it with {len(doc_ids)} documents from {expert_index}.\n\nYou can view the collection here: {HOST}/collections/{cid}")]
+            
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"Error building collection: {str(e)}")]
+
 async def ask_expert(index: str, q: str, limit: int = 10) -> list[types.TextContent]:
     es_url = os.environ.get("ELASTICSEARCH_URL", "http://localhost:9200").rstrip("/")
     try:
@@ -264,7 +459,7 @@ async def read_vault_article(url_or_filename: str) -> list[types.TextContent]:
         parsed_url = urllib.parse.urlparse(filename)
         path = parsed_url.path.rstrip("/")
         if "/vault/" in path:
-            filename = path.split("/vault/")[-1]
+            filename = path.split("/")[-1]
         else:
             safe_name = parsed_url.netloc + path
             safe_name = safe_name.replace("/", "_").replace(".", "_")
@@ -632,14 +827,14 @@ async def store_in_vault(content: str, prefix: str = "custom", jsonld_payload: s
                                 if ai_name or ai_version:
                                     ai_model = f"{ai_name} {ai_version}".strip()
                     if not ai_model:
-                        ai_model = "Unknown AI Agent (via MCP)"
+                        ai_model = "CODATA AI Agent (via MCP)"
                 except Exception as e:
                     print(f"Warning: Failed to extract AI model info: {e}", file=sys.stderr)
-                    ai_model = "Unknown AI Agent (via MCP)"
+                    ai_model = "CODATA AI Agent (via MCP)"
 
-            if ai_model == "Unknown AI Agent (via MCP)":
+            if ai_model == "CODATA AI Agent (via MCP)":
                 import sys
-                print("Warning: AI model could not be detected. Saving as Unknown AI Agent.", file=sys.stderr, flush=True)
+                print("Warning: AI model could not be detected. Saving as CODATA AI Agent.", file=sys.stderr, flush=True)
 
             if "isBasedOn" not in payload_dict:
                 payload_dict["isBasedOn"] = []
@@ -1021,21 +1216,61 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
         )
         
         # 1. Fetch original JSON-LD and Markdown
+        original_md = ""
         try:
             resp_md = client.get_object("vault", f"{target_id}.md")
             original_md = resp_md.read().decode("utf-8")
             resp_md.close()
             resp_md.release_conn()
-        except Exception as e:
-            return [types.TextContent(type="text", text=f"Error: target_id '{target_id}' .md not found in vault: {e}")]
+        except Exception:
+            pass # It's okay if the .md file doesn't exist (e.g., for JSON-LD datasets)
             
+        original_jsonld = {}
         try:
             resp_jsonld = client.get_object("vault", f"{target_id}.jsonld")
             original_jsonld = json.loads(resp_jsonld.read().decode("utf-8"))
             resp_jsonld.close()
             resp_jsonld.release_conn()
-        except Exception as e:
-            return [types.TextContent(type="text", text=f"Error: target_id '{target_id}' .jsonld not found in vault: {e}")]
+        except Exception:
+            pass # It's okay if the .jsonld file doesn't exist
+            
+        if not original_jsonld or "@context" not in original_jsonld or "name" not in original_jsonld:
+            # Fallback to ES if this is a newly annotated search document or was saved improperly
+            import httpx
+            es_url = "http://elasticsearch:9200"
+            try:
+                # We need synchronous requests here or use asyncio, but we are inside an async function!
+                async with httpx.AsyncClient() as hc:
+                    r = await hc.get(f"{es_url}/croissant/_doc/{target_id}")
+                    if r.status_code == 200:
+                        source = r.json().get("_source", {})
+                        es_jsonld = None
+                        if "_markdown_text" in source:
+                            try:
+                                # In our ES schema, _markdown_text sometimes holds the raw JSON-LD for datasets
+                                parsed_md = json.loads(source["_markdown_text"])
+                                es_jsonld = parsed_md
+                            except Exception:
+                                pass
+                        
+                        if not es_jsonld:
+                            es_jsonld = {
+                                "@context": {
+                                    "@vocab": "https://schema.org/",
+                                    "cr": "http://mlcommons.org/croissant/"
+                                },
+                                "@type": "cr:Dataset",
+                                "name": source.get("name", target_id),
+                                "url": source.get("url", source.get("_source_url", "")),
+                                "description": source.get("description", "")
+                            }
+                        
+                        # Merge ES fields into original_jsonld
+                        for k, v in es_jsonld.items():
+                            if k not in original_jsonld:
+                                original_jsonld[k] = v
+            except Exception:
+                pass
             
         # 2. Update content if provided
         final_md = new_content if new_content is not None else original_md
@@ -1907,11 +2142,33 @@ Here is detailed information about how every tool works:
             page=arguments.get("page", 1),
             format=arguments.get("format", "json-ld")
         )
+
+    elif name == "get_collection_documents":
+        return await get_collection_documents(
+            collection_id=arguments.get("collection_id"),
+            limit=int(arguments.get("limit", 50))
+        )
+    elif name == "search_collections":
+        return await search_collections(
+            q=arguments.get("q", "*"),
+            limit=int(arguments.get("limit", 10))
+        )
+    elif name == "search_groups":
+        return await search_groups(
+            q=arguments.get("q", "*"),
+            limit=int(arguments.get("limit", 10))
+        )
     elif name == "elasticsearch_fulltext_search":
         return await elasticsearch_fulltext_search(
             q=arguments.get("q"),
             limit=int(arguments.get("limit", 10)),
             format=arguments.get("format", "json-ld")
+        )
+    elif name == "build_collection_from_expert":
+        return await build_collection_from_expert(
+            collection_name=arguments.get("collection_name"),
+            expert_index=arguments.get("expert_index"),
+            query=arguments.get("query")
         )
     elif name == "ask_expert":
         return await ask_expert(
@@ -2029,6 +2286,50 @@ async def list_tools() -> list[types.Tool]:
                 }
             }
         ),
+        
+        types.Tool(
+            name="get_collection_documents",
+            description="Get a summarized list of all documents contained within a specific Collection.",
+            inputSchema={
+                "type": "object",
+                "required": ["collection_id"],
+                "properties": {
+                    "collection_id": {
+                        "type": "string",
+                        "description": "The ID of the collection (e.g., from search_collections)."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of documents to return. Default 50."
+                    }
+                }
+            }
+        ),
+        
+        types.Tool(
+            name="search_collections",
+            description="Query the Elasticsearch index directly for user Collections.",
+            inputSchema={
+                "type": "object",
+                "required": ["q"],
+                "properties": {
+                    "q": {"type": "string", "description": "Elasticsearch query string (e.g. '*')"},
+                    "limit": {"type": "integer", "description": "Number of results to return", "default": 10}
+                }
+            }
+        ),
+        types.Tool(
+            name="search_groups",
+            description="Query the Elasticsearch index directly for user Groups.",
+            inputSchema={
+                "type": "object",
+                "required": ["q"],
+                "properties": {
+                    "q": {"type": "string", "description": "Elasticsearch query string (e.g. '*')"},
+                    "limit": {"type": "integer", "description": "Number of results to return", "default": 10}
+                }
+            }
+        ),
         types.Tool(
             name="elasticsearch_fulltext_search",
             description="Query the Elasticsearch index directly for indexed Croissant datasets (includes full-text search over full Markdown and metadata).",
@@ -2042,6 +2343,29 @@ async def list_tools() -> list[types.Tool]:
                 }
             }
         ),
+        types.Tool(
+            name="build_collection_from_expert",
+            description="A macro tool that queries an expert index for a specific topic, automatically creates a new Collection, and fills it with the returned documents.",
+            inputSchema={
+                "type": "object",
+                "required": ["collection_name", "expert_index", "query"],
+                "properties": {
+                    "collection_name": {
+                        "type": "string",
+                        "description": "The name of the collection to create (e.g., 'Climate Change in the Netherlands')."
+                    },
+                    "expert_index": {
+                        "type": "string",
+                        "description": "The specific elastic index for the expert (e.g., 'dataverse', 'croissant')."
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "The search query to ask the expert for."
+                    }
+                }
+            }
+        ),
+        
         types.Tool(
             name="ask_expert",
             description="Query the specific elastic index for the expert by name. Available collections: 'croissant', 'dataverse', 'ollama', 'huggingface', 'openml', 'hips', 'honduras'.",
@@ -2249,7 +2573,7 @@ async def list_tools() -> list[types.Tool]:
                     "content": {"type": "string", "description": "The text content to store in the vault."},
                     "prefix": {"type": "string", "description": "OPTIONAL: A short, descriptive snake_case summary of the data/chat. Defaults to 'custom' if missing."},
                     "jsonld_payload": {"type": "object", "description": "REQUIRED Croissant JSON-LD string or JSON object to save alongside the markdown file. CRITICAL: You MUST write out the FULL, COMPLETE JSON-LD payload. Do NOT truncate it. Do NOT use placeholders like '...rest of the variables...'. Output every single variable fully!"},
-                    "ai_model_override": {"type": "string", "description": "If your client does not expose its identity via MCP clientInfo (i.e. 'Unknown AI Agent'), you MUST provide your AI vendor and model here (e.g. 'Anthropic Claude 3.5 Sonnet', 'LM Studio Llama 3')."}
+                    "ai_model_override": {"type": "string", "description": "If your client does not expose its identity via MCP clientInfo (i.e. 'CODATA AI Agent'), you MUST provide your AI vendor and model here (e.g. 'Anthropic Claude 3.5 Sonnet', 'LM Studio Llama 3')."}
                 },
                 "required": ["content", "jsonld_payload"]
             }
@@ -2419,7 +2743,7 @@ def main(port: int, transport: str) -> int:
                 with open(index_path, "r", encoding="utf-8") as f:
                     html_content = f.read()
                 
-                auth_status = '<span style="color: #4CAF50;">Authenticated via ~/.odrl/authorize</span>' if get_odrl_token() else '<span style="color: #F44336;">Not Authenticated</span>'
+                auth_status = '<span style="color: #4CAF50;">Authenticated via /app/.odrl/authorize</span>' if get_odrl_token() else '<span style="color: #F44336;">Not Authenticated</span>'
                 html_content = html_content.replace('{{AUTH_STATUS}}', auth_status)
                 
                 return HTMLResponse(html_content)
@@ -2474,13 +2798,14 @@ def main(port: int, transport: str) -> int:
                 data = await request.json()
                 question = data.get("question", "").strip()
                 context_text = data.get("context", "").strip()
+                model_name = data.get("model", "llama3.1").strip()
                 if not question:
                     from starlette.responses import JSONResponse
                     return JSONResponse({"success": False, "error": "No question provided"})
                     
                 import os, httpx
                 ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-                ollama_token = os.environ.get("OLLAMA_TOKEN")
+                ollama_token = os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY")
                 headers = {}
                 if ollama_token:
                     headers["Authorization"] = f"Bearer {ollama_token}"
@@ -2489,7 +2814,7 @@ def main(port: int, transport: str) -> int:
                 
                 async with httpx.AsyncClient(timeout=120.0, headers=headers) as client:
                     res = await client.post(f"{ollama_host}/api/generate", json={
-                        "model": "llama3.1",
+                        "model": model_name,
                         "prompt": prompt,
                         "stream": False
                     })
@@ -2502,6 +2827,26 @@ def main(port: int, transport: str) -> int:
             except Exception as e:
                 from starlette.responses import JSONResponse
                 return JSONResponse({"success": False, "error": str(e)})
+
+        async def vault_models(request):
+            import os, httpx
+            ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+            ollama_token = os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY")
+            headers = {}
+            if ollama_token:
+                headers["Authorization"] = f"Bearer {ollama_token}"
+            try:
+                async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
+                    res = await client.get(f"{ollama_host}/v1/models")
+                    if res.status_code == 200:
+                        from starlette.responses import JSONResponse
+                        return JSONResponse(res.json())
+                    else:
+                        from starlette.responses import JSONResponse
+                        return JSONResponse({"data": [{"id": "llama3.1"}], "error": f"Gateway error {res.status_code}"})
+            except Exception as e:
+                from starlette.responses import JSONResponse
+                return JSONResponse({"data": [{"id": "llama3.1"}], "error": str(e)})
 
         async def vault_approve_highlight(request):
             from starlette.responses import JSONResponse
@@ -3270,6 +3615,378 @@ def main(port: int, transport: str) -> int:
                 traceback.print_exc()
                 return Response(json.dumps([{"type": "text", "text": f"Error executing tool: {e}"}]), status_code=500, media_type="application/json")
 
+
+        # Collections Endpoints
+        def get_minio_client():
+            import os
+            minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
+            from minio import Minio
+            endpoint = minio_base.replace("http://", "").replace("https://", "")
+            return Minio(endpoint, access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"), secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"), secure=False)
+            
+        async def api_collections_get(request):
+            from starlette.responses import JSONResponse
+            import json
+            try:
+                m_client = get_minio_client()
+                if not m_client.bucket_exists("collections"):
+                    m_client.make_bucket("collections")
+                objects = m_client.list_objects("collections")
+                cols = []
+                for obj in objects:
+                    resp = m_client.get_object("collections", obj.object_name)
+                    cols.append(json.loads(resp.read().decode("utf-8")))
+                    resp.close()
+                    resp.release_conn()
+                return JSONResponse({"collections": cols})
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                return JSONResponse({"error": str(e)}, status_code=500)
+
+        async def api_collections_post(request):
+            from starlette.responses import JSONResponse
+            import json, uuid, datetime, io
+            try:
+                data = await request.json()
+                if not data.get("name"):
+                    return JSONResponse({"error": "Name is required"}, status_code=400)
+                
+                cid = str(uuid.uuid4())
+                col_data = {
+                    "id": cid,
+                    "name": data.get("name"),
+                    "description": data.get("description", ""),
+                    "link": data.get("link", ""),
+                    "created_at": datetime.datetime.utcnow().isoformat() + "Z",
+                    "items": []
+                }
+                
+                m_client = get_minio_client()
+                if not m_client.bucket_exists("collections"):
+                    m_client.make_bucket("collections")
+                
+                content = json.dumps(col_data).encode("utf-8")
+                m_client.put_object("collections", f"{cid}.json", io.BytesIO(content), len(content), content_type="application/json")
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    await client.put(f"http://elasticsearch:9200/collections/_doc/{cid}", json=col_data)
+                return JSONResponse({"success": True, "collection": col_data})
+            except Exception as e:
+                return JSONResponse({"error": str(e)}, status_code=500)
+
+        async def api_collections_add_item(request):
+            from starlette.responses import JSONResponse
+            import json, io
+            try:
+                cid = request.path_params["id"]
+                data = await request.json()
+                doc_id = data.get("docId")
+                if not doc_id:
+                    return JSONResponse({"error": "docId is required"}, status_code=400)
+                
+                m_client = get_minio_client()
+                resp = m_client.get_object("collections", f"{cid}.json")
+                col_data = json.loads(resp.read().decode("utf-8"))
+                resp.close()
+                resp.release_conn()
+                
+                if "items" not in col_data:
+                    col_data["items"] = []
+                    
+                if doc_id not in col_data["items"]:
+                    col_data["items"].append(doc_id)
+                
+                content = json.dumps(col_data).encode("utf-8")
+                m_client.put_object("collections", f"{cid}.json", io.BytesIO(content), len(content), content_type="application/json")
+                
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    await client.put(f"http://elasticsearch:9200/collections/_doc/{cid}", json=col_data)
+                    
+                return JSONResponse({"success": True, "collection": col_data})
+            except Exception as e:
+                return JSONResponse({"error": str(e)}, status_code=500)
+
+        async def api_collections_remove_item(request):
+            from starlette.responses import JSONResponse
+            import json, io
+            try:
+                cid = request.path_params["id"]
+                data = await request.json()
+                doc_id = data.get("docId")
+                if not doc_id:
+                    return JSONResponse({"error": "docId is required"}, status_code=400)
+                
+                m_client = get_minio_client()
+                resp = m_client.get_object("collections", f"{cid}.json")
+                col_data = json.loads(resp.read().decode("utf-8"))
+                resp.close()
+                resp.release_conn()
+                
+                if "items" in col_data and doc_id in col_data["items"]:
+                    col_data["items"].remove(doc_id)
+                    content_bytes = json.dumps(col_data).encode("utf-8")
+                    m_client.put_object("collections", f"{cid}.json", io.BytesIO(content_bytes), len(content_bytes), content_type="application/json")
+                    
+                    import httpx
+                    async with httpx.AsyncClient() as client:
+                        await client.put(f"http://elasticsearch:9200/collections/_doc/{cid}", json=col_data)
+                        
+                return JSONResponse({"success": True, "collection": col_data})
+            except Exception as e:
+                return JSONResponse({"error": str(e)}, status_code=500)
+
+        async def api_collections_put(request):
+            from starlette.responses import JSONResponse
+            import json, io
+            try:
+                cid = request.path_params["id"]
+                data = await request.json()
+                
+                m_client = get_minio_client()
+                resp = m_client.get_object("collections", f"{cid}.json")
+                col_data = json.loads(resp.read().decode("utf-8"))
+                resp.close()
+                resp.release_conn()
+                
+                col_data["name"] = data.get("name", col_data["name"])
+                col_data["description"] = data.get("description", col_data["description"])
+                col_data["link"] = data.get("link", col_data["link"])
+                
+                content = json.dumps(col_data).encode("utf-8")
+                m_client.put_object("collections", f"{cid}.json", io.BytesIO(content), len(content), content_type="application/json")
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    await client.put(f"http://elasticsearch:9200/collections/_doc/{cid}", json=col_data)
+                return JSONResponse({"success": True, "collection": col_data})
+            except Exception as e:
+                return JSONResponse({"error": str(e)}, status_code=500)
+
+
+        async def collection_es_doc_html(request):
+            es_id = request.path_params["es_id"]
+            import os
+            index_path = "/app/static/collection_viewer.html"
+            if not os.path.exists(index_path):
+                index_path = "api/static/collection_viewer.html"
+            with open(index_path, "r") as f:
+                html_content = f.read()
+            logo_url = os.environ.get("VAULT_LOGO_URL", "https://codata.org/wp-content/uploads/2019/12/codata_new_logo-1.png")
+            logo_html = f'<img src="{logo_url}" style="height:45px; object-fit:contain; margin-right:10px;" alt="Logo" />' if logo_url else ""
+            html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
+            return HTMLResponse(content=html_content)
+
+        async def api_collections_get_single(request):
+            from starlette.responses import JSONResponse
+            import json
+            try:
+                cid = request.path_params["id"]
+                m_client = get_minio_client()
+                try:
+                    resp = m_client.get_object("collections", f"{cid}.json")
+                    col_data = json.loads(resp.read().decode("utf-8"))
+                    resp.close()
+                    resp.release_conn()
+                    return JSONResponse(col_data)
+                except Exception:
+                    return JSONResponse({"error": "Collection not found"}, status_code=404)
+            except Exception as e:
+                return JSONResponse({"error": str(e)}, status_code=500)
+                
+        async def api_collections_get_resolved(request):
+            from starlette.responses import JSONResponse
+            import json, httpx, re
+            try:
+                cid = request.path_params["id"]
+                m_client = get_minio_client()
+                try:
+                    resp = m_client.get_object("collections", f"{cid}.json")
+                    col_data = json.loads(resp.read().decode("utf-8"))
+                    resp.close()
+                    resp.release_conn()
+                except Exception:
+                    return JSONResponse({"error": "Collection not found"}, status_code=404)
+                
+                items = col_data.get("items", [])
+                resolved_items = []
+                if items:
+                    es_url = os.environ.get("ELASTICSEARCH_URL", "http://elasticsearch:9200").rstrip("/")
+                    async with httpx.AsyncClient() as client:
+                        payload = {"query": {"terms": {"_id": items}}, "size": len(items), "_source": ["name", "description"]}
+                        docs_resp = await client.post(f"{es_url}/croissant/_search", json=payload)
+                        hits = docs_resp.json().get("hits", {}).get("hits", []) if docs_resp.status_code == 200 else []
+                        es_docs = {h.get("_id"): h for h in hits}
+                        
+                        for doc_id in items:
+                            name = "Vault Document"
+                            desc = "Metadata not available in search index."
+                            if doc_id in es_docs:
+                                s = es_docs[doc_id].get("_source", {})
+                                name = s.get("name", "Unknown Title")
+                                desc = str(s.get("description", ""))
+                            else:
+                                try:
+                                    j_resp = m_client.get_object("vault", doc_id + ".jsonld")
+                                    j_data = json.loads(j_resp.read().decode("utf-8"))
+                                    j_resp.close()
+                                    j_resp.release_conn()
+                                    if "name" in j_data:
+                                        name = j_data["name"]
+                                        desc = str(j_data.get("description", "Fetched from Vault."))
+                                except Exception:
+                                    try:
+                                        md_resp = m_client.get_object("vault", doc_id + ".md")
+                                        md_data = md_resp.read().decode("utf-8")
+                                        md_resp.close()
+                                        md_resp.release_conn()
+                                        h1_match = re.search(r'^#\s+(.+)$', md_data, flags=re.MULTILINE)
+                                        if h1_match:
+                                            name = h1_match.group(1).strip()
+                                        desc = "Fetched from Vault (Markdown document)."
+                                    except Exception:
+                                        pass
+                                        
+                            resolved_items.append({"id": doc_id, "name": name, "description": desc})
+                            
+                col_data["resolved_items"] = resolved_items
+                return JSONResponse(col_data)
+            except Exception as e:
+                return JSONResponse({"error": str(e)}, status_code=500)
+                
+        async def api_collections_delete(request):
+
+            from starlette.responses import JSONResponse
+            try:
+                cid = request.path_params["id"]
+                m_client = get_minio_client()
+                m_client.remove_object("collections", f"{cid}.json")
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    await client.delete(f"http://elasticsearch:9200/collections/_doc/{cid}")
+                return JSONResponse({"success": True})
+            except Exception as e:
+                return JSONResponse({"error": str(e)}, status_code=500)
+
+
+        # Groups Endpoints
+        async def api_groups_get(request):
+            from starlette.responses import JSONResponse
+            import json
+            try:
+                m_client = get_minio_client()
+                if not m_client.bucket_exists("groups"):
+                    m_client.make_bucket("groups")
+                objects = m_client.list_objects("groups")
+                grps = []
+                for obj in objects:
+                    resp = m_client.get_object("groups", obj.object_name)
+                    grps.append(json.loads(resp.read().decode("utf-8")))
+                    resp.close()
+                    resp.release_conn()
+                return JSONResponse({"groups": grps})
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                return JSONResponse({"error": str(e)}, status_code=500)
+
+        async def api_groups_post(request):
+            from starlette.responses import JSONResponse
+            import json, uuid, datetime, io
+            try:
+                data = await request.json()
+                if not data.get("name"):
+                    return JSONResponse({"error": "Name is required"}, status_code=400)
+                
+                gid = str(uuid.uuid4())
+                grp_data = {
+                    "id": gid,
+                    "name": data.get("name"),
+                    "description": data.get("description", ""),
+                    "created_at": datetime.datetime.utcnow().isoformat() + "Z"
+                }
+                
+                m_client = get_minio_client()
+                if not m_client.bucket_exists("groups"):
+                    m_client.make_bucket("groups")
+                
+                content_bytes = json.dumps(grp_data).encode("utf-8")
+                m_client.put_object("groups", f"{gid}.json", io.BytesIO(content_bytes), len(content_bytes), content_type="application/json")
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    await client.put(f"http://elasticsearch:9200/groups/_doc/{gid}", json=grp_data)
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    await client.put(f"http://elasticsearch:9200/groups/_doc/{gid}", json=grp_data)
+                return JSONResponse({"success": True, "group": grp_data})
+            except Exception as e:
+                return JSONResponse({"error": str(e)}, status_code=500)
+
+        async def api_groups_put(request):
+            from starlette.responses import JSONResponse
+            import json, io
+            try:
+                gid = request.path_params["id"]
+                data = await request.json()
+                
+                m_client = get_minio_client()
+                resp = m_client.get_object("groups", f"{gid}.json")
+                grp_data = json.loads(resp.read().decode("utf-8"))
+                resp.close()
+                resp.release_conn()
+                
+                grp_data["name"] = data.get("name", grp_data["name"])
+                grp_data["description"] = data.get("description", grp_data["description"])
+                
+                content_bytes = json.dumps(grp_data).encode("utf-8")
+                m_client.put_object("groups", f"{gid}.json", io.BytesIO(content_bytes), len(content_bytes), content_type="application/json")
+                return JSONResponse({"success": True, "group": grp_data})
+            except Exception as e:
+                return JSONResponse({"error": str(e)}, status_code=500)
+
+        async def api_groups_delete(request):
+            from starlette.responses import JSONResponse
+            try:
+                gid = request.path_params["id"]
+                m_client = get_minio_client()
+                m_client.remove_object("groups", f"{gid}.json")
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    await client.delete(f"http://elasticsearch:9200/groups/_doc/{gid}")
+                return JSONResponse({"success": True})
+            except Exception as e:
+                return JSONResponse({"error": str(e)}, status_code=500)
+
+
+        async def api_groups_get_single(request):
+            from starlette.responses import JSONResponse
+            import json
+            try:
+                gid = request.path_params["id"]
+                m_client = get_minio_client()
+                resp = m_client.get_object("groups", f"{gid}.json")
+                grp_data = json.loads(resp.read().decode("utf-8"))
+                resp.close()
+                resp.release_conn()
+                return JSONResponse({"success": True, "group": grp_data})
+            except Exception as e:
+                return JSONResponse({"error": str(e)}, status_code=500)
+
+        async def group_html_viewer(request):
+            import os
+            from starlette.responses import HTMLResponse
+            index_path = "/app/static/group_viewer.html"
+            try:
+                with open(index_path, "r", encoding="utf-8") as f:
+                    html_content = f.read()
+            except:
+                with open("api/static/group_viewer.html", "r", encoding="utf-8") as f:
+                    html_content = f.read()
+            logo_url = os.environ.get("VAULT_LOGO_URL", "https://codata.org/wp-content/uploads/2019/12/codata_new_logo-1.png")
+            logo_html = f'<img src="{logo_url}" style="height:45px; object-fit:contain; margin-right:10px;" alt="Logo" />' if logo_url else ""
+            html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
+            return HTMLResponse(content=html_content)
+
         starlette_app = Starlette(
             debug=True,
             lifespan=lifespan,
@@ -3280,10 +3997,30 @@ def main(port: int, transport: str) -> int:
             routes=[
                 Route("/", endpoint=index),
                 Route("/sse", endpoint=handle_sse),
+
+
+                Route("/api/groups", endpoint=api_groups_get, methods=["GET"]),
+                Route("/api/groups", endpoint=api_groups_post, methods=["POST"]),
+                Route("/api/groups/{id}", endpoint=api_groups_get_single, methods=["GET"]),
+                Route("/groups/{id}", endpoint=group_html_viewer, methods=["GET"]),
+                Route("/api/groups/{id}", endpoint=api_groups_put, methods=["PUT"]),
+                Route("/api/groups/{id}", endpoint=api_groups_delete, methods=["DELETE"]),
+                Route("/api/collections", endpoint=api_collections_get, methods=["GET"]),
+                Route("/api/collections", endpoint=api_collections_post, methods=["POST"]),
+
+                Route("/api/collections/{id}", endpoint=api_collections_get_single, methods=["GET"]),
+                Route("/api/collections/{id}/resolved", endpoint=api_collections_get_resolved, methods=["GET"]),
+                Route("/collections/{es_id}", endpoint=collection_es_doc_html),
+                Route("/api/collections/{id}", endpoint=api_collections_put, methods=["PUT"]),
+                Route("/api/collections/{id}/add", endpoint=api_collections_add_item, methods=["POST"]),
+                Route("/api/collections/{id}/remove", endpoint=api_collections_remove_item, methods=["POST"]),
+
+                Route("/api/collections/{id}", endpoint=api_collections_delete, methods=["DELETE"]),
                 Route("/vault/doc/{es_id}", endpoint=vault_es_doc_html),
                 Route("/vault/history", endpoint=vault_get_history, methods=["GET"]),
                 Route("/vault/public/{es_id}", endpoint=vault_make_public, methods=["POST"]),
                 Route("/vault/ask", endpoint=vault_ask, methods=["POST"]),
+                Route("/vault/models", endpoint=vault_models, methods=["GET"]),
                 Route("/vault/approve/{es_id}", endpoint=vault_approve_highlight, methods=["POST"]),
                 Route("/vault/doc/raw/{es_id}", endpoint=vault_es_doc_raw),
                 Route("/vault/print/{es_id}", endpoint=vault_es_doc_raw),

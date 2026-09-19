@@ -114,7 +114,7 @@ services:
       - ./shapes:/app/shapes:ro
       - ./convertors:/app/convertors:ro
       - ./agents:/app/agents:ro
-      - ~/.odrl:/root/.odrl:ro
+      - ~/.odrl:/app/.odrl:ro
       - ./credentials.json:/app/credentials.json:ro
     depends_on:
       - api
