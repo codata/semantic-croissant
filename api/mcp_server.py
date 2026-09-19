@@ -3062,6 +3062,7 @@ def main(port: int, transport: str) -> int:
                     headers=headers
                 )
             except Exception as e:
+                import sys
                 print(f"Error proxying minio: {e}", file=sys.stderr)
             
             from starlette.responses import Response
