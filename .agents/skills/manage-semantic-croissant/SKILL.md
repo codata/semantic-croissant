@@ -50,3 +50,14 @@ If the underlying `data.nt` file changes, you must rebuild the index cleanly:
    ```bash
    docker compose --profile croissant-live logs -f server-croissant-live
    ```
+
+## 5. Using the LLM for Highlighted Text & Saving to Vault
+The Semantic Croissant web interface allows users to seamlessly extract insights from documents using an integrated LLM.
+
+1. **Highlight Text**: Open any document in the Vault viewer and highlight a specific block of text.
+2. **Ask AI**: Click the **Ask AI** button that appears in the popup menu.
+3. **Select Model & Ask**: Choose an inference model (e.g., from the Codata AI Gateway or your local Ollama instance) and type your question.
+4. **Multi-Turn Chat**: After receiving an answer, you can either:
+   - **Ask again**: Ask a new question based on the same highlighted context.
+   - **Remember this and ask again**: Continue the conversation, passing the entire previous Q&A history back to the LLM.
+5. **Save Q&A to Vault**: Once satisfied, click the **Save Q&A** button. This automatically saves the entire context, question, and answer block as a Markdown snippet in the Vault, anchoring it securely to your current Croissant document dataset.

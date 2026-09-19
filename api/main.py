@@ -265,6 +265,29 @@ async def view_vault_doc(filename: str):
         file_path = "api/static/doc_viewer.html" # fallback
     return FileResponse(file_path)
 
+@app.post("/vault/approve/{es_id}")
+async def proxy_vault_approve(request: Request, es_id: str):
+    import httpx
+    from fastapi import Response
+    from fastapi.responses import JSONResponse
+    mcp_base = "http://mcp:7070"
+    async with httpx.AsyncClient() as client:
+        body = await request.body()
+        headers = {}
+        if "content-type" in request.headers:
+            headers["Content-Type"] = request.headers["content-type"]
+        
+        try:
+            response = await client.post(
+                f"{mcp_base}/vault/approve/{es_id}", 
+                content=body, 
+                headers=headers,
+                timeout=60.0
+            )
+            return Response(content=response.content, status_code=response.status_code, headers=dict(response.headers))
+        except httpx.RequestError as e:
+            return JSONResponse({"success": False, "error": f"Failed to reach MCP server: {str(e)}"}, status_code=502)
+
 @app.get("/vault/{filename:path}")
 async def get_vault_file(filename: str):
     minio_base = os.environ.get("MINIO_URL", "http://minio:9000")

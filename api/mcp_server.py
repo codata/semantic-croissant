@@ -1232,7 +1232,14 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
             resp_jsonld.close()
             resp_jsonld.release_conn()
         except Exception:
-            pass # It's okay if the .jsonld file doesn't exist
+            try:
+                # Fallback for Dataverse where the file is named with _croissant.jsonld
+                resp_jsonld = client.get_object("vault", f"{target_id}_croissant.jsonld")
+                original_jsonld = json.loads(resp_jsonld.read().decode("utf-8"))
+                resp_jsonld.close()
+                resp_jsonld.release_conn()
+            except Exception:
+                pass # It's okay if the .jsonld file doesn't exist
             
         if not original_jsonld or "@context" not in original_jsonld or "name" not in original_jsonld:
             # Fallback to ES if this is a newly annotated search document or was saved improperly
