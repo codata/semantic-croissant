@@ -3080,6 +3080,72 @@ def main(port: int, transport: str) -> int:
             return HTMLResponse(content=html_content)
             
         async def vault_es_doc_raw(request):
+            def _generate_md(data):
+                md = []
+                name = data.get('name', 'Dataset')
+                md.append(f"# 🥐 {name}\n")
+                url = data.get('url')
+                if url:
+                    md.append(f"**[Original URL \u2192]({url})**\n")
+                desc = data.get('description')
+                if desc:
+                    md.append(f"> {desc}\n")
+                md.append("---\n")
+                
+                md.append("### Core Metadata\n")
+                md.append("| Field | Value |")
+                md.append("|---|---|")
+                skip_keys = ['@context', '@type', 'name', 'url', 'description', 'distribution', 'recordSet', 'fileObject', 'fileSet']
+                for key, value in data.items():
+                    if key in skip_keys:
+                        continue
+                    val_md = ""
+                    if isinstance(value, dict):
+                        val_md = value.get('name') or value.get('url') or str(value)
+                    elif isinstance(value, list):
+                        val_md = ", ".join([v.get('name') or v.get('url') or str(v) if isinstance(v, dict) else str(v) for v in value])
+                    else:
+                        s_val = str(value)
+                        val_md = f"[{s_val}]({s_val})" if s_val.startswith('http') else s_val
+                    val_md = val_md.replace('|', '\\|').replace('\n', ' ')
+                    md.append(f"| **{key}** | {val_md} |")
+                md.append("\n")
+                
+                dists = data.get('distribution') or data.get('fileObject') or data.get('fileSet')
+                if dists and isinstance(dists, list) and len(dists) > 0:
+                    md.append("### Files & Distributions\n")
+                    for d in dists:
+                        d_name = d.get('name', 'File')
+                        md.append(f"**{d_name}**")
+                        fmt = d.get('encodingFormat')
+                        if fmt: md.append(f"- **Format:** {fmt}")
+                        size = d.get('contentSize')
+                        if size: md.append(f"- **Size:** {size}")
+                        curl = d.get('contentUrl')
+                        if curl: md.append(f"- **[Download]({curl})**")
+                        md.append("")
+                    md.append("\n")
+                    
+                record_sets = data.get('recordSet')
+                if record_sets and isinstance(record_sets, list):
+                    md.append("### Record Sets (Schema)\n")
+                    for rs in record_sets:
+                        rs_name = rs.get('name', 'Record Set')
+                        md.append(f"#### {rs_name}")
+                        rs_desc = rs.get('description')
+                        if rs_desc: md.append(f"{rs_desc}\n")
+                        fields = rs.get('field')
+                        if fields and isinstance(fields, list):
+                            md.append("| Field | Type | Description |")
+                            md.append("|---|---|---|")
+                            for f in fields:
+                                f_name = f.get('name', '')
+                                f_type = f.get('dataType') or f.get('cr:dataType') or ''
+                                f_type = str(f_type).replace('sc:', '')
+                                f_desc = f.get('description', '').replace('|', '\\|').replace('\n', ' ')
+                                md.append(f"| **{f_name}** | `{f_type}` | {f_desc} |")
+                        md.append("\n")
+                return "\n".join(md)
 
             es_id = request.path_params["es_id"]
             es_url = "http://elasticsearch:9200"
@@ -3090,7 +3156,11 @@ def main(port: int, transport: str) -> int:
                 try:
                     r = await client.get(f"{es_url}/croissant/_doc/{es_id}")
                     if r.status_code == 200:
-                        md_text = r.json().get("_source", {}).get("_markdown_text", None)
+                        doc_source = r.json().get("_source", {})
+                        md_text = doc_source.get("_markdown_text", None)
+                        if not md_text:
+                            # Dynamically generate Markdown for JSON-LD without baked-in Markdown
+                            md_text = _generate_md(doc_source)
                 except Exception:
                     pass
                     
@@ -3111,7 +3181,14 @@ def main(port: int, transport: str) -> int:
                                 response.release_conn()
                                 
                                 md_text = data.decode("utf-8") if not ext.endswith(".csv") else data
-                                if ext == ".jsonld": media_type = "application/ld+json"
+                                if ext == ".jsonld": 
+                                    import json
+                                    try:
+                                        parsed = json.loads(md_text)
+                                        md_text = _generate_md(parsed)
+                                        media_type = "text/markdown"
+                                    except Exception:
+                                        media_type = "application/ld+json"
                                 elif ext == ".csv": media_type = "text/csv"
                                 break
                             except Exception:
