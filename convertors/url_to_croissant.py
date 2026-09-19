@@ -743,11 +743,98 @@ def check_dataverse_direct_export(url):
         print(f"Direct export check failed: {e}")
     return None
 
+def generate_markdown_from_jsonld(data):
+    md = []
+    name = data.get('name', 'Dataset')
+    md.append(f"# 🥐 {name}\n")
+    url = data.get('url')
+    if url:
+        md.append(f"**[Original URL \u2192]({url})**\n")
+    desc = data.get('description')
+    if desc:
+        md.append(f"> {desc}\n")
+    md.append("---\n")
+    
+    md.append("### Core Metadata\n")
+    md.append("| Field | Value |")
+    md.append("|---|---|")
+    skip_keys = ['@context', '@type', 'name', 'url', 'description', 'distribution', 'recordSet', 'fileObject', 'fileSet', '_markdown_text']
+    for key, value in data.items():
+        if key in skip_keys:
+            continue
+        val_md = ""
+        if isinstance(value, dict):
+            val_md = value.get('name') or value.get('url') or str(value)
+        elif isinstance(value, list):
+            val_md = ", ".join([v.get('name') or v.get('url') or str(v) if isinstance(v, dict) else str(v) for v in value])
+        else:
+            s_val = str(value)
+            val_md = f"[{s_val}]({s_val})" if s_val.startswith('http') else s_val
+        val_md = val_md.replace('|', '\\|').replace('\n', ' ')
+        md.append(f"| **{key}** | {val_md} |")
+    md.append("\n")
+    
+    dists = data.get('distribution') or data.get('fileObject') or data.get('fileSet')
+    if dists and isinstance(dists, list) and len(dists) > 0:
+        md.append("### Files & Distributions\n")
+        for d in dists:
+            d_name = d.get('name', 'File')
+            md.append(f"**{d_name}**")
+            fmt = d.get('encodingFormat')
+            if fmt: md.append(f"- **Format:** {fmt}")
+            size = d.get('contentSize')
+            if size: md.append(f"- **Size:** {size}")
+            curl = d.get('contentUrl')
+            if curl: md.append(f"- **[Download]({curl})**")
+            md.append("")
+        md.append("\n")
+        
+    record_sets = data.get('recordSet')
+    if record_sets and isinstance(record_sets, list):
+        md.append("### Record Sets (Schema)\n")
+        for rs in record_sets:
+            rs_name = rs.get('name', 'Record Set')
+            md.append(f"#### {rs_name}")
+            rs_desc = rs.get('description')
+            if rs_desc: md.append(f"{rs_desc}\n")
+            fields = rs.get('field')
+            if fields and isinstance(fields, list):
+                md.append("| Field | Type | Description |")
+                md.append("|---|---|---|")
+                for f in fields:
+                    f_name = f.get('name', '')
+                    f_type = f.get('dataType') or f.get('cr:dataType') or ''
+                    f_type = str(f_type).replace('sc:', '')
+                    f_desc = f.get('description', '').replace('|', '\\|').replace('\n', ' ')
+                    md.append(f"| **{f_name}** | `{f_type}` | {f_desc} |")
+            md.append("\n")
+    return "\n".join(md)
+
+
 def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, user_name=None, user_email=None, index=False, elastic=False, expert="/expert/croissant", upload_gdrive=False, upload_gdrive_folder=None):
     direct_jsonld = check_dataverse_direct_export(url)
     if direct_jsonld:
         print("✓ Successfully retrieved Croissant JSON-LD directly from Dataverse API!")
-        json_data = direct_jsonld
+        
+        # 1. Generate Markdown for original dataset
+        generated_md = generate_markdown_from_jsonld(direct_jsonld)
+        
+        # 2. Modify local copy with generated markdown and provenance links
+        import copy
+        json_data = copy.deepcopy(direct_jsonld)
+        json_data["_markdown_text"] = generated_md
+        
+        if "isBasedOn" not in json_data:
+            json_data["isBasedOn"] = []
+        elif not isinstance(json_data["isBasedOn"], list):
+            json_data["isBasedOn"] = [json_data["isBasedOn"]]
+            
+        json_data["isBasedOn"].append({
+            "@type": "sc:Dataset",
+            "name": "Original Dataverse Dataset",
+            "url": url,
+            "description": "The original source JSON-LD metadata fetched from Dataverse."
+        })
         
         # Check Elasticsearch for existing version and increment if necessary
         if "version" not in json_data:
