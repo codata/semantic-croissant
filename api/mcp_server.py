@@ -3158,6 +3158,13 @@ def main(port: int, transport: str) -> int:
                     if r.status_code == 200:
                         doc_source = r.json().get("_source", {})
                         md_text = doc_source.get("_markdown_text", None)
+                        
+                        # Some ingested documents mistakenly have their raw JSON-LD saved in the _markdown_text field.
+                        if md_text and isinstance(md_text, str):
+                            stripped = md_text.strip()
+                            if stripped.startswith("{") and '"@context"' in stripped:
+                                md_text = None
+                                
                         if not md_text:
                             # Dynamically generate Markdown for JSON-LD without baked-in Markdown
                             md_text = _generate_md(doc_source)
