@@ -248,9 +248,22 @@ from fastapi.responses import StreamingResponse
 
 
 from fastapi.responses import FileResponse
+
+@app.get("/")
+async def view_index():
+    import os
+    file_path = os.path.join(os.path.dirname(__file__), "static/index.html")
+    if not os.path.exists(file_path):
+        file_path = "api/static/index.html" # fallback
+    return FileResponse(file_path)
+
 @app.get("/vault/doc/{filename:path}")
 async def view_vault_doc(filename: str):
-    return FileResponse("api/static/doc_viewer.html")
+    import os
+    file_path = os.path.join(os.path.dirname(__file__), "static/doc_viewer.html")
+    if not os.path.exists(file_path):
+        file_path = "api/static/doc_viewer.html" # fallback
+    return FileResponse(file_path)
 
 @app.get("/vault/{filename:path}")
 async def get_vault_file(filename: str):

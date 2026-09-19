@@ -2771,6 +2771,50 @@ def main(port: int, transport: str) -> int:
                     print(f"Error fetching history: {e}", file=sys.stderr)
             from starlette.responses import JSONResponse
             return JSONResponse({"history": []})
+
+        async def vault_es_doc_update(request):
+            es_id = request.path_params["es_id"]
+            import json, os
+            import httpx
+            from starlette.responses import JSONResponse
+            body = await request.json()
+            new_markdown = body.get("markdown")
+            if not new_markdown:
+                return JSONResponse({"status": "error", "message": "No markdown provided"}, status_code=400)
+            
+            es_url = "http://elasticsearch:9200"
+            success = False
+            async with httpx.AsyncClient() as client:
+                try:
+                    update_body = {"doc": {"_markdown_text": new_markdown}}
+                    r = await client.post(f"{es_url}/croissant/_update/{es_id}", json=update_body)
+                    if r.status_code in (200, 201):
+                        success = True
+                except Exception as e:
+                    import sys
+                    print(f"ES Update error: {e}", file=sys.stderr)
+            
+            if not success:
+                # Try MinIO fallback
+                minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
+                try:
+                    from minio import Minio
+                    import io
+                    endpoint = minio_base.replace("http://", "").replace("https://", "")
+                    m_client = Minio(endpoint, access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"), secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"), secure=False)
+                    
+                    data_bytes = new_markdown.encode('utf-8')
+                    m_client.put_object("vault", es_id + ".md", io.BytesIO(data_bytes), len(data_bytes), content_type="text/markdown")
+                    success = True
+                except Exception as e:
+                    import sys
+                    print(f"MinIO Update error: {e}", file=sys.stderr)
+                    
+            if success:
+                return JSONResponse({"status": "success"})
+            else:
+                return JSONResponse({"status": "error", "message": "Failed to update document"}, status_code=500)
+
         async def vault_make_public(request):
             es_id = request.path_params["es_id"]
             import datetime, httpx, json
@@ -2855,6 +2899,7 @@ def main(port: int, transport: str) -> int:
                 snippet_text = (data.get("text") or "").strip()
                 action = (data.get("action") or "approve").lower()
                 note_text = (data.get("note") or "").strip()
+                model_used = data.get("model")
                 
                 if not snippet_text:
                     return JSONResponse({"success": False, "error": "No text provided"})
@@ -2903,6 +2948,12 @@ def main(port: int, transport: str) -> int:
                         "name": f"Original Vault Document ({es_id})"
                     }
                 }
+                
+                if model_used:
+                    snippet_jsonld["creator"] = {
+                        "@type": "Organization",
+                        "name": model_used
+                    }
                 
                 # Append reference to original document in the markdown text
                 final_text = snippet_text
@@ -4018,6 +4069,7 @@ def main(port: int, transport: str) -> int:
                 Route("/api/collections/{id}", endpoint=api_collections_delete, methods=["DELETE"]),
                 Route("/vault/doc/{es_id}", endpoint=vault_es_doc_html),
                 Route("/vault/history", endpoint=vault_get_history, methods=["GET"]),
+                Route("/vault/doc/update/{es_id}", endpoint=vault_es_doc_update, methods=["POST"]),
                 Route("/vault/public/{es_id}", endpoint=vault_make_public, methods=["POST"]),
                 Route("/vault/ask", endpoint=vault_ask, methods=["POST"]),
                 Route("/vault/models", endpoint=vault_models, methods=["GET"]),
