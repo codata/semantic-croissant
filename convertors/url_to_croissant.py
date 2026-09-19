@@ -813,201 +813,27 @@ def generate_markdown_from_jsonld(data):
 
 def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, user_name=None, user_email=None, index=False, elastic=False, expert="/expert/croissant", upload_gdrive=False, upload_gdrive_folder=None):
     direct_jsonld = check_dataverse_direct_export(url)
+    markdown_data = None
+    dataverse_original_jsonld = None
+    extracted_meta = {}
+
     if direct_jsonld:
         print("✓ Successfully retrieved Croissant JSON-LD directly from Dataverse API!")
-        
-        # 1. Generate Markdown for original dataset
-        generated_md = generate_markdown_from_jsonld(direct_jsonld)
-        
-        # 2. Modify local copy with generated markdown and provenance links
-        import copy
-        json_data = copy.deepcopy(direct_jsonld)
-        json_data["_markdown_text"] = generated_md
-        
-        if "isBasedOn" not in json_data:
-            json_data["isBasedOn"] = []
-        elif not isinstance(json_data["isBasedOn"], list):
-            json_data["isBasedOn"] = [json_data["isBasedOn"]]
-            
-        json_data["isBasedOn"].append({
-            "@type": "sc:Dataset",
-            "name": "Original Dataverse Dataset",
-            "url": url,
-            "description": "The original source JSON-LD metadata fetched from Dataverse."
-        })
-        
-        # Check Elasticsearch for existing version and increment if necessary
-        if "version" not in json_data:
-            json_data["version"] = "1.0"
-        es_version = get_elasticsearch_version(url, expert)
-        if es_version:
-            json_data["version"] = str(es_version)
-            print(f"  ✓ Resource already in Elasticsearch. Updating version to {es_version}")
-            
-        if expert:
-            if "isPartOf" not in json_data:
-                json_data["isPartOf"] = []
-            elif not isinstance(json_data["isPartOf"], list):
-                json_data["isPartOf"] = [json_data["isPartOf"]]
-            json_data["isPartOf"].append({"@type": "Collection", "name": expert})
-            
-        output = json.dumps(json_data, indent=2)
-        
-        import hashlib, base64
-        def compute_unf6(content):
-            words = sorted(content.split())
-            c = b""
-            for w in words:
-                c += w.encode("utf-8") + b"\n\x00"
-            d = hashlib.sha256(c).digest()[:16]
-            raw_hash = base64.b64encode(d).decode("ascii")
-            return raw_hash.replace("=", "").replace("+", "").replace("/", "")
-            
-        safe_name = compute_unf6(output)
-        
-        os.makedirs(os.path.join("data", "ca4eosc"), exist_ok=True)
-        safe_name = os.path.join("data", "ca4eosc", safe_name)
-        output_filename = f"{safe_name}.jsonld"
-        croissant_filename = os.path.basename(output_filename)
-        md_filename = f"{safe_name}.md"
-        
-        with open(output_filename, "w", encoding='utf-8') as f:
-            f.write(output)
-        print(f"\nOutput saved to {output_filename}")
-        
-        # Upload to Vault if MinIO is configured
-        try:
-            minio_url = os.environ.get("MINIO_URL", "http://minio:9000")
-            minio_user = os.environ.get("MINIO_ROOT_USER", "minioadmin")
-            minio_pass = os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin")
-            if minio_url:
-                from minio import Minio
-                endpoint = minio_url.replace("http://", "").replace("https://", "")
-                client = Minio(
-                    endpoint,
-                    access_key=minio_user,
-                    secret_key=minio_pass,
-                    secure=minio_url.startswith("https")
-                )
-                
-                # Upload JSON-LD
-                vault_jsonld_filename = croissant_filename
-                jsonld_bytes = output.encode('utf-8')
-                client.put_object(
-                    "vault",
-                    vault_jsonld_filename,
-                    data=io.BytesIO(jsonld_bytes),
-                    length=len(jsonld_bytes),
-                    content_type="application/ld+json"
-                )
-                print(f"Croissant JSON-LD successfully uploaded to vault: https://{MCP_DOMAIN}/vault/{vault_jsonld_filename}")
-                
-                # Generate and upload Datacard
-                datacard_filename = vault_jsonld_filename.replace(".jsonld", "_datacard.md")
-                datacard_content = f"**Original Source:** [View URL]({url})\n\n"
-                datacard_content += f"**Markdown Document:** [View Extracted Markdown](https://{MCP_DOMAIN}/vault/{os.path.basename(md_filename)})\n\n"
-                datacard_content += f"**Metadata:** [View Croissant JSON-LD Data](https://{MCP_DOMAIN}/vault/{vault_jsonld_filename})\n\n"
-                import hashlib
-                datacard_content += f"---\n**Digital Signature:** `{hashlib.sha256(jsonld_bytes).hexdigest()}`\n"
-                
-                dc_bytes = datacard_content.encode('utf-8')
-                client.put_object(
-                    "vault",
-                    datacard_filename,
-                    data=io.BytesIO(dc_bytes),
-                    length=len(dc_bytes),
-                    content_type="text/markdown"
-                )
-                print(f"Datacard successfully uploaded to vault: https://{MCP_DOMAIN}/vault/{datacard_filename}")
-        except Exception as e:
-            print(f"Warning: Failed to upload JSON-LD/Datacard to MinIO vault: {e}")
-        
-        md_filename = f"{safe_name}_content.md"
-        title = json_data.get("name", "Dataverse Dataset")
-        desc = json_data.get("description", "No description provided.")
-        if isinstance(desc, list): desc = " ".join(desc)
-        md_content = f"# {title}\n\n**Description:** {desc}\n\n"
-        if "keywords" in json_data:
-            kw = json_data["keywords"]
-            md_content += f"**Keywords:** {', '.join(kw) if isinstance(kw, list) else kw}\n\n"
-            
-        with open(md_filename, "w", encoding="utf-8") as f:
-            f.write(md_content)
-        print(f"Extracted markdown saved to {md_filename}")
-
-        try:
-            from langdetect import detect
-            lang = detect(md_content)
-            print(f"Detected language: {lang}")
-        except Exception as e:
-            lang = "unknown"
-
-        if lang != "en":
-            print(f"DEBUG: Translating desc of length {len(desc)}: {repr(desc[:100])}")
-            translated_desc = translate_to_english(desc)
-            if translated_desc and translated_desc != desc:
-                json_data["description"] = translated_desc
-                
-                # Reconstruct english markdown
-                translated_md = f"# {title}\n\n**Description:** {translated_desc}\n\n"
-                if "keywords" in json_data:
-                    kw = json_data["keywords"]
-                    translated_md += f"**Keywords:** {', '.join(kw) if isinstance(kw, list) else kw}\n\n"
-                
-                md_content = translated_md
-                md_filename = f"{safe_name}_en_content.md"
-                with open(md_filename, "w", encoding='utf-8') as f:
-                    f.write(md_content)
-                print(f"Extracted markdown saved to {md_filename}") # Keep exact format for agent script extraction
-                
-                # Add translationOfWork provenance
-                if "creator" not in json_data:
-                    json_data["creator"] = []
-                elif not isinstance(json_data["creator"], list):
-                    json_data["creator"] = [json_data["creator"]]
-                
-                json_data["creator"].append({
-                    "@type": "SoftwareApplication",
-                    "name": "qwen3.5:27b",
-                    "description": "Translation generated by AI model"
-                })
-                json_data["translationOfWork"] = {
-                    "@id": url
-                }
-                
-                # Re-save the JSON-LD with the updated provenance and description
-                output = json.dumps(json_data, indent=2)
-                with open(output_filename, "w", encoding='utf-8') as f:
-                    f.write(output)
-
-        if reingest:
-            print("\n--- Ingesting into QLever ---")
-            try:
-                api_base = os.environ.get("API_BASE", "http://localhost:7013")
-                res_ql = requests.post(f"{api_base}/add_record", json=json_data, timeout=10)
-                res_ql.raise_for_status()
-                print(f"✓ Successfully ingested into QLever! Response: {res_ql.text}")
-            except Exception as e:
-                print(f"✗ Failed to ingest into QLever: {e}")
-                
-        if elastic:
-            index_into_elasticsearch(url, json_data, "", expert)
-            
-        if upload_gdrive and user_email:
-            print(f"Skipping Google Drive upload for direct Dataverse export because no Markdown content was generated (only Croissant metadata is available).")
-        return
+        markdown_data = generate_markdown_from_jsonld(direct_jsonld)
+        dataverse_original_jsonld = direct_jsonld
+        print("Generated Markdown representation of the Dataverse JSON-LD.")
 
     page_meta = None
     sibling_pages = []
     
-    result = fetch_url_markdown(url, traverse)
-    if len(result) == 4:
-        markdown_data, extracted_meta, sibling_pages, page_meta = result
-    elif len(result) == 3:
-        markdown_data, extracted_meta, sibling_pages = result
-    else:
-        markdown_data, extracted_meta = result
-
+    if not markdown_data:
+        result = fetch_url_markdown(url, traverse)
+        if len(result) == 4:
+            markdown_data, extracted_meta, sibling_pages, page_meta = result
+        elif len(result) == 3:
+            markdown_data, extracted_meta, sibling_pages = result
+        else:
+            markdown_data, extracted_meta = result
 
     if not markdown_data:
         print("Error: Could not extract markdown.")
@@ -1398,6 +1224,14 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                         json_data["isBasedOn"] = [json_data["isBasedOn"]] + doc_links
                 else:
                     json_data["isBasedOn"] = doc_links
+                    
+                if dataverse_original_jsonld:
+                    json_data["isBasedOn"].append({
+                        "@type": "sc:Dataset",
+                        "name": dataverse_original_jsonld.get("name", "Original Dataverse Dataset"),
+                        "url": url,
+                        "description": "The original source JSON-LD metadata fetched from Dataverse."
+                    })
                     
                 if expert:
                     if "isPartOf" not in json_data:
