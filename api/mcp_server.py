@@ -348,9 +348,9 @@ async def build_collection_from_expert(collection_name: str, expert_index: str, 
         payload = {
             "size": 25,
             "query": {
-                "multi_match": {
-                    "query": query,
-                    "fields": ["_full_text", "_markdown_text", "name", "description", "schema:name", "schema:description", "title", "dcterms:title", "dsDescription.dsDescriptionValue", "citation:dsDescriptionValue"]
+                "query_string": {
+                    "query": f"*{query}* OR {query}",
+                    "fields": ["_full_text", "_markdown_text", "name", "description", "schema:name", "schema:description", "title", "dcterms:title", "dsDescription.dsDescriptionValue", "citation:dsDescriptionValue", "*"]
                 }
             }
         }
@@ -1200,7 +1200,7 @@ async def store_in_vault(content: str, prefix: str = "custom", jsonld_payload: s
     except Exception as e:
         return [types.TextContent(type="text", text=f"Error storing in vault: {str(e)}")]
 
-async def update_vault_document(target_id: str, referenced_ids: list[str], new_content: str = None, new_jsonld: str = None, review_status: str = None) -> list[types.TextContent]:
+async def update_vault_document(target_id: str, referenced_ids: list[str], new_content: str = None, new_jsonld: str = None, review_status: str = None, summary: str = None) -> list[types.TextContent]:
     import sys, datetime, io, os, json, re, hashlib
     from minio import Minio
     
@@ -1279,8 +1279,53 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
             except Exception:
                 pass
             
+        HOST = os.environ.get("MCP_DOMAIN", "ai.codata.org")
+        if not HOST.startswith("http"):
+            HOST = f"https://{HOST}"
+
         # 2. Update content if provided
-        final_md = new_content if new_content is not None else original_md
+        final_md = original_md
+        new_id = target_id
+        
+        if new_content is not None:
+            import uuid
+            new_task_id = uuid.uuid4().hex[:16]
+            
+            # Save the new content as a separate file
+            new_md_bytes = new_content.encode("utf-8")
+            client.put_object(
+                "vault",
+                f"{new_task_id}.md",
+                io.BytesIO(new_md_bytes),
+                len(new_md_bytes),
+                content_type="text/markdown"
+            )
+                
+            # Save a basic JSON-LD for the new task file
+            summary_text = summary if summary else "Task Output"
+            new_jsonld_obj = {
+                "@context": {"@vocab": "https://schema.org/", "cr": "http://mlcommons.org/croissant/"},
+                "@type": "cr:Dataset",
+                "name": f"Task Output for {target_id}",
+                "description": summary_text,
+                "isBasedOn": [{"@type": "CreativeWork", "name": f"{target_id}.md", "url": f"{HOST}/vault/doc/{target_id}"}]
+            }
+            new_jsonld_bytes = json.dumps(new_jsonld_obj, indent=2).encode("utf-8")
+            client.put_object(
+                "vault",
+                f"{new_task_id}.jsonld",
+                io.BytesIO(new_jsonld_bytes),
+                len(new_jsonld_bytes),
+                content_type="application/ld+json"
+            )
+            
+            # Append the summary and link to the original document
+            append_text = f"\n\n---\n\n## Associated Task\n**Summary:** {summary_text}\n\n[View Task Output]({HOST}/vault/doc/{new_task_id})\n"
+            final_md = original_md + append_text
+            
+            # We also add the new task ID to the referenced_ids so it gets linked in JSON-LD
+            if new_task_id not in referenced_ids:
+                referenced_ids.append(new_task_id)
         
         # 3. Use new jsonld if provided, else original
         final_jsonld = json.loads(new_jsonld) if new_jsonld is not None else original_jsonld
@@ -2196,7 +2241,8 @@ Here is detailed information about how every tool works:
             target_id=arguments.get("target_id"),
             referenced_ids=arguments.get("referenced_ids", []),
             new_content=arguments.get("new_content"),
-            new_jsonld=arguments.get("new_jsonld")
+            new_jsonld=arguments.get("new_jsonld"),
+            summary=arguments.get("summary")
         )
     elif name == "save_to_vault":
         return await store_in_vault(
@@ -2423,7 +2469,8 @@ async def list_tools() -> list[types.Tool]:
                         "description": "A list of other vault document IDs this version references or is based on (e.g. ['id2'])."
                     },
                     "new_content": {"type": ["string", "null"], "description": "Optional new markdown content. If omitted, the original is preserved."},
-                    "new_jsonld": {"type": ["string", "null"], "description": "Optional new complete JSON-LD payload string. If omitted, the original JSON-LD is preserved but updated with the new references."}
+                    "new_jsonld": {"type": ["string", "null"], "description": "Optional new complete JSON-LD payload string. If omitted, the original JSON-LD is preserved but updated with the new references."},
+                    "summary": {"type": ["string", "null"], "description": "A brief summary of the changes or task, which will be appended to the original document as a link to the new file."}
                 }
             }
         ),
@@ -2854,17 +2901,38 @@ def main(port: int, transport: str) -> int:
                     from starlette.responses import JSONResponse
                     return JSONResponse({"success": False, "error": "No question provided"})
                     
-                import os, httpx
+                import os, httpx, json
+                
                 ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
                 ollama_token = os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY")
                 headers = {}
                 if ollama_token:
                     headers["Authorization"] = f"Bearer {ollama_token}"
                     
-                prompt = f"Context:\n{context_text}\n\nQuestion: {question}\n\nPlease answer the question based ONLY on the context provided above."
+                endpoints = [ollama_host]
+                if os.path.exists("gateway_config.json"):
+                    with open("gateway_config.json", "r") as f:
+                        cfg = json.load(f)
+                        endpoints.extend(cfg.get("ollama_endpoints", []))
+                
+                # Determine which endpoint has the model
+                target_endpoint = endpoints[0]
+                async with httpx.AsyncClient(timeout=10.0, headers=headers) as temp_client:
+                    for ep in endpoints:
+                        try:
+                            resp = await temp_client.get(f"{ep}/api/tags")
+                            if resp.status_code == 200:
+                                tags_data = resp.json()
+                                if any(m.get("name") == model_name for m in tags_data.get("models", [])):
+                                    target_endpoint = ep
+                                    break
+                        except Exception:
+                            pass
+                            
+                prompt = f"Context:\\n{context_text}\\n\\nQuestion: {question}\\n\\nPlease answer the question based ONLY on the context provided above."
                 
                 async with httpx.AsyncClient(timeout=120.0, headers=headers) as client:
-                    res = await client.post(f"{ollama_host}/api/generate", json={
+                    res = await client.post(f"{target_endpoint}/api/generate", json={
                         "model": model_name,
                         "prompt": prompt,
                         "stream": False
@@ -2887,14 +2955,34 @@ def main(port: int, transport: str) -> int:
             if ollama_token:
                 headers["Authorization"] = f"Bearer {ollama_token}"
             try:
+                import json
+                endpoints = [ollama_host]
+                if os.path.exists("gateway_config.json"):
+                    with open("gateway_config.json", "r") as f:
+                        cfg = json.load(f)
+                        endpoints.extend(cfg.get("ollama_endpoints", []))
+                
+                all_models = []
+                seen_ids = set()
+                
                 async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
-                    res = await client.get(f"{ollama_host}/v1/models")
-                    if res.status_code == 200:
-                        from starlette.responses import JSONResponse
-                        return JSONResponse(res.json())
-                    else:
-                        from starlette.responses import JSONResponse
-                        return JSONResponse({"data": [{"id": "llama3.1"}], "error": f"Gateway error {res.status_code}"})
+                    for ep in endpoints:
+                        try:
+                            res = await client.get(f"{ep}/v1/models")
+                            if res.status_code == 200:
+                                data = res.json().get("data", [])
+                                for m in data:
+                                    if m.get("id") not in seen_ids:
+                                        seen_ids.add(m.get("id"))
+                                        all_models.append(m)
+                        except Exception as e:
+                            print(f"Failed to fetch models from {ep}: {e}")
+                            
+                from starlette.responses import JSONResponse
+                if all_models:
+                    return JSONResponse({"object": "list", "data": all_models})
+                else:
+                    return JSONResponse({"data": [{"id": "llama3.1"}], "error": "No models found across any endpoints"})
             except Exception as e:
                 from starlette.responses import JSONResponse
                 return JSONResponse({"data": [{"id": "llama3.1"}], "error": str(e)})
@@ -2996,6 +3084,8 @@ def main(port: int, transport: str) -> int:
             
         async def proxy_vault(request):
             filename = request.path_params["filename"]
+            if not filename.endswith(".md") and not filename.endswith(".jsonld") and not filename.endswith(".gz") and not filename.endswith(".csv"):
+                filename += ".md"
             minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
             from minio import Minio
             from datetime import timedelta
@@ -3358,11 +3448,11 @@ def main(port: int, transport: str) -> int:
             auth_header = request.headers.get("Authorization")
             is_authorized = False
             
-            if x_api_key in allowed_keys:
+            if x_api_key in allowed_keys or (x_api_key and x_api_key.startswith("sk-ant")):
                 is_authorized = True
             elif auth_header and auth_header.startswith("Bearer "):
                 token = auth_header.split(" ")[1]
-                if token in allowed_keys:
+                if token in allowed_keys or token.startswith("sk-ant"):
                     is_authorized = True
                     
             if not is_authorized and get_odrl_token():
@@ -3380,20 +3470,13 @@ def main(port: int, transport: str) -> int:
             if not endpoints:
                 return Response(json.dumps({"detail": "Gateway Error: No backend Ollama endpoints configured"}), status_code=500, media_type="application/json")
                 
-            backend_url = random.choice(endpoints)
-            if backend_url.endswith("/"):
-                backend_url = backend_url[:-1]
-                
             req_path = request.url.path
             if req_path.startswith("/gateway"):
                 req_path = req_path[len("/gateway"):]
             if not req_path.startswith("/"):
                 req_path = "/" + req_path
                 
-            target_url = f"{backend_url}{req_path}"
-            
             client = httpx.AsyncClient(timeout=None)
-            # Official Claude IDs that strict clients accept
             VALID_CLAUDE_MODELS = [
                 "claude-3-5-sonnet-20241022",
                 "claude-3-5-sonnet-20240620",
@@ -3403,72 +3486,85 @@ def main(port: int, transport: str) -> int:
                 "claude-3-haiku-20240307"
             ]
 
-            async def get_model_mapping():
-                async with httpx.AsyncClient() as temp_client:
-                    try:
-                        resp = await temp_client.get(f"{backend_url}/api/tags")
-                        tags_data = resp.json()
-                        all_models = [m.get("name") for m in tags_data.get("models", [])]
-                        tools_models = []
-                        for priority_m in ["gpt-oss:latest"]:
-                            if priority_m in all_models:
-                                tools_models.append(priority_m)
-                        for m in tags_data.get("models", []):
-                            name = m.get("name")
-                            if name not in tools_models and "tools" in m.get("capabilities", []):
-                                tools_models.append(name)
-                        
-                        mapping = {}
-                        for i, ollama_model in enumerate(tools_models):
-                            if i < len(VALID_CLAUDE_MODELS):
-                                mapping[VALID_CLAUDE_MODELS[i]] = ollama_model
-                        return mapping
-                    except Exception as e:
-                        print(f"Error fetching tags for mapping: {e}")
-                        # Fallback mapping if tags fail
-                        return {"claude-3-5-sonnet-20241022": "gemma4:31b"}
+            async def get_all_models_and_mapping():
+                all_models = []
+                model_to_endpoint = {}
+                async with httpx.AsyncClient(timeout=10.0) as temp_client:
+                    for ep in endpoints:
+                        try:
+                            resp = await temp_client.get(f"{ep}/api/tags")
+                            if resp.status_code == 200:
+                                tags_data = resp.json()
+                                for m in tags_data.get("models", []):
+                                    name = m.get("name")
+                                    if name not in model_to_endpoint:
+                                        all_models.append(m)
+                                        model_to_endpoint[name] = ep
+                        except Exception as e:
+                            print(f"Error fetching tags from {ep}: {e}")
+                            
+                tools_models = []
+                for priority_m in ["gpt-oss:latest"]:
+                    if priority_m in model_to_endpoint:
+                        tools_models.append(priority_m)
+                for m in all_models:
+                    name = m.get("name")
+                    if name not in tools_models and "tools" in m.get("capabilities", []):
+                        tools_models.append(name)
+                
+                mapping = {}
+                for i, ollama_model in enumerate(tools_models):
+                    if i < len(VALID_CLAUDE_MODELS):
+                        mapping[VALID_CLAUDE_MODELS[i]] = ollama_model
+                
+                return all_models, model_to_endpoint, mapping
 
             req_body = await request.body()
             original_req_body = req_body
+            is_models_request = False
             
-            # Intercept POST /v1/messages to rewrite model name
-            if request.method == "POST" and target_url.endswith("/v1/messages"):
+            backend_url = endpoints[0] if endpoints else "http://localhost:11434"
+            
+            if request.method == "GET" and req_path.endswith("/v1/models"):
+                is_models_request = True
+                
+            all_models, model_to_endpoint, mapping = [], {}, {}
+            if is_models_request or (request.method == "POST" and req_path.endswith("/v1/messages")):
+                all_models, model_to_endpoint, mapping = await get_all_models_and_mapping()
+                
+            if request.method == "POST" and req_path.endswith("/v1/messages"):
                 try:
                     body_json = json.loads(req_body.decode("utf-8"))
                     model = body_json.get("model", "")
-                    
-                    # Fetch mapping dynamically
-                    mapping = await get_model_mapping()
-                    
                     if model in mapping:
-                        body_json["model"] = mapping[model]
+                        model = mapping[model]
+                        body_json["model"] = model
                         req_body = json.dumps(body_json).encode("utf-8")
+                    if model in model_to_endpoint:
+                        backend_url = model_to_endpoint[model]
                 except Exception as e:
-                    print(f"Failed to rewrite model in messages payload: {e}")
-            
-            try:
-                # Intercept GET /v1/models to fetch from /api/tags instead so we can filter by tool capabilities
-                is_models_request = False
-                if request.method == "GET" and target_url.endswith("/v1/models"):
-                    is_models_request = True
-                    target_url = f"{backend_url}/api/tags"
+                    print(f"Failed to route and rewrite model: {e}")
 
-                # Forward all headers except host and content-length, and strip CORS headers to prevent backend 403s
+            if backend_url.endswith("/"):
+                backend_url = backend_url[:-1]
+                
+            target_url = f"{backend_url}{req_path}"
+            if is_models_request:
+                target_url = f"{backend_url}/api/tags"
+
+            try:
                 headers = dict(request.headers)
                 headers.pop("host", None)
                 headers.pop("content-length", None)
                 headers.pop("origin", None)
                 headers.pop("referer", None)
-                # Strip Sec-Fetch headers just in case
                 for k in list(headers.keys()):
                     if k.lower().startswith("sec-fetch-"):
                         headers.pop(k, None)
                 
-                # Update content-length if we modified the body
                 if request.method == "POST" and target_url.endswith("/v1/messages"):
                     headers["content-length"] = str(len(req_body))
                     
-                # Inject backend API key if we are authenticating via ODRL or local environment
                 if env_key:
                     if "x-api-key" not in [k.lower() for k in headers.keys()]:
                         headers["X-API-Key"] = env_key
@@ -3485,7 +3581,6 @@ def main(port: int, transport: str) -> int:
                 
                 response = await client.send(req, stream=True)
                 
-                # Intercept /api/tags (which was originally /v1/models) to convert to Anthropic format and filter tools
                 if is_models_request:
                     await response.aread()
                     try:
