@@ -2800,6 +2800,10 @@ def main(port: int, transport: str) -> int:
                 auth_status = '<span style="color: #4CAF50;">Authenticated via /app/.odrl/authorize</span>' if get_odrl_token() else '<span style="color: #F44336;">Not Authenticated</span>'
                 html_content = html_content.replace('{{AUTH_STATUS}}', auth_status)
                 
+                logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
+                logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; width:100%; height:100%; max-height:86px; text-decoration:none; overflow:hidden;"><img src="{logo_url}" style="width:100%; height:100%; max-height:86px; object-fit:contain;" alt="Logo" /></a>' if logo_url else ""
+                html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
+                
                 return HTMLResponse(html_content)
             else:
                 return HTMLResponse("<h1>Error: UI not found. Missing static/index.html</h1>", status_code=404)
@@ -3172,8 +3176,8 @@ def main(port: int, transport: str) -> int:
             index_path = "/app/static/doc_viewer.html"
             with open(index_path, "r", encoding="utf-8") as f:
                 html_content = f.read()
-            logo_url = os.environ.get("VAULT_LOGO_URL", "https://codata.org/wp-content/uploads/2019/12/codata_new_logo-1.png")
-            logo_html = f'<img src="{logo_url}" style="height:45px; object-fit:contain; margin-right:10px;" alt="Logo" />' if logo_url else ""
+            logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
+            logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; width:100%; height:100%; max-height:86px; text-decoration:none; overflow:hidden;"><img src="{logo_url}" style="width:100%; height:100%; max-height:86px; object-fit:contain;" alt="Logo" /></a>' if logo_url else ""
             html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
             return HTMLResponse(content=html_content)
             
@@ -4016,8 +4020,8 @@ def main(port: int, transport: str) -> int:
                 index_path = "api/static/collection_viewer.html"
             with open(index_path, "r") as f:
                 html_content = f.read()
-            logo_url = os.environ.get("VAULT_LOGO_URL", "https://codata.org/wp-content/uploads/2019/12/codata_new_logo-1.png")
-            logo_html = f'<img src="{logo_url}" style="height:45px; object-fit:contain; margin-right:10px;" alt="Logo" />' if logo_url else ""
+            logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
+            logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; width:100%; height:100%; max-height:86px; text-decoration:none; overflow:hidden;"><img src="{logo_url}" style="width:100%; height:100%; max-height:86px; object-fit:contain;" alt="Logo" /></a>' if logo_url else ""
             html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
             return HTMLResponse(content=html_content)
 
@@ -4226,8 +4230,8 @@ def main(port: int, transport: str) -> int:
             except:
                 with open("api/static/group_viewer.html", "r", encoding="utf-8") as f:
                     html_content = f.read()
-            logo_url = os.environ.get("VAULT_LOGO_URL", "https://codata.org/wp-content/uploads/2019/12/codata_new_logo-1.png")
-            logo_html = f'<img src="{logo_url}" style="height:45px; object-fit:contain; margin-right:10px;" alt="Logo" />' if logo_url else ""
+            logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
+            logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; width:100%; height:100%; max-height:86px; text-decoration:none; overflow:hidden;"><img src="{logo_url}" style="width:100%; height:100%; max-height:86px; object-fit:contain;" alt="Logo" /></a>' if logo_url else ""
             html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
             return HTMLResponse(content=html_content)
 

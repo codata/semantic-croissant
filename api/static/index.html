@@ -36,6 +36,28 @@
         }
 
         /* Sidebar */
+        .header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 86px;
+            background: #bbbbb9;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            padding: 0 20px 0 0;
+            justify-content: space-between;
+            z-index: 10;
+        }
+
+        .main-container {
+            display: flex;
+            width: 100%;
+            height: calc(100vh - 86px);
+            margin-top: 86px;
+        }
+
         .sidebar {
             width: 300px;
             background-color: var(--sidebar-bg);
@@ -248,8 +270,16 @@
 </head>
 <body>
 
+    <div class="header">
+        <div style="width: 341px; padding: 0; height: 100%; border-right: 1px solid var(--border-color); display: flex; align-items: center; box-sizing: border-box;">
+            {{VAULT_LOGO_HTML}}
+        </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+        </div>
+    </div>
+
+    <div class="main-container">
     <div class="sidebar">
-        <h2>🥐 Croissant Studio</h2>
         
         <div class="control-group">
             <label for="model-select">Model</label>
@@ -1115,5 +1145,6 @@
         // Simple auth check injected by server
         document.getElementById('auth-status').innerHTML = `{{AUTH_STATUS}}`;
     </script>
+    </div>
 </body>
 </html>
