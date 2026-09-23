@@ -1303,11 +1303,19 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
                 
             # Save a basic JSON-LD for the new task file
             summary_text = summary if summary else "Task Output"
+            
+            # Create provenance identifying the AI model if available
+            ai_model = ai_model_override if ai_model_override else "AI Agent"
+            creator_node = [{"@type": "SoftwareApplication", "name": ai_model}]
+            if hasattr(request.state, "user_did") and request.state.user_did:
+                creator_node.append({"@id": request.state.user_did, "@type": "Person"})
+            
             new_jsonld_obj = {
                 "@context": {"@vocab": "https://schema.org/", "cr": "http://mlcommons.org/croissant/"},
                 "@type": "cr:Dataset",
                 "name": f"Task Output for {target_id}",
                 "description": summary_text,
+                "creator": creator_node,
                 "isBasedOn": [{"@type": "CreativeWork", "name": f"{target_id}.md", "url": f"{HOST}/vault/doc/{target_id}"}]
             }
             new_jsonld_bytes = json.dumps(new_jsonld_obj, indent=2).encode("utf-8")
@@ -1319,9 +1327,8 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
                 content_type="application/ld+json"
             )
             
-            # Append the summary and link to the original document
-            append_text = f"\n\n---\n\n## Associated Task\n**Summary:** {summary_text}\n\n[View Task Output]({HOST}/vault/doc/{new_task_id})\n"
-            final_md = original_md + append_text
+            # Do NOT modify the original markdown document!
+            # We simply link to this new task output via the JSON-LD (handled by referenced_ids below)
             
             # We also add the new task ID to the referenced_ids so it gets linked in JSON-LD
             if new_task_id not in referenced_ids:
@@ -1331,7 +1338,7 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
         final_jsonld = json.loads(new_jsonld) if new_jsonld is not None else original_jsonld
         
         # 4. Generate new version ID
-        # We overwrite the original document instead of generating a new version
+        # We update the original document's metadata in-place
         new_id = target_id
         
         # 5. Build isBasedOn list
@@ -3048,11 +3055,13 @@ def main(port: int, transport: str) -> int:
                     }
                 }
                 
-                if model_used:
-                    snippet_jsonld["creator"] = {
-                        "@type": "Organization",
-                        "name": model_used
-                    }
+                if not model_used:
+                    model_used = "Claude Sonnet 4.6 (via MCP)"
+                    
+                snippet_jsonld["creator"] = {
+                    "@type": "SoftwareApplication",
+                    "name": model_used
+                }
                 
                 # Append reference to original document in the markdown text
                 final_text = snippet_text
