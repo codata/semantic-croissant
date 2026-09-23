@@ -9,6 +9,15 @@ import json
 from rdflib import Graph
 app = FastAPI(title="Semantic Croissant API")
 
+from fastapi.staticfiles import StaticFiles
+import os
+
+if os.path.exists("/app/static"):
+    app.mount("/static", StaticFiles(directory="/app/static"), name="static")
+elif os.path.exists("api/static"):
+    app.mount("/static", StaticFiles(directory="api/static"), name="static")
+
+
 DATA_DIR = "/data"
 INDEX_DIR = "/volumes/server"
 DATA_FILE = os.path.join(DATA_DIR, "data.nt")
@@ -248,6 +257,101 @@ from fastapi.responses import StreamingResponse
 
 
 from fastapi.responses import FileResponse
+
+@app.get("/dataverse")
+async def view_dataverse():
+    import os
+    file_path = os.path.join(os.path.dirname(__file__), "static/dataverse_loading.html")
+    if not os.path.exists(file_path):
+        file_path = "api/static/dataverse_loading.html"
+    return FileResponse(file_path)
+
+@app.post("/api/dataverse/process")
+async def process_dataverse(callback: str):
+    import base64
+    import requests
+    import asyncio
+    import re
+    from fastapi import HTTPException
+    
+    try:
+        decoded_callback = base64.b64decode(callback).decode('utf-8')
+        response = requests.get(decoded_callback, timeout=15)
+        response.raise_for_status()
+        data = response.json().get("data", {})
+        
+        query_params = data.get("queryParameters", {})
+        site_url = query_params.get("siteUrl")
+        
+        signed_urls = data.get("signedUrls", [])
+        metadata_url = next((url_info.get("signedUrl") for url_info in signed_urls if url_info.get("name") == "getDatasetVersionMetadata"), None)
+        
+        if not site_url or not metadata_url:
+            raise HTTPException(status_code=400, detail="Invalid callback data structure")
+            
+        meta_response = requests.get(metadata_url, timeout=15)
+        meta_response.raise_for_status()
+        persistent_id = meta_response.json().get("data", {}).get("datasetPersistentId")
+        
+        if not persistent_id:
+            raise HTTPException(status_code=400, detail="Could not retrieve persistent ID")
+            
+        dataset_url = f"{site_url}/dataset.xhtml?persistentId={persistent_id}"
+        
+        # Check if we are running in docker (where convertors is at /app/convertors or one level up)
+        import os
+        script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../convertors/url_to_croissant.py"))
+        if not os.path.exists(script_path):
+            script_path = "convertors/url_to_croissant.py"
+            
+        cmd = ["python3", script_path, dataset_url, "--elastic"]
+        
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"Conversion failed: {stderr.decode('utf-8')}")
+            
+        output = stdout.decode('utf-8')
+        
+        match = re.search(r"Extracted markdown successfully uploaded to vault: (https?://.*?/vault/[^\s]+)", output)
+        translated_match = re.search(r"Translated markdown successfully uploaded to vault: (https?://.*?/vault/[^\s]+)", output)
+        
+        if translated_match:
+            redirect_url = translated_match.group(1)
+        elif match:
+            redirect_url = match.group(1)
+        else:
+            file_match = re.search(r"Extracted markdown saved to [^/]+/([^/]+)/([a-zA-Z0-9_-]+\.md)", output)
+            if file_match:
+                redirect_url = f"/vault/doc/{file_match.group(2)}"
+            else:
+                raise HTTPException(status_code=500, detail="Could not determine generated filename from output")
+                
+        if redirect_url.startswith("http"):
+            redirect_url = "/vault/doc/" + redirect_url.split("/vault/")[-1]
+            
+        return {"status": "success", "redirect_url": redirect_url}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error processing dataverse callback: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.get("/logo.png")
+async def serve_logo_main():
+    import os
+    from fastapi.responses import FileResponse
+    path = "/app/static/logo.png"
+    if not os.path.exists(path): path = "api/static/logo.png"
+    return FileResponse(path)
 
 @app.get("/")
 async def view_index():

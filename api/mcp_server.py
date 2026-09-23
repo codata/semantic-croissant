@@ -1200,7 +1200,7 @@ async def store_in_vault(content: str, prefix: str = "custom", jsonld_payload: s
     except Exception as e:
         return [types.TextContent(type="text", text=f"Error storing in vault: {str(e)}")]
 
-async def update_vault_document(target_id: str, referenced_ids: list[str], new_content: str = None, new_jsonld: str = None, review_status: str = None, summary: str = None) -> list[types.TextContent]:
+async def update_vault_document(target_id: str, referenced_ids: list[str], new_content: str = None, new_jsonld: str = None, review_status: str = None, summary: str = None, ai_model_override: str = None) -> list[types.TextContent]:
     import sys, datetime, io, os, json, re, hashlib
     from minio import Minio
     
@@ -1307,8 +1307,14 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
             # Create provenance identifying the AI model if available
             ai_model = ai_model_override if ai_model_override else "AI Agent"
             creator_node = [{"@type": "SoftwareApplication", "name": ai_model}]
-            if hasattr(request.state, "user_did") and request.state.user_did:
-                creator_node.append({"@id": request.state.user_did, "@type": "Person"})
+            
+            global SERVER_USER_INFO
+            if SERVER_USER_INFO and SERVER_USER_INFO.get("email"):
+                creator_node.append({
+                    "@id": SERVER_USER_INFO.get("email"), 
+                    "@type": "Person",
+                    "name": SERVER_USER_INFO.get("name", "MCP Agent User")
+                })
             
             new_jsonld_obj = {
                 "@context": {"@vocab": "https://schema.org/", "cr": "http://mlcommons.org/croissant/"},
@@ -2249,7 +2255,8 @@ Here is detailed information about how every tool works:
             referenced_ids=arguments.get("referenced_ids", []),
             new_content=arguments.get("new_content"),
             new_jsonld=arguments.get("new_jsonld"),
-            summary=arguments.get("summary")
+            summary=arguments.get("summary"),
+            ai_model_override=arguments.get("ai_model_override")
         )
     elif name == "save_to_vault":
         return await store_in_vault(
@@ -2477,7 +2484,8 @@ async def list_tools() -> list[types.Tool]:
                     },
                     "new_content": {"type": ["string", "null"], "description": "Optional new markdown content. If omitted, the original is preserved."},
                     "new_jsonld": {"type": ["string", "null"], "description": "Optional new complete JSON-LD payload string. If omitted, the original JSON-LD is preserved but updated with the new references."},
-                    "summary": {"type": ["string", "null"], "description": "A brief summary of the changes or task, which will be appended to the original document as a link to the new file."}
+                    "summary": {"type": ["string", "null"], "description": "A brief summary of the changes or task, which will be appended to the original document as a link to the new file."},
+                    "ai_model_override": {"type": "string", "description": "If your client does not expose its identity via MCP clientInfo (i.e. 'CODATA AI Agent'), you MUST provide your AI vendor and model here (e.g. 'Anthropic Claude 3.5 Sonnet', 'LM Studio Llama 3')."}
                 }
             }
         ),
@@ -2795,6 +2803,14 @@ def main(port: int, transport: str) -> int:
                 )
             return Response()
                 
+        
+        async def serve_logo(request):
+            from starlette.responses import FileResponse
+            import os
+            path = "/app/static/logo.png"
+            if not os.path.exists(path): path = "api/static/logo.png"
+            return FileResponse(path)
+
         async def index(request):
             import os
             from starlette.responses import HTMLResponse
@@ -3219,6 +3235,24 @@ def main(port: int, transport: str) -> int:
                         s_val = str(value)
                         val_md = f"[{s_val}]({s_val})" if s_val.startswith('http') else s_val
                     val_md = val_md.replace('|', '\\|').replace('\n', ' ')
+                    
+                    if key == "citation":
+                        doi = None
+                        dataset_url = data.get("url", "")
+                        dataset_id = data.get("identifier", "")
+                        
+                        if isinstance(dataset_url, str) and "doi.org" in dataset_url:
+                            doi = dataset_url
+                        elif isinstance(dataset_id, str) and "doi" in dataset_id.lower():
+                            doi = dataset_id
+                            if doi.lower().startswith("doi:"):
+                                doi = "https://doi.org/" + doi[4:]
+                            elif not doi.startswith("http"):
+                                doi = "https://doi.org/" + doi
+                                
+                        if doi:
+                            val_md = f"{val_md}. DOI: [{doi}]({doi})"
+                            
                     md.append(f"| **{key}** | {val_md} |")
                 md.append("\n")
                 
@@ -4244,6 +4278,96 @@ def main(port: int, transport: str) -> int:
             html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
             return HTMLResponse(content=html_content)
 
+        async def view_dataverse(request):
+            import os
+            from starlette.responses import FileResponse
+            file_path = os.path.join(os.path.dirname(__file__), "static/dataverse_loading.html")
+            if not os.path.exists(file_path):
+                file_path = "api/static/dataverse_loading.html"
+            return FileResponse(file_path)
+        
+        async def process_dataverse(request):
+            import base64
+            import requests
+            import asyncio
+            import re
+            from starlette.responses import JSONResponse
+            
+            callback = request.query_params.get("callback")
+            direct_url = request.query_params.get("url")
+            if not callback and not direct_url:
+                return JSONResponse({"detail": "Missing callback or url parameter"}, status_code=400)
+            
+            try:
+                if callback:
+                    decoded_callback = base64.b64decode(callback).decode('utf-8')
+                    response = requests.get(decoded_callback, timeout=15)
+                    response.raise_for_status()
+                    data = response.json().get("data", {})
+                    
+                    query_params = data.get("queryParameters", {})
+                    site_url = query_params.get("siteUrl")
+                    
+                    signed_urls = data.get("signedUrls", [])
+                    metadata_url = next((url_info.get("signedUrl") for url_info in signed_urls if url_info.get("name") == "getDatasetVersionMetadata"), None)
+                    
+                    if not site_url or not metadata_url:
+                        return JSONResponse({"detail": "Invalid callback data structure"}, status_code=400)
+                        
+                    meta_response = requests.get(metadata_url, timeout=15)
+                    meta_response.raise_for_status()
+                    persistent_id = meta_response.json().get("data", {}).get("datasetPersistentId")
+                    
+                    if not persistent_id:
+                        return JSONResponse({"detail": "Could not retrieve persistent ID"}, status_code=400)
+                        
+                    dataset_url = f"{site_url}/dataset.xhtml?persistentId={persistent_id}"
+                else:
+                    dataset_url = direct_url
+                
+                import os
+                script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../convertors/url_to_croissant.py"))
+                if not os.path.exists(script_path):
+                    script_path = "convertors/url_to_croissant.py"
+                    
+                cmd = ["python3", script_path, dataset_url, "--elastic"]
+                
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await process.communicate()
+                
+                if process.returncode != 0:
+                    return JSONResponse({"detail": f"Conversion failed: {stderr.decode('utf-8')}"}, status_code=500)
+                    
+                output = stdout.decode('utf-8')
+                
+                match = re.search(r"Extracted markdown successfully uploaded to vault: (https?://.*?/vault/[^\s]+)", output)
+                translated_match = re.search(r"Translated markdown successfully uploaded to vault: (https?://.*?/vault/[^\s]+)", output)
+                
+                if translated_match:
+                    redirect_url = translated_match.group(1)
+                elif match:
+                    redirect_url = match.group(1)
+                else:
+                    file_match = re.search(r"Extracted markdown saved to [^/]+/([^/]+)/([a-zA-Z0-9_-]+\.md)", output)
+                    if file_match:
+                        redirect_url = f"/vault/doc/{file_match.group(2)}"
+                    else:
+                        return JSONResponse({"detail": "Could not determine generated filename from output"}, status_code=500)
+                        
+                if redirect_url.startswith("http"):
+                    redirect_url = "/vault/doc/" + redirect_url.split("/vault/")[-1]
+                    
+                return JSONResponse({"status": "success", "redirect_url": redirect_url})
+                
+            except Exception as e:
+                print(f"Error processing dataverse callback: {e}")
+                return JSONResponse({"detail": str(e)}, status_code=500)
+        
+    if transport == "sse":
         starlette_app = Starlette(
             debug=True,
             lifespan=lifespan,
@@ -4252,6 +4376,9 @@ def main(port: int, transport: str) -> int:
                 Middleware(StripCharsetMiddleware)
             ],
             routes=[
+                Route("/dataverse", endpoint=view_dataverse),
+                Route("/api/dataverse/process", endpoint=process_dataverse, methods=["POST"]),
+                Route("/logo.png", endpoint=serve_logo),
                 Route("/", endpoint=index),
                 Route("/sse", endpoint=handle_sse),
 
