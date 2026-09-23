@@ -1194,7 +1194,106 @@ async def store_in_vault(content: str, prefix: str = "custom", jsonld_payload: s
                     print(f"Warning: Failed to index document into Elasticsearch ({es_resp.status_code}, file=sys.stderr): {es_resp.text}")
         except Exception as es_err:
             print(f"Warning: Failed to communicate with Elasticsearch: {es_err}", file=sys.stderr)
+            
+        # --- REVERSE PROVENANCE LINKING ---
+        async def establish_reverse_links(parent_ids, new_doc_id, new_doc_name, new_doc_url):
+            if not parent_ids: return
+            import httpx, json, io
+            
+            def flatten_creator(obj):
+                if "creator" in obj:
+                    if isinstance(obj["creator"], dict):
+                        obj["creator"] = obj["creator"].get("name", str(obj["creator"]))
+                    elif isinstance(obj["creator"], list):
+                        obj["creator"] = [c.get("name", str(c)) if isinstance(c, dict) else str(c) for c in obj["creator"]]
+                return obj
+
+            for pid in parent_ids:
+                try:
+                    r_jsonld = client.get_object("vault", f"{pid}.jsonld")
+                    p_jsonld = json.loads(r_jsonld.read().decode("utf-8"))
+                    r_jsonld.close()
+                    r_jsonld.release_conn()
+                    
+                    if "isReferencedBy" not in p_jsonld:
+                        p_jsonld["isReferencedBy"] = []
+                    elif not isinstance(p_jsonld["isReferencedBy"], list):
+                        p_jsonld["isReferencedBy"] = [p_jsonld["isReferencedBy"]]
+                        
+                    if not any(isinstance(ref, dict) and ref.get("@id") == new_doc_url for ref in p_jsonld["isReferencedBy"]):
+                        p_jsonld["isReferencedBy"].append({
+                            "@type": "ScholarlyArticle",
+                            "name": new_doc_name,
+                            "@id": new_doc_url,
+                            "url": new_doc_url
+                        })
+                        updated_json_bytes = json.dumps(p_jsonld, indent=2).encode("utf-8")
+                        client.put_object("vault", f"{pid}.jsonld", io.BytesIO(updated_json_bytes), len(updated_json_bytes), content_type="application/ld+json")
+                        
+                    p_md = ""
+                    try:
+                        r_md = client.get_object("vault", f"{pid}.md")
+                        p_md = r_md.read().decode("utf-8")
+                        r_md.close()
+                        r_md.release_conn()
+                        
+                        if new_doc_url not in p_md:
+                            if "### Related AI Analysis" not in p_md:
+                                p_md += "\n\n---\n### Related AI Analysis\n"
+                            p_md += f"- [{new_doc_name}]({new_doc_url})\n"
+                            updated_md_bytes = p_md.encode("utf-8")
+                            client.put_object("vault", f"{pid}.md", io.BytesIO(updated_md_bytes), len(updated_md_bytes), content_type="text/markdown")
+                    except Exception:
+                        pass
+                        
+                    es_doc_rev = {"_source_url": f"{HOST}/vault/doc/{pid}"}
+                    es_doc_rev.update(p_jsonld)
+                    if p_md:
+                        es_doc_rev["_markdown_text"] = p_md
+                        
+                    if "isBasedOn" in es_doc_rev:
+                        if isinstance(es_doc_rev["isBasedOn"], list):
+                            for i in range(len(es_doc_rev["isBasedOn"])):
+                                if isinstance(es_doc_rev["isBasedOn"][i], dict):
+                                    es_doc_rev["isBasedOn"][i] = flatten_creator(es_doc_rev["isBasedOn"][i])
+                        elif isinstance(es_doc_rev["isBasedOn"], dict):
+                            es_doc_rev["isBasedOn"] = flatten_creator(es_doc_rev["isBasedOn"])
+
+                    if "isReferencedBy" in es_doc_rev:
+                        if isinstance(es_doc_rev["isReferencedBy"], list):
+                            new_refs = []
+                            for ref in es_doc_rev["isReferencedBy"]:
+                                if isinstance(ref, dict):
+                                    new_refs.append(ref.get("name", ref.get("@id", str(ref))))
+                                else:
+                                    new_refs.append(str(ref))
+                            es_doc_rev["isReferencedBy"] = new_refs
+                            
+                    async with httpx.AsyncClient() as hc:
+                        await hc.put(f"{es_url}/{safe_username}/_doc/{pid}", json=es_doc_rev)
+                        await hc.put(f"{es_url}/croissant/_doc/{pid}", json=es_doc_rev)
+                except Exception as e:
+                    import sys
+                    print(f"Warning: Failed to establish reverse link for {pid}: {e}", file=sys.stderr)
+
+        parent_ids = set()
+        if session_id and session_id != prefix and len(session_id) > 10 and not session_id.startswith("session_"):
+            parent_ids.add(session_id)
+            
+        try:
+            for obj_name, _ in history_objects:
+                pid = obj_name.replace(".md", "").replace(".gz", "")
+                if len(pid) > 10 and not pid.startswith("session_"):
+                    parent_ids.add(pid)
+        except NameError:
+            pass
+            
+        new_doc_id = filename.replace(".md", "").replace(".csv", "")
+        new_doc_name = payload_dict.get("name", "Related AI Analysis")
+        new_doc_url = f"{HOST}/vault/doc/{new_doc_id}"
         
+        await establish_reverse_links(parent_ids, new_doc_id, new_doc_name, new_doc_url)
+        # --- END REVERSE PROVENANCE LINKING ---
 
         return [types.TextContent(type="text", text=f"Successfully stored in vault as {filename}")]
     except Exception as e:
@@ -4295,11 +4394,20 @@ def main(port: int, transport: str) -> int:
             
             callback = request.query_params.get("callback")
             direct_url = request.query_params.get("url")
-            if not callback and not direct_url:
-                return JSONResponse({"detail": "Missing callback or url parameter"}, status_code=400)
+            dataset_pid = request.query_params.get("datasetPid")
+            site_url_param = request.query_params.get("siteUrl")
+            
+            if not callback and not direct_url and not dataset_pid:
+                return JSONResponse({"detail": "Missing callback, url, or datasetPid parameter"}, status_code=400)
             
             try:
-                if callback:
+                if dataset_pid:
+                    if not site_url_param:
+                        site_url_param = "https://dataverse.harvard.edu"
+                    dataset_url = f"{site_url_param}/dataset.xhtml?persistentId={dataset_pid}"
+                elif direct_url:
+                    dataset_url = direct_url
+                elif callback:
                     decoded_callback = base64.b64decode(callback).decode('utf-8')
                     response = requests.get(decoded_callback, timeout=15)
                     response.raise_for_status()
@@ -4322,8 +4430,6 @@ def main(port: int, transport: str) -> int:
                         return JSONResponse({"detail": "Could not retrieve persistent ID"}, status_code=400)
                         
                     dataset_url = f"{site_url}/dataset.xhtml?persistentId={persistent_id}"
-                else:
-                    dataset_url = direct_url
                 
                 import os
                 script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../convertors/url_to_croissant.py"))

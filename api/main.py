@@ -267,7 +267,7 @@ async def view_dataverse():
     return FileResponse(file_path)
 
 @app.post("/api/dataverse/process")
-async def process_dataverse(callback: str):
+async def process_dataverse(callback: str = None, url: str = None, siteUrl: str = None, datasetPid: str = None):
     import base64
     import requests
     import asyncio
@@ -275,28 +275,37 @@ async def process_dataverse(callback: str):
     from fastapi import HTTPException
     
     try:
-        decoded_callback = base64.b64decode(callback).decode('utf-8')
-        response = requests.get(decoded_callback, timeout=15)
-        response.raise_for_status()
-        data = response.json().get("data", {})
-        
-        query_params = data.get("queryParameters", {})
-        site_url = query_params.get("siteUrl")
-        
-        signed_urls = data.get("signedUrls", [])
-        metadata_url = next((url_info.get("signedUrl") for url_info in signed_urls if url_info.get("name") == "getDatasetVersionMetadata"), None)
-        
-        if not site_url or not metadata_url:
-            raise HTTPException(status_code=400, detail="Invalid callback data structure")
+        if datasetPid:
+            if not siteUrl:
+                siteUrl = "https://dataverse.harvard.edu"
+            dataset_url = f"{siteUrl}/dataset.xhtml?persistentId={datasetPid}"
+        elif url:
+            dataset_url = url
+        elif callback:
+            decoded_callback = base64.b64decode(callback).decode('utf-8')
+            response = requests.get(decoded_callback, timeout=15)
+            response.raise_for_status()
+            data = response.json().get("data", {})
             
-        meta_response = requests.get(metadata_url, timeout=15)
-        meta_response.raise_for_status()
-        persistent_id = meta_response.json().get("data", {}).get("datasetPersistentId")
-        
-        if not persistent_id:
-            raise HTTPException(status_code=400, detail="Could not retrieve persistent ID")
+            query_params = data.get("queryParameters", {})
+            site_url = query_params.get("siteUrl")
             
-        dataset_url = f"{site_url}/dataset.xhtml?persistentId={persistent_id}"
+            signed_urls = data.get("signedUrls", [])
+            metadata_url = next((url_info.get("signedUrl") for url_info in signed_urls if url_info.get("name") == "getDatasetVersionMetadata"), None)
+            
+            if not site_url or not metadata_url:
+                raise HTTPException(status_code=400, detail="Invalid callback data structure")
+                
+            meta_response = requests.get(metadata_url, timeout=15)
+            meta_response.raise_for_status()
+            persistent_id = meta_response.json().get("data", {}).get("datasetPersistentId")
+            
+            if not persistent_id:
+                raise HTTPException(status_code=400, detail="Could not retrieve persistent ID")
+                
+            dataset_url = f"{site_url}/dataset.xhtml?persistentId={persistent_id}"
+        else:
+            raise HTTPException(status_code=400, detail="Missing required parameters")
         
         # Check if we are running in docker (where convertors is at /app/convertors or one level up)
         import os
