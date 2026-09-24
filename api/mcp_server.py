@@ -1466,8 +1466,11 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
                 content_type="application/ld+json"
             )
             
-            # Do NOT modify the original markdown document!
-            # We simply link to this new task output via the JSON-LD (handled by referenced_ids below)
+            new_doc_url = f"{HOST}/vault/doc/{new_task_id}"
+            if new_doc_url not in final_md:
+                if "### Related AI Analysis" not in final_md:
+                    final_md += "\n\n---\n### Related AI Analysis\n"
+                final_md += f"- [{summary_text}]({new_doc_url})\n"
             
             # We also add the new task ID to the referenced_ids so it gets linked in JSON-LD
             if new_task_id not in referenced_ids:

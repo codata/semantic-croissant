@@ -23,12 +23,12 @@ from rdflib import Graph
 from youtube_transcript_api import YouTubeTranscriptApi
 from playwright.sync_api import sync_playwright
 
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://10.147.18.24:11444")
 OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
 OLLAMA_HEADERS = {"Authorization": f"Bearer {OLLAMA_API_KEY}"} if OLLAMA_API_KEY else {}
 ELASTICSEARCH_URL = os.environ.get("ELASTICSEARCH_URL", "http://localhost:9200")
 MCP_DOMAIN = os.environ.get("MCP_DOMAIN", "mcp.dev.codata.org")
-MODEL_NAME = os.environ.get("MODEL_NAME", "gemma4:latest")
+MODEL_NAME = os.environ.get("MODEL_NAME", "gemma4:e4b")
 
 def fetch_with_playwright(url):
     print(f"  -> Fetching with Playwright fallback: {url}")
@@ -275,8 +275,7 @@ def fetch_url_markdown(url, traverse=False):
             
         if is_pdf:
             try:
-                from pypdf import PdfReader
-
+                import fitz
                 
                 import hashlib
                 from datetime import datetime, timezone
@@ -285,12 +284,11 @@ def fetch_url_markdown(url, traverse=False):
                 checksum = hashlib.sha256(pdf_bytes).hexdigest()
                 size = len(pdf_bytes)
                 
-                print("Detected PDF document. Extracting text...")
-                pdf_file = io.BytesIO(pdf_bytes)
-                reader = PdfReader(pdf_file)
+                print("Detected PDF document. Extracting text with PyMuPDF...")
+                doc = fitz.open(stream=pdf_bytes, filetype="pdf")
                 text = ""
-                for page in reader.pages:
-                    extracted = page.extract_text()
+                for page in doc:
+                    extracted = page.get_text()
                     if extracted:
                         text += extracted + "\n\n"
                     
@@ -459,7 +457,7 @@ def fetch_url_markdown(url, traverse=False):
 def translate_to_english(text):
     print("Translating content to English using Ollama...")
     prompt = f"Translate the ENTIRE following text to English. Do not summarize. Translate every single word until the end of the text:\n\n{text}"
-    ollama_host = os.environ.get("OLLAMA_HOST", "http://10.147.18.82:11435")
+    ollama_host = os.environ.get("OLLAMA_HOST", "http://10.147.18.24:11444")
     model_name = os.environ.get("MODEL", "gemma4:e4b")
     payload = {
         "model": model_name,
@@ -917,7 +915,7 @@ def generate_markdown_from_jsonld(data):
     return "\n".join(md)
 
 
-def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, user_name=None, user_email=None, index=False, elastic=False, expert="/expert/croissant", upload_gdrive=False, upload_gdrive_folder=None):
+def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, user_name=None, user_email=None, index=False, elastic=False, expert="/expert/croissant", upload_gdrive=False, upload_gdrive_folder=None, translate=False):
     direct_jsonld = check_dataverse_direct_export(url)
     if not direct_jsonld:
         direct_jsonld = check_dspace_direct_export(url)
@@ -1053,7 +1051,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
         print(f"Language detection failed: {e}")
 
     original_md_filename = md_filename
-    if lang != "en":
+    if translate and lang != "en":
         translated_md = translate_to_english(markdown_data)
         if translated_md and translated_md != markdown_data:
             markdown_data = translated_md
@@ -1303,6 +1301,8 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                 output = re.sub(r',\s*\]', ']', output)
                 
                 json_data = json.loads(output)
+                if isinstance(json_data, list):
+                    json_data = json_data[0] if json_data else {}
                 print("✓ JSON is well-formed")
                 
                 # Inject link to the generated markdown file(s)
@@ -1659,7 +1659,7 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
     except Exception as e:
         print(f"Failed to process {url}: {e}")
 
-def process_spreadsheet(url, is_slice=False, traverse=False, reingest=False, user_name=None, user_email=None, index=False, elastic=False, expert="/expert/croissant", upload_gdrive=False, upload_gdrive_folder=None):
+def process_spreadsheet(url, is_slice=False, traverse=False, reingest=False, user_name=None, user_email=None, index=False, elastic=False, expert="/expert/croissant", upload_gdrive=False, upload_gdrive_folder=None, translate=False):
     print(f"Detected Google Spreadsheet URL: {url}")
     # Convert edit url to export url
     if "/edit" in url:
@@ -1713,7 +1713,7 @@ def process_spreadsheet(url, is_slice=False, traverse=False, reingest=False, use
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {
-            executor.submit(convert_to_croissant, target_url, is_slice, traverse, reingest, user_name, user_email, index, elastic, expert, upload_gdrive, upload_gdrive_folder): target_url
+            executor.submit(convert_to_croissant, target_url, is_slice, traverse, reingest, user_name, user_email, index, elastic, expert, upload_gdrive, upload_gdrive_folder, translate): target_url
             for target_url in urls_to_process
         }
         
@@ -1813,6 +1813,7 @@ if __name__ == "__main__":
     parser.add_argument("url", help="The URL to scrape (e.g. https://ollama.com/library/ornith/tags)")
     parser.add_argument("--slice", action="store_true", help="Enable slice mode to split markdown into pieces with LLM summaries")
     parser.add_argument("--traverse", action="store_true", help="Extract and link all URLs on the same level")
+    parser.add_argument("--translate", action="store_true", help="Automatically translate content to English if in another language")
     parser.add_argument("--reingest", action="store_true", help="Automatically ingest the result into QLever database")
     parser.add_argument("--index-ollama", action="store_true", help="Index the result into Ollama (provenance indexing). Implied by --reingest")
     parser.add_argument("--index", type=str, help="Index name for Elasticsearch (e.g., expert/dataverse). Overrides --expert.")
@@ -1902,12 +1903,12 @@ if __name__ == "__main__":
         for i, target_url in enumerate(urls_to_process, 1):
             print(f"\n[{i}/{len(urls_to_process)}] Processing file URL: {target_url}")
             try:
-                convert_to_croissant(target_url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index_ollama, args.elastic, args.expert, args.upload_gdrive, args.upload_gdrive_folder)
+                convert_to_croissant(target_url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index_ollama, args.elastic, args.expert, getattr(args, "upload_gdrive", False), getattr(args, "upload_gdrive_folder", None), getattr(args, "translate", False))
             except Exception as e:
                 print(f"Failed processing {target_url}: {e}")
 
                 
     elif "docs.google.com/spreadsheets" in args.url:
-        process_spreadsheet(args.url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index_ollama, args.elastic, args.expert)
+        process_spreadsheet(args.url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index_ollama, args.elastic, args.expert, getattr(args, "upload_gdrive", False), getattr(args, "upload_gdrive_folder", None), getattr(args, "translate", False))
     else:
-        convert_to_croissant(args.url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index_ollama, args.elastic, args.expert, getattr(args, "upload_gdrive", False), getattr(args, "upload_gdrive_folder", None))
+        convert_to_croissant(args.url, args.slice, args.traverse, args.reingest, args.user_name, args.user_email, args.index_ollama, args.elastic, args.expert, getattr(args, "upload_gdrive", False), getattr(args, "upload_gdrive_folder", None), getattr(args, "translate", False))
