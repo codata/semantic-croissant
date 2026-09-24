@@ -266,6 +266,113 @@ async def view_dataverse():
         file_path = "api/static/dataverse_loading.html"
     return FileResponse(file_path)
 
+@app.get("/dspace")
+async def process_dspace(url: str):
+    import urllib.parse
+    import xml.etree.ElementTree as ET
+    import httpx
+    
+    parts = urllib.parse.urlparse(url)
+    host = parts.netloc
+    path = parts.path
+    if '/handle/' not in path:
+        return {"error": "Not a valid DSpace handle URL"}
+        
+    handle = path.split('/handle/')[-1]
+    oai_url = f"https://{host}/dspace-oai/request?verb=GetRecord&metadataPrefix=datacite&identifier=oai:{host}:{handle}"
+    
+    async with httpx.AsyncClient() as client:
+        res = await client.get(oai_url)
+        if res.status_code != 200:
+            return {"error": f"Failed to fetch OAI-PMH record: HTTP {res.status_code}"}
+            
+    try:
+        root = ET.fromstring(res.content)
+    except Exception as e:
+        return {"error": f"Failed to parse XML: {str(e)}"}
+        
+    namespaces = {
+        'oai': 'http://www.openarchives.org/OAI/2.0/',
+        'datacite': 'http://datacite.org/schema/kernel-4'
+    }
+    
+    record = root.find('.//oai:record/oai:metadata/datacite:resource', namespaces)
+    if record is None:
+        return {"error": "Datacite resource not found in OAI-PMH response"}
+        
+    title_node = record.find('.//datacite:title', namespaces)
+    title = title_node.text if title_node is not None else ""
+    
+    pub_node = record.find('.//datacite:publisher', namespaces)
+    publisher = pub_node.text if pub_node is not None else ""
+    
+    year_node = record.find('.//datacite:publicationYear', namespaces)
+    pub_year = year_node.text if year_node is not None else ""
+    
+    creators = []
+    for creator in record.findall('.//datacite:creator/datacite:creatorName', namespaces):
+        if creator.text: creators.append({"@type": "Person", "name": creator.text})
+        
+    keywords = []
+    for subj in record.findall('.//datacite:subject', namespaces):
+        if subj.text: keywords.append(subj.text)
+        
+    desc = []
+    for d in record.findall('.//datacite:description', namespaces):
+        if d.text: desc.append(d.text)
+        
+    croissant = {
+        "@context": {
+            "@language": "en",
+            "@vocab": "https://schema.org/",
+            "citeAs": "cr:citeAs",
+            "column": "cr:column",
+            "conformsTo": "dct:conformsTo",
+            "cr": "http://mlcommons.org/croissant/",
+            "data": {"@id": "cr:data", "@type": "@json"},
+            "dataType": {"@id": "cr:dataType", "@type": "@vocab"},
+            "dct": "http://purl.org/dc/terms/",
+            "extract": "cr:extract",
+            "field": "cr:field",
+            "fileProperty": "cr:fileProperty",
+            "fileObject": "cr:fileObject",
+            "fileSet": "cr:fileSet",
+            "format": "cr:format",
+            "includes": "cr:includes",
+            "isLiveDataset": "cr:isLiveDataset",
+            "jsonPath": "cr:jsonPath",
+            "key": "cr:key",
+            "md5": "cr:md5",
+            "parentField": "cr:parentField",
+            "path": "cr:path",
+            "recordSet": "cr:recordSet",
+            "references": "cr:references",
+            "regex": "cr:regex",
+            "repeated": "cr:repeated",
+            "replace": "cr:replace",
+            "sc": "https://schema.org/",
+            "separator": "cr:separator",
+            "source": "cr:source",
+            "subField": "cr:subField",
+            "transform": "cr:transform"
+        },
+        "@type": "sc:Dataset",
+        "conformsTo": "http://mlcommons.org/croissant/1.0",
+        "name": title,
+        "description": "\n".join(desc),
+        "url": url,
+        "datePublished": pub_year,
+        "publisher": {"@type": "Organization", "name": publisher} if publisher else None,
+        "creator": creators,
+        "keywords": keywords,
+        "distribution": []
+    }
+    
+    # Clean up empty values
+    croissant = {k: v for k, v in croissant.items() if v}
+    
+    return croissant
+
 @app.post("/api/dataverse/process")
 async def process_dataverse(callback: str = None, url: str = None, siteUrl: str = None, datasetPid: str = None):
     import base64

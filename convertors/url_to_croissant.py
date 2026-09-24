@@ -687,6 +687,108 @@ def index_into_elasticsearch(url, json_data, markdown_data, expert="/croissant")
             print(f"✗ Elasticsearch returned {resp.status_code}: {resp.text[:200]}")
     except Exception as e:
         print(f"✗ Failed to index into Elasticsearch: {e}")
+def check_dspace_direct_export(url):
+    import urllib.parse
+    import xml.etree.ElementTree as ET
+    import requests
+    try:
+        parts = urllib.parse.urlparse(url)
+        if '/handle/' not in parts.path:
+            return None
+            
+        host = parts.netloc
+        handle = parts.path.split('/handle/')[-1]
+        oai_url = f"https://{host}/dspace-oai/request?verb=GetRecord&metadataPrefix=datacite&identifier=oai:{host}:{handle}"
+        print(f"DSpace URL detected. Fetching OAI-PMH record from {oai_url}")
+        
+        res = requests.get(oai_url, timeout=15)
+        if res.status_code != 200:
+            return None
+            
+        root = ET.fromstring(res.content)
+        namespaces = {
+            'oai': 'http://www.openarchives.org/OAI/2.0/',
+            'datacite': 'http://datacite.org/schema/kernel-4'
+        }
+        
+        record = root.find('.//oai:record/oai:metadata/datacite:resource', namespaces)
+        if record is None:
+            return None
+            
+        title_node = record.find('.//datacite:title', namespaces)
+        title = title_node.text if title_node is not None else ""
+        
+        pub_node = record.find('.//datacite:publisher', namespaces)
+        publisher = pub_node.text if pub_node is not None else ""
+        
+        year_node = record.find('.//datacite:publicationYear', namespaces)
+        pub_year = year_node.text if year_node is not None else ""
+        
+        creators = []
+        for creator in record.findall('.//datacite:creator/datacite:creatorName', namespaces):
+            if creator.text: creators.append({"@type": "Person", "name": creator.text})
+            
+        keywords = []
+        for subj in record.findall('.//datacite:subject', namespaces):
+            if subj.text: keywords.append(subj.text)
+            
+        desc = []
+        for d in record.findall('.//datacite:description', namespaces):
+            if d.text: desc.append(d.text)
+            
+        croissant = {
+            "@context": {
+                "@language": "en",
+                "@vocab": "https://schema.org/",
+                "citeAs": "cr:citeAs",
+                "column": "cr:column",
+                "conformsTo": "dct:conformsTo",
+                "cr": "http://mlcommons.org/croissant/",
+                "data": {"@id": "cr:data", "@type": "@json"},
+                "dataType": {"@id": "cr:dataType", "@type": "@vocab"},
+                "dct": "http://purl.org/dc/terms/",
+                "extract": "cr:extract",
+                "field": "cr:field",
+                "fileProperty": "cr:fileProperty",
+                "fileObject": "cr:fileObject",
+                "fileSet": "cr:fileSet",
+                "format": "cr:format",
+                "includes": "cr:includes",
+                "isLiveDataset": "cr:isLiveDataset",
+                "jsonPath": "cr:jsonPath",
+                "key": "cr:key",
+                "md5": "cr:md5",
+                "parentField": "cr:parentField",
+                "path": "cr:path",
+                "recordSet": "cr:recordSet",
+                "references": "cr:references",
+                "regex": "cr:regex",
+                "repeated": "cr:repeated",
+                "replace": "cr:replace",
+                "sc": "https://schema.org/",
+                "separator": "cr:separator",
+                "source": "cr:source",
+                "subField": "cr:subField",
+                "transform": "cr:transform"
+            },
+            "@type": "sc:Dataset",
+            "conformsTo": "http://mlcommons.org/croissant/1.0",
+            "name": title,
+            "description": "\n".join(desc),
+            "url": url,
+            "datePublished": pub_year,
+            "publisher": {"@type": "Organization", "name": publisher} if publisher else None,
+            "creator": creators,
+            "keywords": keywords,
+            "distribution": []
+        }
+        
+        croissant = {k: v for k, v in croissant.items() if v}
+        return croissant
+    except Exception as e:
+        print(f"DSpace export failed: {e}")
+        return None
+
 
 def check_dataverse_direct_export(url):
     try:
@@ -817,15 +919,18 @@ def generate_markdown_from_jsonld(data):
 
 def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, user_name=None, user_email=None, index=False, elastic=False, expert="/expert/croissant", upload_gdrive=False, upload_gdrive_folder=None):
     direct_jsonld = check_dataverse_direct_export(url)
+    if not direct_jsonld:
+        direct_jsonld = check_dspace_direct_export(url)
+        
     markdown_data = None
     dataverse_original_jsonld = None
     extracted_meta = {}
 
     if direct_jsonld:
-        print("✓ Successfully retrieved Croissant JSON-LD directly from Dataverse API!")
+        print("✓ Successfully retrieved Croissant JSON-LD directly from API!")
         markdown_data = generate_markdown_from_jsonld(direct_jsonld)
         dataverse_original_jsonld = direct_jsonld
-        print("Generated Markdown representation of the Dataverse JSON-LD.")
+        print("Generated Markdown representation of the JSON-LD.")
 
     page_meta = None
     sibling_pages = []

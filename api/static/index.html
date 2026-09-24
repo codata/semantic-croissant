@@ -1143,9 +1143,22 @@
             }
         });
         
+        window.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            const q = params.get('q');
+            if (q) {
+                promptInput.value = q;
+                sendMessage();
+            }
+        });
+        
         // Simple auth check injected by server
         document.getElementById('auth-status').innerHTML = `{{AUTH_STATUS}}`;
     </script>
     </div>
+    
+    <footer style="position: fixed; bottom: 0; left: 0; right: 0; margin: 0; padding: 10px; text-align: center; font-size: 0.85rem; color: #888; background-color: var(--bg-color); border-top: 1px solid var(--border-color); z-index: 10000; width: 100%; font-family: 'Inter', -apple-system, sans-serif; box-shadow: 0 -2px 5px rgba(0,0,0,0.05);">
+        Ghostwriter 2.0 UI | Semantic Croissant with CDIF 1.1 (v2.3) | Created by <a href="https://codata.org" target="_blank" style="color: var(--text-color); text-decoration: none; font-weight: 500;">CODATA</a>
+    </footer>
 </body>
 </html>
