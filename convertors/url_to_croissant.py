@@ -690,22 +690,26 @@ def index_into_elasticsearch(url, json_data, markdown_data, expert="/croissant")
 
 def check_dataverse_direct_export(url):
     try:
-        headers = {'User-Agent': 'curl/7.68.0'}
+        headers = {'User-Agent': 'SemanticCroissant/1.0'}
         if "doi.org" in url:
             res = requests.head(url, allow_redirects=True, timeout=10, headers=headers)
             target_url = res.url
         else:
             target_url = url
             
-        if "persistentId=doi:" in target_url:
+        if "persistentId=" in target_url:
             parsed = urllib.parse.urlparse(target_url)
             query = urllib.parse.parse_qs(parsed.query)
             persistent_id = query.get("persistentId", [""])[0]
             if persistent_id:
                 base_url = f"{parsed.scheme}://{parsed.netloc}"
+                if persistent_id.startswith("doi:"):
+                    encoded_pid = urllib.parse.quote(persistent_id, safe='/')
+                else:
+                    encoded_pid = urllib.parse.quote(persistent_id, safe='')
                 
                 for exporter in ["croissant", "schema.org"]:
-                    export_url = f"{base_url}/api/datasets/export?exporter={exporter}&persistentId={persistent_id}"
+                    export_url = f"{base_url}/api/datasets/export?exporter={exporter}&persistentId={encoded_pid}"
                     print(f"Dataverse URL detected. Trying direct export from {export_url}")
                     res = requests.get(export_url, timeout=15, headers=headers)
                     
@@ -857,10 +861,47 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
 
     md_filename = f"{safe_name}.md"
     croissant_filename = os.path.basename(f"{safe_name}.jsonld")
-    header = f"# Document: {url}\n\n* **Croissant Metadata**: [{croissant_filename}](./{croissant_filename})\n\n"
+    import requests
+    citation_text = url
+    if dataverse_original_jsonld:
+        try:
+            creators = dataverse_original_jsonld.get('creator', [])
+            if isinstance(creators, dict): creators = [creators]
+            author_str = ", ".join([c.get('name', '') for c in creators if isinstance(c, dict)])
+            
+            year = str(dataverse_original_jsonld.get('datePublished', ''))[:4]
+            title = dataverse_original_jsonld.get('name', '')
+            dataset_url = dataverse_original_jsonld.get('url', url)
+            
+            publisher = dataverse_original_jsonld.get('publisher', {})
+            if isinstance(publisher, dict):
+                pub_name = publisher.get('name', '')
+            else:
+                pub_name = str(publisher)
+                
+            version = dataverse_original_jsonld.get('version', '')
+            version_str = f"V{version}" if str(version).replace('.','').isdigit() else str(version)
+            
+            citation_text = f'{author_str}, {year}, "{title}", {dataset_url}, {pub_name}, {version_str}'
+            
+            # Try to fetch UNF if persistentId is in URL
+            if "persistentId=" in url:
+                pid = url.split("persistentId=")[1].split("&")[0]
+                base_url = url.split("/dataset.xhtml")[0]
+                api_url = f"{base_url}/api/datasets/:persistentId?persistentId={pid}"
+                res = requests.get(api_url, headers={'User-Agent': 'SemanticCroissant/1.0'})
+                if res.status_code == 200:
+                    data = res.json().get('data', {})
+                    unf = data.get('latestVersion', {}).get('UNF', '')
+                    if unf:
+                        citation_text += f", {unf} [fileUNF]"
+        except Exception:
+            pass
+
+    header = f"# Citation: {citation_text}\n\n* **Croissant Metadata**: [{croissant_filename}](./{croissant_filename})\n\n"
     
     # Don't duplicate if already present
-    if not markdown_data.startswith(f"# Document: {url}"):
+    if not markdown_data.startswith(f"# Citation: {citation_text}"):
         markdown_data = header + markdown_data
         
     with open(md_filename, "w", encoding='utf-8') as f:
@@ -1073,70 +1114,76 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
             except Exception as e:
                 print(f"Failed to send chunk {i} to Ollama: {e}")
 
-    print(f"\n--- Processing {url} using {MODEL_NAME} ---")
-    
-    # Truncate to first 5,000 characters to prevent context window overflow which causes hallucinated JSON
-    llm_context_data = markdown_data
-    if len(llm_context_data) > 5000:
-        print(f"Warning: Markdown is too large ({len(llm_context_data)} chars). Truncating to 5,000 chars.")
-        llm_context_data = llm_context_data[:5000]
+    if dataverse_original_jsonld:
+        print(f"\n--- Skipping LLM extraction; using direct Dataverse JSON-LD for {url} ---")
+    else:
+        print(f"\n--- Processing {url} using {MODEL_NAME} ---")
+        
+        # Truncate to first 5,000 characters to prevent context window overflow which causes hallucinated JSON
+        llm_context_data = markdown_data
+        if len(llm_context_data) > 5000:
+            print(f"Warning: Markdown is too large ({len(llm_context_data)} chars). Truncating to 5,000 chars.")
+            llm_context_data = llm_context_data[:5000]
 
-    prompt = f"Create Croissant JSON-LD metadata for a machine learning model or dataset. The source URL is {url}."
-    if lang != 'en':
-        prompt += f" The source documentation is in language code '{lang}'. Please do a precise ONE-to-ONE translation of the relevant metadata to English and output the Croissant JSON-LD entirely in English."
-    prompt += f" Here is the documentation and description extracted from its official page:\n\n{llm_context_data}\n\n"
-    prompt += "Extract relevant information such as the description, authors, license, keywords, tags, or any dataset dependencies into the Croissant metadata if available. Map keywords/tags to the standard schema:keywords property, and extract them EXACTLY as they appear in the text (do not change casing or invent new tags). Ensure 'keywords' is formatted as a JSON array of strings, not a single comma-separated string. IMPORTANT: For any fields or data that do not have a standard mapping in Croissant, include them in the JSON-LD under a custom field called 'unmappedFields' as a list of key-value pairs.\n"
-    prompt += "CRITICAL: You MUST use the exact following JSON-LD structure and include ALL of these top-level fields: '@context', '@type', 'name', 'description', 'url', 'license', 'keywords', 'unmappedFields', 'contentUrl', 'isBasedOn', 'isPartOf', 'version', 'creator'.\n"
-    prompt += 'Example structure:\n{\n  "@context": {\n    "@language": "en",\n    "@vocab": "https://schema.org/",\n    "cr": "http://mlcommons.org/croissant/",\n    "dct": "http://purl.org/dc/terms/",\n    "sc": "https://schema.org/",\n    "conformsTo": "dct:conformsTo",\n    "distribution": {"@id": "cr:distribution"},\n    "bs4ExtractionPattern": {"@id": "sc:processingRequirement", "@type": "@json"},\n    "unf": "https://guides.dataverse.org/en/6.9/developers/unf/unf-v6.html",\n    "odrl": "http://www.w3.org/ns/odrl/2/",\n    "cdif": "https://cdif.org/1.1/",\n    "did": "https://www.w3.org/ns/did/v1"\n  },\n  "@type": "sc:SoftwareApplication",\n  "name": "...",\n  "description": "...",\n  "url": "...",\n  "license": "...",\n  "keywords": [],\n  "unmappedFields": [],\n  "contentUrl": "...",\n  "isBasedOn": [],\n  "isPartOf": [{"@type": "Collection", "name": "/expert/croissant"}],\n  "version": "1.0",\n  "creator": {"@type": "Person", "name": "...", "email": "..."}\n}\n\n'
-    prompt += "CRITICAL: Do NOT invent, hallucinate, or generate generic information. You MUST extract the name, description, and details directly from the provided text above.\n\nOutput ONLY a valid JSON object."
-    
+        prompt = f"Create Croissant JSON-LD metadata for a machine learning model or dataset. The source URL is {url}."
+        if lang != 'en':
+            prompt += f" The source documentation is in language code '{lang}'. Please do a precise ONE-to-ONE translation of the relevant metadata to English and output the Croissant JSON-LD entirely in English."
+        prompt += f" Here is the documentation and description extracted from its official page:\n\n{llm_context_data}\n\n"
+        prompt += "Extract relevant information such as the description, authors, license, keywords, tags, or any dataset dependencies into the Croissant metadata if available. Map keywords/tags to the standard schema:keywords property, and extract them EXACTLY as they appear in the text (do not change casing or invent new tags). Ensure 'keywords' is formatted as a JSON array of strings, not a single comma-separated string. IMPORTANT: For any fields or data that do not have a standard mapping in Croissant, include them in the JSON-LD under a custom field called 'unmappedFields' as a list of key-value pairs.\n"
+        prompt += "CRITICAL: You MUST use the exact following JSON-LD structure and include ALL of these top-level fields: '@context', '@type', 'name', 'description', 'url', 'license', 'keywords', 'unmappedFields', 'contentUrl', 'isBasedOn', 'isPartOf', 'version', 'creator'.\n"
+        prompt += 'Example structure:\n{\n  "@context": {\n    "@language": "en",\n    "@vocab": "https://schema.org/",\n    "cr": "http://mlcommons.org/croissant/",\n    "dct": "http://purl.org/dc/terms/",\n    "sc": "https://schema.org/",\n    "conformsTo": "dct:conformsTo",\n    "distribution": {"@id": "cr:distribution"},\n    "bs4ExtractionPattern": {"@id": "sc:processingRequirement", "@type": "@json"},\n    "unf": "https://guides.dataverse.org/en/6.9/developers/unf/unf-v6.html",\n    "odrl": "http://www.w3.org/ns/odrl/2/",\n    "cdif": "https://cdif.org/1.1/",\n    "did": "https://www.w3.org/ns/did/v1"\n  },\n  "@type": "sc:SoftwareApplication",\n  "name": "...",\n  "description": "...",\n  "url": "...",\n  "license": "...",\n  "keywords": [],\n  "unmappedFields": [],\n  "contentUrl": "...",\n  "isBasedOn": [],\n  "isPartOf": [{"@type": "Collection", "name": "/expert/croissant"}],\n  "version": "1.0",\n  "creator": {"@type": "Person", "name": "...", "email": "..."}\n}\n\n'
+        prompt += "CRITICAL: Do NOT invent, hallucinate, or generate generic information. You MUST extract the name, description, and details directly from the provided text above.\n\nOutput ONLY a valid JSON object."
+        
     start_time = time.time()
     try:
-        MAX_RETRIES = 3
+        MAX_RETRIES = 1 if dataverse_original_jsonld else 3
         for attempt in range(1, MAX_RETRIES + 1):
-            # Increase temperature on retries to avoid repeating the exact same JSON syntax errors
-            current_temperature = 0.1 + ((attempt - 1) * 0.2)
-            # Inject attempt number into prompt to bypass Ollama cache
-            current_prompt = prompt
-            if attempt > 1:
-                current_prompt += f"\n\n[Attempt {attempt} - Previous attempt failed due to invalid JSON. Please ensure valid JSON formatting, avoid truncation, and do not repeat previous errors.]"
-                
-            payload = {
-                "model": MODEL_NAME,
-                "prompt": current_prompt,
-                "stream": False,
-                "options": {
-                    "temperature": current_temperature,
-                    "repeat_penalty": 1.1,
-                    "num_predict": 8192,
-                    "num_ctx": 8192
+            if dataverse_original_jsonld:
+                output = json.dumps(dataverse_original_jsonld)
+            else:
+                # Increase temperature on retries to avoid repeating the exact same JSON syntax errors
+                current_temperature = 0.1 + ((attempt - 1) * 0.2)
+                # Inject attempt number into prompt to bypass Ollama cache
+                current_prompt = prompt
+                if attempt > 1:
+                    current_prompt += f"\n\n[Attempt {attempt} - Previous attempt failed due to invalid JSON. Please ensure valid JSON formatting, avoid truncation, and do not repeat previous errors.]"
+                    
+                payload = {
+                    "model": MODEL_NAME,
+                    "prompt": current_prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": current_temperature,
+                        "repeat_penalty": 1.1,
+                        "num_predict": 8192,
+                        "num_ctx": 8192
+                    }
                 }
-            }
-            
-            response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, headers=OLLAMA_HEADERS, timeout=600)
-            response.raise_for_status()
-            end_time = time.time()
-            
-            data = response.json()
-            print(f"Status: Success (Attempt {attempt})")
-            print(f"Total Request Time: {end_time - start_time:.2f} s")
-            print(f"Prompt Eval Tokens: {data.get('prompt_eval_count')} in {data.get('prompt_eval_duration', 0) / 1e9:.2f} s")
-            print(f"Tokens Generated: {data.get('eval_count')} in {data.get('eval_duration', 0) / 1e9:.2f} s")
-            if data.get('eval_duration', 0) > 0:
-                speed = data.get('eval_count', 0) / (data.get('eval_duration', 0) / 1e9)
-                print(f"Generation Speed: {speed:.2f} tokens/sec")
-            print("-" * 40)
-            
-            output = data.get('response', '')
-            
-            # Strip markdown formatting
-            if output.startswith("```json"):
-                output = output[7:]
-            if output.startswith("```"):
-                output = output[3:]
-            if output.endswith("```"):
-                output = output[:-3]
-            output = output.strip()
+                
+                response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, headers=OLLAMA_HEADERS, timeout=600)
+                response.raise_for_status()
+                end_time = time.time()
+                
+                data = response.json()
+                print(f"Status: Success (Attempt {attempt})")
+                print(f"Total Request Time: {end_time - start_time:.2f} s")
+                print(f"Prompt Eval Tokens: {data.get('prompt_eval_count')} in {data.get('prompt_eval_duration', 0) / 1e9:.2f} s")
+                print(f"Tokens Generated: {data.get('eval_count')} in {data.get('eval_duration', 0) / 1e9:.2f} s")
+                if data.get('eval_duration', 0) > 0:
+                    speed = data.get('eval_count', 0) / (data.get('eval_duration', 0) / 1e9)
+                    print(f"Generation Speed: {speed:.2f} tokens/sec")
+                print("-" * 40)
+                
+                output = data.get('response', '')
+                
+                # Strip markdown formatting
+                if output.startswith("```json"):
+                    output = output[7:]
+                if output.startswith("```"):
+                    output = output[3:]
+                if output.endswith("```"):
+                    output = output[:-3]
+                output = output.strip()
             
             # Validation
             if attempt > 1:
