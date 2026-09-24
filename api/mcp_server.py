@@ -460,6 +460,8 @@ async def read_vault_article(url_or_filename: str) -> list[types.TextContent]:
         path = parsed_url.path.rstrip("/")
         if "/vault/" in path:
             filename = path.split("/")[-1]
+            if filename == "annotations":
+                filename = path.split("/")[-2]
         else:
             safe_name = parsed_url.netloc + path
             safe_name = safe_name.replace("/", "_").replace(".", "_")
@@ -572,6 +574,15 @@ async def verify_document_provenance(filename: str) -> list[types.TextContent]:
     minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
     endpoint = minio_base.replace("http://", "").replace("https://", "")
     
+    import urllib.parse
+    if filename.startswith("http://") or filename.startswith("https://"):
+        parsed_url = urllib.parse.urlparse(filename)
+        path = parsed_url.path.rstrip("/")
+        if "/vault/" in path:
+            filename = path.split("/")[-1]
+            if filename == "annotations":
+                filename = path.split("/")[-2]
+                
     json_filename = filename.replace(".md", ".jsonld") if filename.endswith(".md") else filename
     if not json_filename.endswith(".jsonld"):
         json_filename += ".jsonld"
@@ -624,7 +635,7 @@ async def verify_document_provenance(filename: str) -> list[types.TextContent]:
     except Exception as e:
         return [types.TextContent(type="text", text=f"Error verifying document provenance: {str(e)}")]
 
-async def store_in_vault(content: str, prefix: str = "custom", jsonld_payload: str = None, ai_model_override: str = None, file_ext: str = ".md", filename_override: str = None) -> list[types.TextContent]:
+async def store_in_vault(content: str, prefix: str = "custom", jsonld_payload: str = None, ai_model_override: str = None, file_ext: str = ".md", filename_override: str = None, referenced_ids: list[str] = None) -> list[types.TextContent]:
     import sys, datetime, io, os
     from minio import Minio
     
@@ -806,7 +817,19 @@ async def store_in_vault(content: str, prefix: str = "custom", jsonld_payload: s
                                     payload_dict["isBasedOn"].append(inherited_item)
             except Exception as e:
                 print(f"Warning: Failed to fetch history for prefix session_{session_id}: {e}", file=sys.stderr)
-
+                
+            if referenced_ids:
+                for ref_id in referenced_ids:
+                    # Clean the ID just in case
+                    clean_id = ref_id.replace(".md", "").replace(".jsonld", "").split("/")[-1]
+                    ref_item = {
+                        "@type": "CreativeWork",
+                        "name": f"Referenced Document ({clean_id})",
+                        "url": f"{HOST}/vault/{clean_id}"
+                    }
+                    if not any(isinstance(x, dict) and x.get("url") == ref_item["url"] for x in payload_dict["isBasedOn"]):
+                        payload_dict["isBasedOn"].append(ref_item)
+                        
             ai_model = None
             if ai_model_override:
                 ai_model = ai_model_override
@@ -1307,6 +1330,15 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
     endpoint = minio_base.replace("http://", "").replace("https://", "")
     
     try:
+        import urllib.parse
+        if target_id.startswith("http://") or target_id.startswith("https://"):
+            parsed_url = urllib.parse.urlparse(target_id)
+            path = parsed_url.path.rstrip("/")
+            if "/vault/" in path:
+                target_id = path.split("/")[-1]
+                if target_id == "annotations":
+                    target_id = path.split("/")[-2]
+                    
         client = Minio(
             endpoint,
             access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"),
@@ -2362,7 +2394,8 @@ Here is detailed information about how every tool works:
             content=arguments.get("content"),
             prefix=arguments.get("prefix", "custom"),
             jsonld_payload=arguments.get("jsonld_payload"),
-            ai_model_override=arguments.get("ai_model_override")
+            ai_model_override=arguments.get("ai_model_override"),
+            referenced_ids=arguments.get("referenced_ids", [])
         )
     elif name == "get_croissant_dataset":
         return await get_croissant_dataset(id=arguments.get("id"))
@@ -2741,6 +2774,11 @@ async def list_tools() -> list[types.Tool]:
                     "content": {"type": "string", "description": "The text content to store in the vault."},
                     "prefix": {"type": "string", "description": "OPTIONAL: A short, descriptive snake_case summary of the data/chat. Defaults to 'custom' if missing."},
                     "jsonld_payload": {"type": "object", "description": "REQUIRED Croissant JSON-LD string or JSON object to save alongside the markdown file. CRITICAL: You MUST write out the FULL, COMPLETE JSON-LD payload. Do NOT truncate it. Do NOT use placeholders like '...rest of the variables...'. Output every single variable fully!"},
+                    "referenced_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "OPTIONAL: A list of vault document IDs that this new document references or is based on (e.g. ['id1']). If provided, provenance links will be automatically created."
+                    },
                     "ai_model_override": {"type": "string", "description": "If your client does not expose its identity via MCP clientInfo (i.e. 'CODATA AI Agent'), you MUST provide your AI vendor and model here (e.g. 'Anthropic Claude 3.5 Sonnet', 'LM Studio Llama 3')."}
                 },
                 "required": ["content", "jsonld_payload"]
@@ -3295,6 +3333,23 @@ def main(port: int, transport: str) -> int:
             
         
         async def vault_es_doc_html(request):
+            user_agent = request.headers.get("user-agent", "").lower()
+            accept = request.headers.get("accept", "").lower()
+            is_bot = any(bot in user_agent for bot in ["bot", "spider", "crawl", "claude", "gpt", "anthropic", "curl", "wget", "python"])
+            
+            es_id = request.path_params.get("es_id", "")
+            
+            if is_bot or "application/json" in accept or "application/ld+json" in accept or "text/markdown" in accept or "go-http-client" in user_agent or "node-fetch" in user_agent or "axios" in user_agent:
+                import httpx
+                from starlette.responses import Response
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    if "json" in accept:
+                        resp = await client.get(f"http://localhost:7110/vault/{es_id}.jsonld")
+                        return Response(content=resp.content, status_code=resp.status_code, media_type=resp.headers.get("content-type", "application/json"))
+                    else:
+                        resp = await client.get(f"http://localhost:7070/vault/doc/raw/{es_id}")
+                        return Response(content=resp.content, status_code=resp.status_code, media_type=resp.headers.get("content-type", "text/markdown"))
+                    
             import os
             from starlette.responses import HTMLResponse
             index_path = "/app/static/doc_viewer.html"
@@ -4507,6 +4562,7 @@ def main(port: int, transport: str) -> int:
 
                 Route("/api/collections/{id}", endpoint=api_collections_delete, methods=["DELETE"]),
                 Route("/vault/doc/{es_id}", endpoint=vault_es_doc_html),
+                Route("/vault/doc/{es_id}/annotations", endpoint=vault_es_doc_html),
                 Route("/vault/history", endpoint=vault_get_history, methods=["GET"]),
                 Route("/vault/doc/update/{es_id}", endpoint=vault_es_doc_update, methods=["POST"]),
                 Route("/vault/public/{es_id}", endpoint=vault_make_public, methods=["POST"]),

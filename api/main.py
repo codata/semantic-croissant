@@ -487,7 +487,26 @@ async def view_index():
     return HTMLResponse(content=html_content)
 
 @app.get("/vault/doc/{filename:path}")
-async def view_vault_doc(filename: str):
+async def view_vault_doc(filename: str, request: Request):
+    user_agent = request.headers.get("user-agent", "").lower()
+    accept = request.headers.get("accept", "").lower()
+    is_bot = any(bot in user_agent for bot in ["bot", "spider", "crawl", "claude", "gpt", "anthropic", "curl", "wget", "python"])
+    
+    doc_id = filename
+    if doc_id.endswith("/annotations"):
+        doc_id = doc_id.rsplit("/", 1)[0]
+    
+    if is_bot or "application/json" in accept or "application/ld+json" in accept or "text/markdown" in accept or "go-http-client" in user_agent or "node-fetch" in user_agent or "axios" in user_agent:
+        import httpx
+        from fastapi import Response
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            if "json" in accept:
+                resp = await client.get(f"http://localhost:7110/vault/{doc_id}.jsonld")
+                return Response(content=resp.content, status_code=resp.status_code, media_type=resp.headers.get("content-type", "application/json"))
+            else:
+                resp = await client.get(f"http://localhost:7070/vault/doc/raw/{doc_id}")
+                return Response(content=resp.content, status_code=resp.status_code, media_type=resp.headers.get("content-type", "text/markdown"))
+            
     import os
     file_path = os.path.join(os.path.dirname(__file__), "static/doc_viewer.html")
     if not os.path.exists(file_path):
