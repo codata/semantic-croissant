@@ -1323,7 +1323,7 @@ async def store_in_vault(content: str, prefix: str = "custom", jsonld_payload: s
         return [types.TextContent(type="text", text=f"Error storing in vault: {str(e)}")]
 
 async def update_vault_document(target_id: str, referenced_ids: list[str], new_content: str = None, new_jsonld: str = None, review_status: str = None, summary: str = None, ai_model_override: str = None) -> list[types.TextContent]:
-    import sys, datetime, io, os, json, re, hashlib
+    import sys, datetime, io, os, json, re, hashlib, asyncio
     from minio import Minio
     
     minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
@@ -1349,7 +1349,7 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
         # 1. Fetch original JSON-LD and Markdown
         original_md = ""
         try:
-            resp_md = client.get_object("vault", f"{target_id}.md")
+            resp_md = await asyncio.to_thread(client.get_object, "vault", f"{target_id}.md")
             original_md = resp_md.read().decode("utf-8")
             resp_md.close()
             resp_md.release_conn()
@@ -1358,14 +1358,14 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
             
         original_jsonld = {}
         try:
-            resp_jsonld = client.get_object("vault", f"{target_id}.jsonld")
+            resp_jsonld = await asyncio.to_thread(client.get_object, "vault", f"{target_id}.jsonld")
             original_jsonld = json.loads(resp_jsonld.read().decode("utf-8"))
             resp_jsonld.close()
             resp_jsonld.release_conn()
         except Exception:
             try:
                 # Fallback for Dataverse where the file is named with _croissant.jsonld
-                resp_jsonld = client.get_object("vault", f"{target_id}_croissant.jsonld")
+                resp_jsonld = await asyncio.to_thread(client.get_object, "vault", f"{target_id}_croissant.jsonld")
                 original_jsonld = json.loads(resp_jsonld.read().decode("utf-8"))
                 resp_jsonld.close()
                 resp_jsonld.release_conn()
@@ -1375,7 +1375,7 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
         if not original_jsonld or "@context" not in original_jsonld or "name" not in original_jsonld:
             # Fallback to ES if this is a newly annotated search document or was saved improperly
             import httpx
-            es_url = "http://elasticsearch:9200"
+            es_url = os.environ.get("ELASTICSEARCH_URL", "http://elasticsearch:9200").rstrip("/")
             try:
                 # We need synchronous requests here or use asyncio, but we are inside an async function!
                 async with httpx.AsyncClient() as hc:
@@ -1424,7 +1424,8 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
             
             # Save the new content as a separate file
             new_md_bytes = new_content.encode("utf-8")
-            client.put_object(
+            await asyncio.to_thread(
+                client.put_object,
                 "vault",
                 f"{new_task_id}.md",
                 io.BytesIO(new_md_bytes),
@@ -1456,7 +1457,8 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
                 "isBasedOn": [{"@type": "CreativeWork", "name": f"{target_id}.md", "url": f"{HOST}/vault/doc/{target_id}"}]
             }
             new_jsonld_bytes = json.dumps(new_jsonld_obj, indent=2).encode("utf-8")
-            client.put_object(
+            await asyncio.to_thread(
+                client.put_object,
                 "vault",
                 f"{new_task_id}.jsonld",
                 io.BytesIO(new_jsonld_bytes),
@@ -1491,7 +1493,7 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
             # Try to fetch creator for the referenced object
             ref_creator = [{"@id": "#unknown", "@type": "Person", "name": "unknown"}]
             try:
-                r = client.get_object("vault", f"{ref_id}.jsonld")
+                r = await asyncio.to_thread(client.get_object, "vault", f"{ref_id}.jsonld")
                 rj = json.loads(r.read().decode("utf-8"))
                 r.close()
                 r.release_conn()
@@ -1513,7 +1515,8 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
                 
         # 6. Save new objects
         md_bytes = final_md.encode("utf-8")
-        client.put_object(
+        await asyncio.to_thread(
+            client.put_object,
             "vault",
             f"{new_id}.md",
             io.BytesIO(md_bytes),
@@ -1522,7 +1525,8 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
         )
         
         jsonld_bytes = json.dumps(final_jsonld, indent=2).encode("utf-8")
-        client.put_object(
+        await asyncio.to_thread(
+            client.put_object,
             "vault",
             f"{new_id}.jsonld",
             io.BytesIO(jsonld_bytes),
@@ -4440,6 +4444,62 @@ def main(port: int, transport: str) -> int:
                 file_path = "api/static/dataverse_loading.html"
             return FileResponse(file_path)
         
+        
+        async def process_text(request):
+            import os, tempfile, asyncio, re
+            from starlette.responses import JSONResponse
+            
+            try:
+                body = await request.json()
+                text = body.get("text")
+                if not text or not text.strip():
+                    return JSONResponse({"detail": "Text cannot be empty"}, status_code=400)
+                    
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+                    f.write(text)
+                    temp_path = f.name
+                    
+                script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../convertors/url_to_croissant.py"))
+                if not os.path.exists(script_path):
+                    script_path = "convertors/url_to_croissant.py"
+                    
+                cmd = ["python3", script_path, temp_path, "--is-file", "--elastic"]
+                
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await process.communicate()
+                
+                try:
+                    os.unlink(temp_path)
+                except Exception:
+                    pass
+                    
+                if process.returncode != 0:
+                    return JSONResponse({"detail": f"Conversion failed: {stderr.decode('utf-8')}"}, status_code=500)
+                    
+                output = stdout.decode('utf-8')
+                
+                match = re.search(r"Extracted markdown successfully uploaded to vault: (https?://.*?/vault/[^\s]+)", output)
+                if match:
+                    redirect_url = match.group(1)
+                else:
+                    file_match = re.search(r"Extracted markdown saved to [^/]+/([^/]+)/([a-zA-Z0-9_-]+\.md)", output)
+                    if file_match:
+                        redirect_url = f"/vault/doc/{file_match.group(2)}"
+                    else:
+                        return JSONResponse({"detail": "Could not determine generated filename from output"}, status_code=500)
+                        
+                if redirect_url.startswith("http"):
+                    redirect_url = "/vault/doc/" + redirect_url.split("/vault/")[-1]
+                    
+                return JSONResponse({"status": "success", "redirect_url": redirect_url})
+                
+            except Exception as e:
+                return JSONResponse({"detail": str(e)}, status_code=500)
+
         async def process_dataverse(request):
             import base64
             import requests
@@ -4539,6 +4599,7 @@ def main(port: int, transport: str) -> int:
             routes=[
                 Route("/dataverse", endpoint=view_dataverse),
                 Route("/api/dataverse/process", endpoint=process_dataverse, methods=["POST"]),
+                Route("/api/text/process", endpoint=process_text, methods=["POST"]),
                 Route("/logo.png", endpoint=serve_logo),
                 Route("/", endpoint=index),
                 Route("/sse", endpoint=handle_sse),

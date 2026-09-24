@@ -459,6 +459,68 @@ async def process_dataverse(callback: str = None, url: str = None, siteUrl: str 
         print(f"Error processing dataverse callback: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+from pydantic import BaseModel
+class TextProcessRequest(BaseModel):
+    text: str
+
+@app.post("/api/text/process")
+async def process_text(request: TextProcessRequest):
+    import os
+    import tempfile
+    import asyncio
+    import re
+    from fastapi import HTTPException
+    
+    try:
+        if not request.text or not request.text.strip():
+            raise HTTPException(status_code=400, detail="Text cannot be empty")
+            
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+            f.write(request.text)
+            temp_path = f.name
+            
+        script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../convertors/url_to_croissant.py"))
+        if not os.path.exists(script_path):
+            script_path = "convertors/url_to_croissant.py"
+            
+        cmd = ["python3", script_path, temp_path, "--is-file", "--elastic"]
+        
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        
+        # Cleanup temp file
+        try:
+            os.unlink(temp_path)
+        except Exception:
+            pass
+            
+        if process.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"Conversion failed: {stderr.decode('utf-8')}")
+            
+        output = stdout.decode('utf-8')
+        
+        match = re.search(r"Extracted markdown successfully uploaded to vault: (https?://.*?/vault/[^\s]+)", output)
+        if match:
+            redirect_url = match.group(1)
+        else:
+            file_match = re.search(r"Extracted markdown saved to [^/]+/([^/]+)/([a-zA-Z0-9_-]+\.md)", output)
+            if file_match:
+                redirect_url = f"/vault/doc/{file_match.group(2)}"
+            else:
+                raise HTTPException(status_code=500, detail="Could not determine generated filename from output")
+                
+        if redirect_url.startswith("http"):
+            redirect_url = "/vault/doc/" + redirect_url.split("/vault/")[-1]
+            
+        return {"status": "success", "redirect_url": redirect_url}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.get("/logo.png")
