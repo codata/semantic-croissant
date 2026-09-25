@@ -1938,6 +1938,9 @@ async def ingest_to_qlever(jsonld_payload: str = None, file_path: str = None, re
                 payload = f.read()
         elif jsonld_payload:
             payload = jsonld_payload
+            if isinstance(payload, dict):
+                import json
+                payload = json.dumps(payload)
         else:
             return [types.TextContent(type="text", text="Error: Must provide either jsonld_payload or file_path")]
             
@@ -2759,7 +2762,7 @@ async def list_tools() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "jsonld_payload": {"type": "string", "description": "Raw JSON-LD string payload."},
+                    "jsonld_payload": {"type": ["string", "object"], "description": "Raw JSON-LD string payload or object."},
                     "file_path": {"type": "string", "description": "Path to the JSON-LD file on the server (alternative to jsonld_payload)."},
                     "rebuild": {"type": "boolean", "description": "Trigger full offline QLever index rebuild."}
                 }
@@ -2784,7 +2787,7 @@ async def list_tools() -> list[types.Tool]:
                 "properties": {
                     "content": {"type": "string", "description": "The text content to store in the vault."},
                     "prefix": {"type": "string", "description": "OPTIONAL: A short, descriptive snake_case summary of the data/chat. Defaults to 'custom' if missing."},
-                    "jsonld_payload": {"type": "object", "description": "REQUIRED Croissant JSON-LD string or JSON object to save alongside the markdown file. CRITICAL: You MUST write out the FULL, COMPLETE JSON-LD payload. Do NOT truncate it. Do NOT use placeholders like '...rest of the variables...'. Output every single variable fully!"},
+                    "jsonld_payload": {"type": ["object", "string"], "description": "REQUIRED Croissant JSON-LD string or JSON object to save alongside the markdown file. CRITICAL: You MUST write out the FULL, COMPLETE JSON-LD payload. Do NOT truncate it. Do NOT use placeholders like '...rest of the variables...'. Output every single variable fully!"},
                     "referenced_ids": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -4594,6 +4597,100 @@ def main(port: int, transport: str) -> int:
             except Exception as e:
                 print(f"Error processing dataverse callback: {e}")
                 return JSONResponse({"detail": str(e)}, status_code=500)
+
+        async def view_delpher(request):
+            import os
+            from starlette.responses import FileResponse
+            file_path = os.path.join(os.path.dirname(__file__), "static/delpher_loading.html")
+            if not os.path.exists(file_path):
+                file_path = "api/static/delpher_loading.html"
+            return FileResponse(file_path)
+
+        async def process_delpher(request):
+            import asyncio
+            import re
+            import urllib.parse
+            import requests
+            import xml.etree.ElementTree as ET
+            import tempfile
+            import os
+            from starlette.responses import JSONResponse
+            
+            direct_url = request.query_params.get("url")
+            
+            if not direct_url:
+                return JSONResponse({"detail": "Missing url parameter"}, status_code=400)
+            
+            try:
+                parsed_url = urllib.parse.urlparse(direct_url)
+                query_params = urllib.parse.parse_qs(parsed_url.query)
+                identifier = query_params.get("identifier", [None])[0]
+                
+                if not identifier:
+                    return JSONResponse({"detail": "Could not extract identifier from URL"}, status_code=400)
+                
+                ocr_url = f"https://www.delpher.nl/nl/pres/view/pageocr?identifier={identifier}&coll=ddd&operation=download"
+                
+                response = requests.get(ocr_url, timeout=30)
+                response.raise_for_status()
+                
+                text_content = response.text.strip()
+                
+                if not text_content:
+                    return JSONResponse({"detail": "Extracted text is empty"}, status_code=400)
+                
+                # Append original URL context for LLM
+                text_content = f"Source URL: {direct_url}\n\n" + text_content
+                
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+                    f.write(text_content)
+                    temp_path = f.name
+                    
+                script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../convertors/url_to_croissant.py"))
+                if not os.path.exists(script_path):
+                    script_path = "convertors/url_to_croissant.py"
+                    
+                cmd = ["python3", script_path, temp_path, "--is-file", "--elastic"]
+                
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await process.communicate()
+                
+                try:
+                    os.unlink(temp_path)
+                except Exception:
+                    pass
+                    
+                if process.returncode != 0:
+                    return JSONResponse({"detail": f"Conversion failed: {stderr.decode('utf-8')}"}, status_code=500)
+                    
+                output = stdout.decode('utf-8')
+                
+                match = re.search(r"Extracted markdown successfully uploaded to vault: (https?://.*?/vault/[^\s]+)", output)
+                translated_match = re.search(r"Translated markdown successfully uploaded to vault: (https?://.*?/vault/[^\s]+)", output)
+                
+                if translated_match:
+                    redirect_url = translated_match.group(1)
+                elif match:
+                    redirect_url = match.group(1)
+                else:
+                    file_match = re.search(r"Extracted markdown saved to [^/]+/([^/]+)/([a-zA-Z0-9_-]+\.md)", output)
+                    if file_match:
+                        redirect_url = f"/vault/doc/{file_match.group(2)}"
+                    else:
+                        return JSONResponse({"detail": "Could not determine generated filename from output"}, status_code=500)
+                        
+                if redirect_url.startswith("http"):
+                    redirect_url = "/vault/doc/" + redirect_url.split("/vault/")[-1]
+                    
+                return JSONResponse({"status": "success", "redirect_url": redirect_url})
+                
+            except Exception as e:
+                print(f"Error processing delpher url: {e}")
+                return JSONResponse({"detail": str(e)}, status_code=500)
         
     if transport == "sse":
         starlette_app = Starlette(
@@ -4606,6 +4703,8 @@ def main(port: int, transport: str) -> int:
             routes=[
                 Route("/dataverse", endpoint=view_dataverse),
                 Route("/api/dataverse/process", endpoint=process_dataverse, methods=["POST"]),
+                Route("/delpher", endpoint=view_delpher),
+                Route("/api/delpher/process", endpoint=process_delpher, methods=["POST"]),
                 Route("/api/text/process", endpoint=process_text, methods=["POST"]),
                 Route("/logo.png", endpoint=serve_logo),
                 Route("/", endpoint=index),
