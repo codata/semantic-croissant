@@ -251,6 +251,29 @@ def fetch_url_markdown(url, traverse=False):
             if res:
                 return res
                 
+    if "delpher.nl" in url and "identifier=" in url:
+        import urllib.parse
+        import requests
+        parsed_url = urllib.parse.urlparse(url)
+        query_params = urllib.parse.parse_qs(parsed_url.query)
+        identifier = query_params.get("identifier", [None])[0]
+        if identifier:
+            ocr_url = f"https://www.delpher.nl/nl/pres/view/pageocr?identifier={identifier}&coll=ddd&operation=download"
+            print(f"Detected Delpher article. Fetching OCR text...")
+            try:
+                response = requests.get(ocr_url, timeout=30)
+                if response.status_code == 200:
+                    text = response.text.strip()
+                    meta = {
+                        "name": f"Delpher Article {identifier}",
+                        "contentUrl": url,
+                    }
+                    if traverse:
+                        return text, meta, []
+                    return text, meta
+            except Exception as e:
+                print(f"Failed to fetch Delpher text: {e}")
+
     if "youtube.com" in url or "youtu.be" in url:
         yt_text, yt_meta = fetch_youtube_transcript(url)
         if traverse:
@@ -1443,21 +1466,22 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                     }]
                 }
                 
-                # Use full Croissant context
-                existing_ctx = json_data.pop("@context", None)
-                if not existing_ctx or existing_ctx == "https://schema.org":
-                    ordered_data["@context"] = {
-                        "@vocab": "https://schema.org/",
-                        "cr": "http://mlcommons.org/croissant/",
-                        "odrl": "http://www.w3.org/ns/odrl/2/",
-                        "dc": "http://purl.org/dc/terms/"
-                    }
-                else:
-                    if isinstance(existing_ctx, dict):
-                        existing_ctx["odrl"] = "http://www.w3.org/ns/odrl/2/"
-                        existing_ctx["dc"] = "http://purl.org/dc/terms/"
-                    ordered_data["@context"] = existing_ctx
-                    
+                # Force a standard robust Croissant context instead of trusting the LLM
+                json_data.pop("@context", None)
+                ordered_data["@context"] = {
+                    "@language": "en",
+                    "@vocab": "https://schema.org/",
+                    "cr": "http://mlcommons.org/croissant/",
+                    "odrl": "http://www.w3.org/ns/odrl/2/",
+                    "dc": "http://purl.org/dc/terms/",
+                    "dct": "http://purl.org/dc/terms/",
+                    "sc": "https://schema.org/",
+                    "conformsTo": "dct:conformsTo",
+                    "distribution": {"@id": "cr:distribution"},
+                    "unf": "https://guides.dataverse.org/en/6.9/developers/unf/unf-v6.html",
+                    "cdif": "https://cdif.org/1.1/",
+                    "did": "https://www.w3.org/ns/did/v1"
+                }
                 ordered_data["@type"] = json_data.pop("@type", "Dataset")
                 ordered_data.update(json_data)
                 json_data = ordered_data
