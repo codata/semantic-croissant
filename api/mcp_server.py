@@ -819,6 +819,10 @@ async def store_in_vault(content: str, prefix: str = "custom", jsonld_payload: s
                 print(f"Warning: Failed to fetch history for prefix session_{session_id}: {e}", file=sys.stderr)
                 
             if referenced_ids:
+                if "isBasedOn" not in payload_dict:
+                    payload_dict["isBasedOn"] = []
+                elif not isinstance(payload_dict["isBasedOn"], list):
+                    payload_dict["isBasedOn"] = [payload_dict["isBasedOn"]]
                 for ref_id in referenced_ids:
                     # Clean the ID just in case
                     clean_id = ref_id.replace(".md", "").replace(".jsonld", "").split("/")[-1]
