@@ -322,14 +322,15 @@ async def elasticsearch_fulltext_search(q: str, limit: int = 10, format: str = "
             return [types.TextContent(type="text", text=json.dumps(results, indent=2))]
             
         md = ["# Elasticsearch Search Results\n"]
+        HOST = os.environ.get("HOST", "http://localhost:8000")
         for r in results:
             name = r.get("name") or r.get("schema:name") or r.get("title") or r.get("dcterms:title") or "Unknown Dataset"
             desc = r.get("description") or r.get("schema:description") or "No description provided."
-            url = r.get("contentUrl") or r.get("url") or r.get("schema:url") or r.get("@id") or "No URL"
+            vault_url = f"{HOST}/vault/doc/{r.get('_es_id')}"
             keywords = ", ".join(r.get("keywords", [])) if isinstance(r.get("keywords"), list) else r.get("keywords", "None")
             
             md.append(f"## {name}")
-            md.append(f"**URL:** {url}")
+            md.append(f"**URL:** {vault_url}")
             md.append(f"**Keywords:** {keywords}")
             md.append(f"**Description:** {desc}\n")
             
@@ -339,57 +340,115 @@ async def elasticsearch_fulltext_search(q: str, limit: int = 10, format: str = "
         return [types.TextContent(type="text", text=f"Failed to query Elasticsearch: {str(e)}")]
 
 async def build_collection_from_expert(collection_name: str, expert_index: str, query: str) -> list[types.TextContent]:
+    import os, uuid, datetime, json, httpx, io
     es_url = os.environ.get("ELASTICSEARCH_URL", "http://elasticsearch:9200").rstrip("/")
-    import uuid, datetime, json, httpx, io
     from minio import Minio
     
     try:
         # Step 1: Query the expert
-        payload = {
-            "size": 25,
-            "query": {
-                "query_string": {
-                    "query": f"*{query}* OR {query}",
-                    "fields": ["_full_text", "_markdown_text", "name", "description", "schema:name", "schema:description", "title", "dcterms:title", "dsDescription.dsDescriptionValue", "citation:dsDescriptionValue", "*"]
+        if expert_index.lower() != "delpher":
+            payload = {
+                "size": 25,
+                "query": {
+                    "query_string": {
+                        "query": f"*{query}* OR {query}",
+                        "fields": ["_full_text", "_markdown_text", "name", "description", "schema:name", "schema:description", "title", "dcterms:title", "dsDescription.dsDescriptionValue", "citation:dsDescriptionValue", "*"]
+                    }
                 }
             }
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                docs_resp = await client.post(f"{es_url}/{expert_index}/_search", json=payload)
+                if docs_resp.status_code != 200:
+                    return [types.TextContent(type="text", text=f"Failed to query expert '{expert_index}': {docs_resp.text}")]
+                    
+                hits = docs_resp.json().get("hits", {}).get("hits", [])
+                doc_ids = [h.get("_id") for h in hits if h.get("_id")]
+                
+                if not doc_ids:
+                    return [types.TextContent(type="text", text=f"Expert '{expert_index}' returned no documents for query '{query}'. Collection not created.")]
+                    
+        elif expert_index.lower() == "delpher":
+            import urllib.parse
+            import re
+            import asyncio
+            q_enc = urllib.parse.quote(query)
+            url = f"https://www.delpher.nl/nl/kranten/results?query={q_enc}&coll=ddd"
+            
+            import sys, os
+            sys.path.append(os.path.join(os.path.dirname(__file__), '../convertors'))
+            from url_to_croissant import fetch_with_playwright
+            
+            html = fetch_with_playwright(url)
+            if not html:
+                return [types.TextContent(type="text", text=f"Failed to fetch Delpher HTML for query '{query}'")]
+                
+            identifiers = []
+            for a in html.split('href='):
+                if 'identifier=' in a and '/view?' in a:
+                    ident = a.split('identifier=')[1].split('&')[0].split('"')[0].split("'")[0]
+                    if ident not in identifiers:
+                        identifiers.append(ident)
+                        
+            if not identifiers:
+                return [types.TextContent(type="text", text=f"Expert 'delpher' returned no documents for query '{query}'. Collection not created.")]
+                
+            doc_ids = []
+            script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../convertors/url_to_croissant.py"))
+            if not os.path.exists(script_path):
+                script_path = "convertors/url_to_croissant.py"
+                
+            # Limit to top 5 results so it doesn't take forever
+            for ident in identifiers[:5]:
+                art_url = f"https://www.delpher.nl/nl/kranten/view?identifier={ident}&coll=ddd"
+                cmd = ["python3", script_path, art_url, "--elastic"]
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await process.communicate()
+                output = stdout.decode('utf-8')
+                
+                match = re.search(r"Extracted markdown successfully uploaded to vault: (https?://.*?/vault/doc/([^\s]+))", output)
+                if match:
+                    doc_ids.append(match.group(2))
+                else:
+                    file_match = re.search(r"Extracted markdown saved to [^/]+/([^/]+)/([a-zA-Z0-9_-]+)\.md", output)
+                    if file_match:
+                        doc_ids.append(file_match.group(2))
+                        
+            if not doc_ids:
+                return [types.TextContent(type="text", text=f"Failed to extract and vault any Delpher documents. Collection not created.")]
+                
+        else:
+            return [types.TextContent(type="text", text=f"Expert '{expert_index}' is not supported for automatic collection building.")]
+            
+        # Step 2: Create collection
+        cid = str(uuid.uuid4())
+        col_data = {
+            "id": cid,
+            "name": collection_name,
+            "description": f"Automatically generated collection from expert '{expert_index}' for query '{query}'.",
+            "created_at": datetime.datetime.utcnow().isoformat() + "Z",
+            "items": doc_ids
         }
         
+        # Save to MinIO
+        minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
+        endpoint = minio_base.replace("http://", "").replace("https://", "")
+        m_client = Minio(endpoint, access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"), secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"), secure=False)
+        
+        content_bytes = json.dumps(col_data).encode("utf-8")
+        m_client.put_object("collections", f"{cid}.json", io.BytesIO(content_bytes), len(content_bytes), content_type="application/json")
+        
+        # Save to ES
         async with httpx.AsyncClient(timeout=30.0) as client:
-            docs_resp = await client.post(f"{es_url}/{expert_index}/_search", json=payload)
-            if docs_resp.status_code != 200:
-                return [types.TextContent(type="text", text=f"Failed to query expert '{expert_index}': {docs_resp.text}")]
-                
-            hits = docs_resp.json().get("hits", {}).get("hits", [])
-            doc_ids = [h.get("_id") for h in hits if h.get("_id")]
-            
-            if not doc_ids:
-                return [types.TextContent(type="text", text=f"Expert '{expert_index}' returned no documents for query '{query}'. Collection not created.")]
-                
-            # Step 2: Create collection
-            cid = str(uuid.uuid4())
-            col_data = {
-                "id": cid,
-                "name": collection_name,
-                "description": f"Automatically generated collection from expert '{expert_index}' for query '{query}'.",
-                "created_at": datetime.datetime.utcnow().isoformat() + "Z",
-                "items": doc_ids
-            }
-            
-            # Save to MinIO
-            minio_base = os.environ.get("MINIO_URL", "http://minio:9000")
-            endpoint = minio_base.replace("http://", "").replace("https://", "")
-            m_client = Minio(endpoint, access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"), secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"), secure=False)
-            
-            content_bytes = json.dumps(col_data).encode("utf-8")
-            m_client.put_object("collections", f"{cid}.json", io.BytesIO(content_bytes), len(content_bytes), content_type="application/json")
-            
-            # Save to ES
             await client.put(f"{es_url}/collections/_doc/{cid}", json=col_data)
-            
-            HOST = os.environ.get("HOST", "https://ai.codata.org")
-            return [types.TextContent(type="text", text=f"Success! Created collection '{collection_name}' (ID: {cid}) and filled it with {len(doc_ids)} documents from {expert_index}.\n\nYou can view the collection here: {HOST}/collections/{cid}")]
-            
+        
+        HOST = os.environ.get("HOST", "https://ai.codata.org")
+        return [types.TextContent(type="text", text=f"Success! Created collection '{collection_name}' (ID: {cid}) and filled it with {len(doc_ids)} documents from {expert_index}.\n\nYou can view the collection here: {HOST}/collections/{cid}")]
+        
     except Exception as e:
         return [types.TextContent(type="text", text=f"Error building collection: {str(e)}")]
 
@@ -2289,6 +2348,12 @@ SYSTEM INSTRUCTION FOR LLM - Navigation Guide:
 9. CRITICAL: If you extract variables from datasets, you MUST include ALL extracted variables formatted clearly as a Markdown table or list in your Final Answer. Do NOT tell the user to check the tool outputs; output the actual variables in your markdown response!
 
 10. Do NOT use the 'save_to_vault' tool manually unless specifically requested. The system will automatically save your final results to the vault.
+
+11. If the user asks to create a collection from an expert or source (e.g. "Create collection Tesla by filling papers from Delpher on Nikola Tesla" or "Create Malawi datasets collection and ask Dataverse expert to fill it"), you MUST use the 'build_collection_from_expert' tool, providing the collection_name, expert_index (e.g., 'delpher', 'dataverse'), and query. Do not use url_to_croissant for this.
+
+12. If the user asks to "Search across all collections: <query>", use the 'elasticsearch_fulltext_search' tool to query elastic and summarize the relevant metadata based on the query.
+
+13. If the user asks to "Answer this question based on the datasets in collection <ID>: <query>", use the 'get_collection_documents' tool with the given collection ID to get the metadata of the datasets in that collection. Then, answer the user's question using that retrieved information.
 """
     return [types.TextContent(type="text", text=text)]
 
@@ -2317,6 +2382,13 @@ Here is detailed information about how every tool works:
 - extract_keyfigures: Extract ALL numbers, key figures, and numerical data points from a text file or vault document and return them as a CSV.
 - finalize_keyfigures: After generating the CSV from extract_keyfigures, call this tool to save the CSV and the corresponding Croissant JSON-LD to the vault.
 - google-drive: Perform operations on Google Drive (search, read, upload).
+- build_collection_from_expert: A macro tool that queries an expert index for a specific topic, automatically creates a new Collection, and fills it with the returned documents.
+
+11. If the user asks to create a collection from an expert or source (e.g. "Create collection Tesla by filling papers from Delpher on Nikola Tesla" or "Create Malawi datasets collection and ask Dataverse expert to fill it"), you MUST use the 'build_collection_from_expert' tool, providing the collection_name, expert_index (e.g., 'delpher', 'dataverse'), and query. Do not use url_to_croissant for this.
+
+12. If the user asks to "Search across all collections: <query>", use the 'elasticsearch_fulltext_search' tool to query elastic and summarize the relevant metadata based on the query.
+
+13. If the user asks to "Answer this question based on the datasets in collection <ID>: <query>", use the 'get_collection_documents' tool with the given collection ID to get the metadata of the datasets in that collection. Then, answer the user's question using that retrieved information.
 """
         return [types.TextContent(type="text", text=guidance)]
     elif name == "search_web":
@@ -4605,6 +4677,93 @@ def main(port: int, transport: str) -> int:
             if not os.path.exists(file_path):
                 file_path = "api/static/delpher_loading.html"
             return FileResponse(file_path)
+            
+        async def view_collections_index(request):
+            import os
+            from starlette.responses import HTMLResponse
+            file_path = os.path.join(os.path.dirname(__file__), "static", "collections_index.html")
+            if not os.path.exists(file_path):
+                file_path = "api/static/collections_index.html"
+                
+            if os.path.exists(file_path):
+                with open(file_path, "r", encoding="utf-8") as f:
+                    html_content = f.read()
+                    
+                auth_status = '<span style="color: #4CAF50;">Authenticated via /app/.odrl/authorize</span>' if get_odrl_token() else '<span style="color: #F44336;">Not Authenticated</span>'
+                html_content = html_content.replace('{{AUTH_STATUS}}', auth_status)
+                
+                logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
+                logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; text-decoration:none; padding: 10px;"><img src="{logo_url}" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Logo" /></a>' if logo_url else ""
+                html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
+                
+                return HTMLResponse(html_content)
+            else:
+                return HTMLResponse("<h1>Error: Missing static/collections_index.html</h1>", status_code=404)
+
+        async def api_collections_ask(request):
+            import httpx
+            from starlette.responses import JSONResponse
+            collection_id = request.path_params["id"]
+            data = await request.json()
+            query = data.get("query", "")
+            
+            docs_content = await get_collection_documents(collection_id, limit=50)
+            context = docs_content[0].text
+            
+            system_prompt = f"You are an AI assistant. Use the following context about datasets in a collection to answer the user's question:\n\n{context}\n\nIMPORTANT: When listing or referencing datasets, you MUST format them as Markdown links using their exact Vault URLs as provided in the context."
+            
+            ollama_url = os.environ.get("OLLAMA_HOST", "http://ollama:11434")
+            model = os.environ.get("MODEL", "gemma4:31b-cloud")
+            
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                resp = await client.post(f"{ollama_url}/api/chat", json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": query}
+                    ],
+                    "stream": False
+                })
+                
+                resp_json = resp.json()
+                if "message" in resp_json and "content" in resp_json["message"]:
+                    answer = resp_json["message"]["content"]
+                else:
+                    answer = f"Error generating response. Status: {resp.status_code}, Response: {resp.text}"
+                
+                return JSONResponse({"answer": answer})
+
+        async def api_collections_index_ask(request):
+            import httpx
+            from starlette.responses import JSONResponse
+            data = await request.json()
+            query = data.get("query", "")
+            
+            docs_content = await elasticsearch_fulltext_search(query, limit=20, format="markdown")
+            context = docs_content[0].text
+            
+            system_prompt = f"You are an AI assistant. Use the following context about datasets across all collections to answer the user's question:\n\n{context}\n\nIMPORTANT: When listing or referencing datasets, you MUST format them as Markdown links using their exact URLs as provided in the context."
+            
+            ollama_url = os.environ.get("OLLAMA_HOST", "http://ollama:11434")
+            model = os.environ.get("MODEL", "gemma4:31b-cloud")
+            
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                resp = await client.post(f"{ollama_url}/api/chat", json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": query}
+                    ],
+                    "stream": False
+                })
+                
+                resp_json = resp.json()
+                if "message" in resp_json and "content" in resp_json["message"]:
+                    answer = resp_json["message"]["content"]
+                else:
+                    answer = f"Error generating response. Status: {resp.status_code}, Response: {resp.text}"
+                
+                return JSONResponse({"answer": answer})
 
         async def process_delpher(request):
             import asyncio
@@ -4705,6 +4864,7 @@ def main(port: int, transport: str) -> int:
                 Route("/api/dataverse/process", endpoint=process_dataverse, methods=["POST"]),
                 Route("/delpher", endpoint=view_delpher),
                 Route("/api/delpher/process", endpoint=process_delpher, methods=["POST"]),
+                Route("/collections_index", endpoint=view_collections_index),
                 Route("/api/text/process", endpoint=process_text, methods=["POST"]),
                 Route("/logo.png", endpoint=serve_logo),
                 Route("/", endpoint=index),
@@ -4722,6 +4882,8 @@ def main(port: int, transport: str) -> int:
 
                 Route("/api/collections/{id}", endpoint=api_collections_get_single, methods=["GET"]),
                 Route("/api/collections/{id}/resolved", endpoint=api_collections_get_resolved, methods=["GET"]),
+                Route("/api/collections/{id}/ask", endpoint=api_collections_ask, methods=["POST"]),
+                Route("/api/collections_index/ask", endpoint=api_collections_index_ask, methods=["POST"]),
                 Route("/collections/{es_id}", endpoint=collection_es_doc_html),
                 Route("/api/collections/{id}", endpoint=api_collections_put, methods=["PUT"]),
                 Route("/api/collections/{id}/add", endpoint=api_collections_add_item, methods=["POST"]),

@@ -201,7 +201,6 @@ def extract_page_meta(soup, url):
     return meta
 
 def fetch_github_repo(url, traverse=False):
-    import urllib.parse
     parsed = urllib.parse.urlparse(url)
     path_parts = parsed.path.strip('/').split('/')
     if len(path_parts) >= 2:
@@ -252,8 +251,6 @@ def fetch_url_markdown(url, traverse=False):
                 return res
                 
     if "delpher.nl" in url and "identifier=" in url:
-        import urllib.parse
-        import requests
         parsed_url = urllib.parse.urlparse(url)
         query_params = urllib.parse.parse_qs(parsed_url.query)
         identifier = query_params.get("identifier", [None])[0]
@@ -343,8 +340,9 @@ def fetch_url_markdown(url, traverse=False):
                 html_text = content_bytes.decode('latin-1')
         else:
             html_text = response.text
-            if ("JavaScript is disabled" in html_text and "verify that you're not a robot" in html_text) or response.status_code in (202, 403):
-                print("Detected bot protection challenge in response. Triggering Playwright fallback...")
+            is_delpher_search = "delpher.nl" in url and "results" in url
+            if is_delpher_search or ("JavaScript is disabled" in html_text and "verify that you're not a robot" in html_text) or response.status_code in (202, 403):
+                print(f"Triggering Playwright fallback (is_delpher_search={is_delpher_search})...")
                 pw_content = fetch_with_playwright(url)
                 if pw_content:
                     html_text = pw_content
@@ -709,9 +707,7 @@ def index_into_elasticsearch(url, json_data, markdown_data, expert="/croissant")
     except Exception as e:
         print(f"✗ Failed to index into Elasticsearch: {e}")
 def check_dspace_direct_export(url):
-    import urllib.parse
     import xml.etree.ElementTree as ET
-    import requests
     try:
         parts = urllib.parse.urlparse(url)
         if '/handle/' not in parts.path:
@@ -1483,9 +1479,9 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                     "did": "https://www.w3.org/ns/did/v1"
                 }
                 ordered_data["@type"] = json_data.pop("@type", "Dataset")
+                json_data.pop("@context", None)
                 ordered_data.update(json_data)
                 json_data = ordered_data
-                
                 # Write to temporary file for rdflib
                 if user_name or user_email:
                     if "creator" in json_data:

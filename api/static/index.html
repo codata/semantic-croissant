@@ -514,6 +514,7 @@
                     <div style="display: flex; gap: 10px;">
                         ${parentId ? `<button id="btn-back-col" data-parent="${allCollections.find(c=>c.id===parentId)?.parent_id || ''}" style="padding: 6px 12px; background: var(--button-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;">&larr; Back</button>` : ''}
                         <button id="btn-add-collection" style="padding: 6px 12px; background: var(--accent-color); color: white; border: none; border-radius: 4px; cursor: pointer;">+ Add New ${parentId ? 'Subcollection' : 'Collection'}</button>
+                        <button onclick="window.open('/collections_index', '_blank')" style="padding: 6px 12px; background: var(--button-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;">Open Collections</button>
                     </div>
                 </div>
                 <div id="collection-form-container" style="display: none; margin-bottom: 20px; padding: 15px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--header-bg);">
@@ -536,30 +537,44 @@
                         <button id="btn-cancel-collection" style="padding:6px 12px; background: var(--button-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;">Cancel</button>
                     </div>
                 </div>
-                <div id="collections-list" style="display: flex; flex-direction: column; gap: 15px;">
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; background: var(--header-bg); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); flex-wrap: wrap; gap: 10px;">
+                    <div id="alpha-filter-container" style="display: flex; gap: 4px; flex-wrap: wrap; font-size: 0.9rem;">
+                        <a href="#" class="alpha-link" data-letter="ALL" style="font-weight: bold; text-decoration: none; color: var(--accent-color); padding: 2px 5px; border-radius: 3px; background: var(--bg-color);">All</a>
+                        ${"ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map(c => `<a href="#" class="alpha-link" data-letter="${c}" style="text-decoration: none; color: var(--accent-color); padding: 2px 5px; border-radius: 3px;">${c}</a>`).join('')}
+                    </div>
+                    <div>
+                        <input type="text" id="col-text-filter" placeholder="Quick filter..." style="padding: 6px 10px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-color); color: var(--text-color); font-size: 0.9rem;">
+                    </div>
+                </div>
+
+                <div id="collections-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; font-family: Arial, sans-serif;">
             `;
             
             if (collections.length === 0) {
                 html += '<p>No collections found here. Create one above!</p>';
             } else {
                 for (const col of collections) {
+                    const subcols = allCollections.filter(c => c.parent_id === col.id);
+                    const subcolsHtml = subcols.map(sub => `<a href="#" class="btn-col-link" data-id="${sub.id}" style="font-size: 0.85rem; color: #444; text-decoration: none;">${sub.name}</a>`).join(', ');
+                    
                     html += `
-                        <div class="collection-card" style="padding: 15px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--header-bg);">
-                            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <div class="collection-card" style="padding: 10px; display: flex; flex-direction: column; background: var(--header-bg); border: 1px solid var(--border-color); border-radius: 6px;">
+                            <div style="display: flex; justify-content: space-between; align-items: baseline;">
                                 <div>
-                                    <a href="#" class="btn-col-link" data-id="${col.id}" style="text-decoration:none; color:inherit;">
-                                        <h4 style="margin: 0 0 8px 0; font-size: 1.1rem; color:var(--accent-color);">${col.name}</h4>
-                                    </a>
-                                    ${col.description ? `<p style="margin: 0 0 8px 0; font-size: 0.9rem; opacity: 0.8;">${col.description}</p>` : ''}
-                                    ${col.link ? `<a href="${col.link}" target="_blank" style="font-size: 0.85rem; color: var(--accent-color);">Linked Collection &rarr;</a>` : ''}
+                                    <a href="#" class="btn-col-link title-link" data-id="${col.id}" style="text-decoration: underline; font-weight: bold; font-size: 1.1rem; color: #0000cc; font-family: serif;">${col.name}</a>
                                 </div>
-                                <div style="display: flex; gap: 8px;">
-                                    <button class="btn-col-link" data-id="${col.id}" style="padding: 4px 8px; font-size: 0.8rem; background: var(--button-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;">Open</button>
-                                    <button class="btn-edit-col" data-id="${col.id}" data-name="${col.name.replace(/"/g, '&quot;')}" data-desc="${(col.description||'').replace(/"/g, '&quot;')}" data-link="${(col.link||'').replace(/"/g, '&quot;')}" style="padding: 4px 8px; font-size: 0.8rem; background: var(--button-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;">Edit</button>
-                                    <button class="btn-add-subcol" data-id="${col.id}" style="padding: 4px 8px; font-size: 0.8rem; background: var(--button-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;">Add</button>
-                                    <button class="btn-del-col" data-id="${col.id}" style="padding: 4px 8px; font-size: 0.8rem; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">Delete</button>
-                                    <button class="btn-share-col" data-id="${col.id}" style="padding: 4px 8px; font-size: 0.8rem; background: var(--button-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;">Share</button>
+                                <div style="display: flex; gap: 4px; opacity: 0.3;" class="col-actions" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.3">
+                                    <button class="btn-col-link" data-id="${col.id}" style="font-size: 0.75rem; cursor: pointer; padding: 2px 4px; border: 1px solid #ccc; background: #eee; border-radius: 3px;" title="Open Viewer">👀</button>
+                                    <button class="btn-edit-col" data-id="${col.id}" data-name="${col.name.replace(/"/g, '&quot;')}" data-desc="${(col.description||'').replace(/"/g, '&quot;')}" data-link="${(col.link||'').replace(/"/g, '&quot;')}" style="font-size: 0.75rem; cursor: pointer; padding: 2px 4px; border: 1px solid #ccc; background: #eee; border-radius: 3px;" title="Edit">✏️</button>
+                                    <button class="btn-add-subcol" data-id="${col.id}" style="font-size: 0.75rem; cursor: pointer; padding: 2px 4px; border: 1px solid #ccc; background: #eee; border-radius: 3px;" title="Add Subcollection">➕</button>
+                                    <button class="btn-del-col" data-id="${col.id}" style="font-size: 0.75rem; cursor: pointer; padding: 2px 4px; border: 1px solid #ccc; background: #eee; border-radius: 3px;" title="Delete">🗑️</button>
+                                    <button class="btn-share-col" data-id="${col.id}" style="font-size: 0.75rem; cursor: pointer; padding: 2px 4px; border: 1px solid #ccc; background: #eee; border-radius: 3px;" title="Share">🔗</button>
                                 </div>
+                            </div>
+                            ${col.description ? `<p style="margin: 4px 0; font-size: 0.9rem; color: #333;">${col.description}</p>` : ''}
+                            <div style="margin-top: 5px; line-height: 1.4;">
+                                ${subcolsHtml}
                             </div>
                         </div>
                     `;
@@ -582,6 +597,56 @@
                 btn.addEventListener('click', (e) => {
                     e.preventDefault();
                     window.open('/collections/' + btn.getAttribute('data-id'), '_blank');
+                });
+            });
+
+            container.querySelectorAll('.btn-col-link').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    window.open('/collections/' + btn.getAttribute('data-id'), '_blank');
+                });
+            });
+
+            const filterCards = () => {
+                const textQuery = (container.querySelector('#col-text-filter').value || '').toLowerCase();
+                const letterQuery = container.getAttribute('data-alpha-filter') || 'ALL';
+                
+                container.querySelectorAll('.collection-card').forEach(card => {
+                    const titleEl = card.querySelector('.title-link');
+                    if (!titleEl) return;
+                    const title = titleEl.textContent.trim();
+                    const titleLower = title.toLowerCase();
+                    
+                    let matchesText = true;
+                    if (textQuery) {
+                        matchesText = titleLower.includes(textQuery);
+                    }
+                    
+                    let matchesLetter = true;
+                    if (letterQuery !== 'ALL') {
+                        matchesLetter = title.toUpperCase().startsWith(letterQuery);
+                    }
+                    
+                    card.style.display = (matchesText && matchesLetter) ? 'flex' : 'none';
+                });
+            };
+
+            const textFilterInput = container.querySelector('#col-text-filter');
+            if (textFilterInput) {
+                textFilterInput.addEventListener('input', filterCards);
+            }
+
+            container.querySelectorAll('.alpha-link').forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    container.querySelectorAll('.alpha-link').forEach(l => {
+                        l.style.fontWeight = 'normal';
+                        l.style.background = 'transparent';
+                    });
+                    e.target.style.fontWeight = 'bold';
+                    e.target.style.background = 'var(--bg-color)';
+                    container.setAttribute('data-alpha-filter', e.target.getAttribute('data-letter'));
+                    filterCards();
                 });
             });
 
