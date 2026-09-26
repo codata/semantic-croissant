@@ -41,8 +41,8 @@
             top: 0;
             left: 0;
             right: 0;
-            height: 86px;
-            background: #bbbbb9;
+            height: 96px;
+            background: white;
             border-bottom: 1px solid var(--border-color);
             display: flex;
             align-items: center;
@@ -54,8 +54,8 @@
         .main-container {
             display: flex;
             width: 100%;
-            height: calc(100vh - 127px);
-            margin-top: 86px;
+            height: calc(100vh - 96px);
+            margin-top: 96px;
         }
 
         .sidebar {
@@ -193,7 +193,7 @@
 
         /* Input Area */
         .input-area {
-            padding: 20px 40px;
+            padding: 20px 40px 70px 40px; /* Increased bottom padding by 50px */
             background-color: var(--bg-color);
             border-top: 1px solid var(--border-color);
             display: flex;
@@ -267,6 +267,54 @@
         }
         .typing span:nth-child(2) { animation-delay: 0.2s; }
         .typing span:nth-child(3) { animation-delay: 0.4s; }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --bg-color: #0d1117;
+                --text-color: #c9d1d9;
+                --sidebar-bg: #161b22;
+                --panel-bg: #0d1117;
+                --border-color: #30363d;
+                --user-msg-bg: #1f2937;
+                --bot-msg-bg: #161b22;
+            }
+        }
+        
+        :root[data-theme="dark"] {
+            --bg-color: #0d1117;
+            --text-color: #c9d1d9;
+            --sidebar-bg: #161b22;
+            --panel-bg: #0d1117;
+            --border-color: #30363d;
+            --user-msg-bg: #1f2937;
+            --bot-msg-bg: #161b22;
+        }
+
+        .theme-toggle {
+            cursor: pointer;
+            background: none;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 5px 10px;
+            border-radius: 6px;
+        }
+        
+        .popup-btn {
+            padding: 6px 12px;
+            font-size: 0.9rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            color: #fff;
+        }
+        .btn-green { background: #10b981; }
+        .btn-green:hover { background: #059669; }
+        .btn-red { background: #ef4444; }
+        .btn-red:hover { background: #dc2626; }
+        .btn-blue { background: #3b82f6; }
+        .btn-blue:hover { background: #2563eb; }
     </style>
 </head>
 <body>
@@ -276,6 +324,11 @@
             {{VAULT_LOGO_HTML}}
         </div>
         <div style="display:flex; gap:10px; align-items:center;">
+            <button class="theme-toggle" onclick="document.getElementById('add-text-modal').style.display='flex'; setTimeout(()=>document.getElementById('add-text-input').focus(), 50);" style="background-color: #008855; color: white; border: none; font-weight: 500;">Add text</button>
+            <button class="theme-toggle" onclick="document.getElementById('add-resource-modal').style.display='flex'; setTimeout(()=>document.getElementById('add-resource-input').focus(), 50);" style="background-color: #006bb3; color: white; border: none; font-weight: 500;">Add resource</button>
+            <input type="text" id="global-search" placeholder="Search across all collections..." style="padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); width: 300px; font-family: inherit; font-size: 14px;" onkeydown="if(event.key === 'Enter') window.location.href = '/?q=' + encodeURIComponent('Search Croissant datasets for: ' + this.value)">
+            <button class="theme-toggle" onclick="document.getElementById('share-url-input').value = window.location.href; document.getElementById('share-modal').style.display='flex'">Share</button>
+            <button class="theme-toggle" id="theme-toggle">Toggle Theme</button>
         </div>
     </div>
 
@@ -1161,5 +1214,101 @@
         <div style="text-align: left; display: flex; align-items: center;">Ghostwriter 2.0 UI | Semantic Croissant with CDIF 1.1 (v2.3)</div>
         <div style="text-align: right; display: flex; align-items: center; justify-content: flex-end; gap: 8px;">Created by <a href="https://codata.org" target="_blank" style="color: #888; text-decoration: none; font-weight: 500;">CODATA</a> in <a href="https://cdif4eosc.eu" target="_blank" style="color: #888; text-decoration: none; font-weight: 500;">CDIF4EOSC</a> under Grant Agreement 101292473 <img src="https://www.cdif4eosc.eu/assets/images/eu_flag.svg" alt="EU Flag" style="height: 20px;"></div>
     </footer>
+
+    <div id="share-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center;">
+        <div style="background:var(--bg-color); padding:30px; border-radius:8px; border:1px solid var(--border-color); max-width:500px; width:90%; color:var(--text-color);">
+            <h2 style="margin-top:0;">Open with External AI</h2>
+            <p>To analyze this document with <strong>Claude</strong>, <strong>Codex</strong>, or <strong>Manus</strong>, copy the exact URL below and paste it into their chat window:</p>
+            <input type="text" id="share-url-input" readonly style="width:100%; padding:10px; margin-bottom:20px; box-sizing:border-box; background:var(--panel-bg); border:1px solid var(--border-color); color:var(--text-color); border-radius:4px; font-family:monospace; font-size:1rem;" />
+            <div style="display:flex; justify-content:flex-end; gap:10px;">
+                <button class="theme-toggle" onclick="document.getElementById('share-modal').style.display='none'">Close</button>
+                <button class="theme-toggle" onclick="navigator.clipboard.writeText(document.getElementById('share-url-input').value); alert('URL Copied to clipboard!'); document.getElementById('share-modal').style.display='none';">Copy URL</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="ai-transmit-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center;">
+        <div style="background:var(--bg-color); padding:30px; border-radius:8px; border:1px solid var(--border-color); max-width:400px; width:90%; color:var(--text-color); text-align: center;">
+            <h2 style="margin-top:0;">Open in AI Assistant</h2>
+            <p style="margin-bottom: 10px;">Select your installed AI assistant to analyze this Croissant JSON-LD data:</p>
+            <div style="margin-bottom: 20px; font-size: 0.9rem; background: var(--panel-bg); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color); text-align: left;">
+                <div style="margin-bottom: 5px; font-weight: bold;">Open your AI Assistant and copy-paste:</div>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="ai-prompt-input" readonly style="flex: 1; padding: 8px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; font-family: monospace;" />
+                    <button class="theme-toggle" onclick="navigator.clipboard.writeText(document.getElementById('ai-prompt-input').value); alert('Prompt copied!');">Copy</button>
+                </div>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+                <button class="popup-btn btn-blue" style="padding: 10px; font-size: 1rem;" onclick="window.location.href='claude://' + window.location.href; document.getElementById('ai-transmit-modal').style.display='none'">🤖 Claude</button>
+                <button class="popup-btn btn-blue" style="padding: 10px; font-size: 1rem;" onclick="window.location.href='cursor://' + window.location.href; document.getElementById('ai-transmit-modal').style.display='none'">💻 Codex (Cursor)</button>
+                <button class="popup-btn btn-blue" style="padding: 10px; font-size: 1rem;" onclick="window.location.href='manus://' + window.location.href; document.getElementById('ai-transmit-modal').style.display='none'">🦉 Manus</button>
+                <button class="popup-btn btn-blue" style="padding: 10px; font-size: 1rem;" onclick="window.location.href='lmstudio://' + window.location.href; document.getElementById('ai-transmit-modal').style.display='none'">🦙 LM Studio</button>
+            </div>
+            <div style="margin-top: 20px;">
+                <button class="theme-toggle" onclick="document.getElementById('ai-transmit-modal').style.display='none'">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="add-resource-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10001; justify-content: center; align-items: center;">
+        <div style="background: var(--bg-color); padding: 20px; border-radius: 8px; width: 400px; max-width: 90%; border: 1px solid var(--border-color);">
+            <h3 style="margin-top: 0; color: var(--text-color);">Add Resource</h3>
+            <p style="font-size: 0.9rem; margin-bottom: 10px; color: var(--text-color);">Enter the URL of the resource you want to ingest:</p>
+            <input type="text" id="add-resource-input" placeholder="https://..." style="width: 100%; padding: 8px; margin-bottom: 15px; border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box; background: var(--panel-bg); color: var(--text-color); font-family: inherit; font-size: 14px;" onkeydown="if(event.key === 'Enter') document.getElementById('add-resource-submit').click()">
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button onclick="document.getElementById('add-resource-modal').style.display='none'" class="theme-toggle">Cancel</button>
+                <button id="add-resource-submit" onclick="var url = document.getElementById('add-resource-input').value; if(url) window.location.href='/dataverse?url=' + encodeURIComponent(url);" style="background-color: #006bb3; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: 500;">Ingest</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="add-text-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10001; justify-content: center; align-items: center;">
+        <div style="background: var(--bg-color); padding: 20px; border-radius: 8px; width: 600px; max-width: 90%; border: 1px solid var(--border-color);">
+            <h3 style="margin-top: 0; color: var(--text-color);">Add Text</h3>
+            <p style="font-size: 0.9rem; margin-bottom: 10px; color: var(--text-color);">Paste the text you want to ingest into the vault:</p>
+            <textarea id="add-text-input" placeholder="Enter text here..." style="width: 100%; height: 300px; padding: 8px; margin-bottom: 15px; border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box; background: var(--panel-bg); color: var(--text-color); font-family: inherit; font-size: 14px;"></textarea>
+            <div id="add-text-error" style="color: red; display: none; margin-bottom: 10px; font-size: 14px;"></div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button onclick="document.getElementById('add-text-modal').style.display='none'" class="theme-toggle">Cancel</button>
+                <button id="add-text-submit" onclick="
+                    var btn = this;
+                    var text = document.getElementById('add-text-input').value;
+                    if(!text) return;
+                    btn.disabled = true;
+                    btn.innerText = 'Processing... (takes ~2 mins)';
+                    document.getElementById('add-text-error').style.display = 'none';
+                    fetch('/api/text/process', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text: text })
+                    })
+                    .then(r => r.json().then(data => ({ok: r.ok, data})))
+                    .then(res => {
+                        if(res.ok && res.data.redirect_url) {
+                            window.location.href = res.data.redirect_url;
+                        } else {
+                            throw new Error(res.data.detail || 'Failed to process text');
+                        }
+                    })
+                    .catch(e => {
+                        btn.disabled = false;
+                        btn.innerText = 'Ingest';
+                        document.getElementById('add-text-error').innerText = e.message;
+                        document.getElementById('add-text-error').style.display = 'block';
+                    });
+                " style="background-color: #008855; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: 500;">Ingest</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        const toggleBtn = document.getElementById('theme-toggle');
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', () => {
+                const isDark = document.documentElement.getAttribute('data-theme') === 'dark' || 
+                             (!document.documentElement.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
+            });
+        }
+    </script>
 </body>
 </html>

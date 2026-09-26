@@ -2975,7 +2975,7 @@ def main(port: int, transport: str) -> int:
                 html_content = html_content.replace('{{AUTH_STATUS}}', auth_status)
                 
                 logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
-                logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; width:100%; height:100%; max-height:86px; text-decoration:none; overflow:hidden;"><img src="{logo_url}" style="width:100%; height:100%; max-height:86px; object-fit:contain;" alt="Logo" /></a>' if logo_url else ""
+                logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; text-decoration:none; padding: 10px;"><img src="{logo_url}" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Logo" /></a>' if logo_url else ""
                 html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
                 
                 return HTMLResponse(html_content)
@@ -3370,7 +3370,7 @@ def main(port: int, transport: str) -> int:
             with open(index_path, "r", encoding="utf-8") as f:
                 html_content = f.read()
             logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
-            logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; width:100%; height:100%; max-height:86px; text-decoration:none; overflow:hidden;"><img src="{logo_url}" style="width:100%; height:100%; max-height:86px; object-fit:contain;" alt="Logo" /></a>' if logo_url else ""
+            logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; text-decoration:none; padding: 10px;"><img src="{logo_url}" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Logo" /></a>' if logo_url else ""
             html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
             return HTMLResponse(content=html_content)
             
@@ -4232,7 +4232,7 @@ def main(port: int, transport: str) -> int:
             with open(index_path, "r") as f:
                 html_content = f.read()
             logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
-            logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; width:100%; height:100%; max-height:86px; text-decoration:none; overflow:hidden;"><img src="{logo_url}" style="width:100%; height:100%; max-height:86px; object-fit:contain;" alt="Logo" /></a>' if logo_url else ""
+            logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; text-decoration:none; padding: 10px;"><img src="{logo_url}" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Logo" /></a>' if logo_url else ""
             html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
             return HTMLResponse(content=html_content)
 
@@ -4442,7 +4442,7 @@ def main(port: int, transport: str) -> int:
                 with open("api/static/group_viewer.html", "r", encoding="utf-8") as f:
                     html_content = f.read()
             logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
-            logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; width:100%; height:100%; max-height:86px; text-decoration:none; overflow:hidden;"><img src="{logo_url}" style="width:100%; height:100%; max-height:86px; object-fit:contain;" alt="Logo" /></a>' if logo_url else ""
+            logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; text-decoration:none; padding: 10px;"><img src="{logo_url}" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Logo" /></a>' if logo_url else ""
             html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
             return HTMLResponse(content=html_content)
 

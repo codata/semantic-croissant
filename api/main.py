@@ -543,7 +543,7 @@ async def view_index():
         html_content = f.read()
         
     logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
-    logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; width:100%; height:100%; max-height:86px; text-decoration:none; overflow:hidden;"><img src="{logo_url}" style="width:100%; height:100%; max-height:86px; object-fit:contain;" alt="Logo" /></a>' if logo_url else ""
+    logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; text-decoration:none; padding: 10px;"><img src="{logo_url}" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Logo" /></a>' if logo_url else ""
     html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
     
     return HTMLResponse(content=html_content)
