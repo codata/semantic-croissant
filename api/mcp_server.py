@@ -89,7 +89,7 @@ def render_html_template(file_path: str, request=None, auth_status=None):
         html = f.read()
     
     logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
-    logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; text-decoration:none; padding: 10px;"><img src="{logo_url}" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Logo" /></a>' if logo_url else ""
+    logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; text-decoration:none; padding: 5px; height: 100%; box-sizing: border-box;"><img src="{logo_url}" style="max-width: 250px; max-height: 100%; width: auto; height: 100%; object-fit: contain;" alt="Logo" /></a>' if logo_url else ""
     
     footer_html = os.environ.get("VAULT_FOOTER_HTML", """            <span>Ghostwriter 2.0 UI | Semantic Croissant with CDIF 1.1 (v2.3)</span>
             <span style="color: #ccc;">|</span>
@@ -126,8 +126,10 @@ def get_login_button_html(request=None):
             <button class="theme-toggle" onclick="document.getElementById('user-dropdown').style.display = document.getElementById('user-dropdown').style.display === 'block' ? 'none' : 'block'" style="background-color: transparent; color: inherit; border: 1px solid var(--border-color, #ccc); font-size: 1.2rem; padding: 4px 10px; border-radius: 50%; cursor: pointer;">👤</button>
             <div id="user-dropdown" style="display:none; position:absolute; top:100%; right:0; background:var(--bg-color, white); border:1px solid var(--border-color, #ccc); border-radius:4px; box-shadow:0 2px 10px rgba(0,0,0,0.1); z-index:1000; margin-top:5px; min-width:200px;">
                 <div style="padding: 12px 15px; border-bottom: 1px solid var(--border-color, #eee); color: var(--text-color, #333); font-size: 14px; white-space: nowrap; font-weight: bold;">
-                    {name}{orcid_badge}
+                    {name}
                 </div>
+                <button onclick="window.location.href='/profile'" style="width:100%; padding:10px 15px; text-align:left; background:none; border:none; cursor:pointer; font-size:14px; color:var(--text-color, #333); border-bottom: 1px solid var(--border-color, #eee);">Profile</button>
+                <button onclick="window.location.href='/groups'" style="width:100%; padding:10px 15px; text-align:left; background:none; border:none; cursor:pointer; font-size:14px; color:var(--text-color, #333); border-bottom: 1px solid var(--border-color, #eee);">Groups</button>
                 <button onclick="if(confirm('Log out?')) {{ document.cookie='auth_did=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'; fetch('/api/auth/logout', {{method:'POST'}}).then(()=>window.location.href='/'); }}" style="width:100%; padding:10px 15px; text-align:left; background:none; border:none; cursor:pointer; font-size:14px; color:#d93025; border-radius: 0 0 4px 4px;">Logout</button>
             </div>
             <script>
@@ -3538,7 +3540,7 @@ def main(port: int, transport: str) -> int:
             with open(index_path, "r", encoding="utf-8") as f:
                 html_content = f.read()
             logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
-            logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; text-decoration:none; padding: 10px;"><img src="{logo_url}" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Logo" /></a>' if logo_url else ""
+            logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; text-decoration:none; padding: 5px; height: 100%; box-sizing: border-box;"><img src="{logo_url}" style="max-width: 250px; max-height: 100%; width: auto; height: 100%; object-fit: contain;" alt="Logo" /></a>' if logo_url else ""
             html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
             html_content = html_content.replace('{{LOGIN_BUTTON_HTML}}', get_login_button_html(request))
             return HTMLResponse(content=html_content)
@@ -4703,6 +4705,11 @@ def main(port: int, transport: str) -> int:
             except Exception as e:
                 return JSONResponse({"error": str(e)}, status_code=500)
 
+        async def api_groups_join(request):
+            from starlette.responses import JSONResponse
+            # Dummy implementation
+            return JSONResponse({"success": True})
+
         async def api_groups_delete(request):
             from starlette.responses import JSONResponse
             try:
@@ -4742,7 +4749,7 @@ def main(port: int, transport: str) -> int:
                 with open("api/static/group_viewer.html", "r", encoding="utf-8") as f:
                     html_content = f.read()
             logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
-            logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; text-decoration:none; padding: 10px;"><img src="{logo_url}" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Logo" /></a>' if logo_url else ""
+            logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; text-decoration:none; padding: 5px; height: 100%; box-sizing: border-box;"><img src="{logo_url}" style="max-width: 250px; max-height: 100%; width: auto; height: 100%; object-fit: contain;" alt="Logo" /></a>' if logo_url else ""
             html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
             html_content = html_content.replace('{{LOGIN_BUTTON_HTML}}', get_login_button_html(request))
             return HTMLResponse(content=html_content)
@@ -5134,18 +5141,55 @@ def main(port: int, transport: str) -> int:
                 print(f"Error processing delpher url: {e}")
                 return JSONResponse({"detail": str(e)}, status_code=500)
 
+        async def view_groups_index(request):
+            from starlette.responses import HTMLResponse
+            import os
+            file_path = os.path.join(os.path.dirname(__file__), "static/groups_index.html")
+            if not os.path.exists(file_path):
+                file_path = "api/static/groups_index.html"
+            html_content = render_html_template(file_path, request)
+            return HTMLResponse(content=html_content)
+
+        async def view_profile(request):
+            from starlette.responses import HTMLResponse, RedirectResponse
+            import os
+            user = get_user_info_from_odrl(request)
+            if not user or not user.get("name"):
+                return RedirectResponse(url="/login")
+            
+            email = user.get("email") or "Not provided"
+            orcid = user.get("orcid") or "Not provided"
+            did = user.get("did") or "Not provided"
+            name = user.get("name") or "Unknown"
+            
+            file_path = os.path.join(os.path.dirname(__file__), "static/profile.html")
+            if not os.path.exists(file_path):
+                file_path = "api/static/profile.html"
+            
+            html_content = render_html_template(file_path, request)
+            
+            # Replace user info placeholders
+            html_content = html_content.replace('{{USER_NAME}}', name)
+            html_content = html_content.replace('{{USER_EMAIL}}', email)
+            html_content = html_content.replace('{{USER_ORCID}}', orcid)
+            html_content = html_content.replace('{{USER_DID}}', did)
+            
+            # GeoID Section
+            if request.cookies.get("geoid_token") and request.cookies.get("geoid_value"):
+                geoid_html = f"<div class='info-row'><strong>GeoID:</strong> <span style='color: green; font-weight: bold;'>Connected ✓</span><br><span style='font-family: monospace; font-size: 13px; word-break: break-all; margin-top: 5px; display: inline-block;'>{request.cookies.get('geoid_value')}</span><div id='geoid-map' style='height: 200px; width: 100%; margin-top: 15px; border-radius: 8px; border: 1px solid #ccc; z-index: 1;'></div></div>"
+            else:
+                geoid_html = "<button onclick='connectGeoId()' class='back-btn' id='connect-geoid-btn' style='background: #008855; margin-right: 10px;'>Connect to GeoID</button><span id='geoid-loading' style='display:none; font-size: 13px; color: #666;'>Connecting...</span>"
+            
+            html_content = html_content.replace('{{GEOID_SECTION}}', geoid_html)
+            
+            return HTMLResponse(content=html_content)
         async def view_login(request):
             import os
             from starlette.responses import HTMLResponse
             file_path = os.path.join(os.path.dirname(__file__), "static/login.html")
             if not os.path.exists(file_path):
                 file_path = "api/static/login.html"
-            with open(file_path, "r", encoding="utf-8") as f:
-                html_content = f.read()
-            logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
-            logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; text-decoration:none; padding: 10px;"><img src="{logo_url}" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Logo" /></a>' if logo_url else ""
-            html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
-            html_content = html_content.replace('{{LOGIN_BUTTON_HTML}}', get_login_button_html(request))
+            html_content = render_html_template(file_path, request)
             return HTMLResponse(content=html_content)
 
         async def api_auth_status(request):
@@ -5245,6 +5289,94 @@ def main(port: int, transport: str) -> int:
             except Exception as e:
                 return JSONResponse({"success": False})
 
+        async def api_geoid_connect(request):
+            from starlette.responses import JSONResponse
+            import httpx
+            import json
+            import os
+            
+            user = get_user_info_from_odrl(request)
+            if not user or not user.get("name"):
+                return JSONResponse({"success": False, "error": "Not authenticated"})
+            
+            geoid_server = os.environ.get("GEOID_SERVER", "http://66.220.3.93:8000")
+            
+            # 1. Parse user info
+            full_name = user.get("name", "Test User").split(" ", 1)
+            first_name = full_name[0]
+            last_name = full_name[1] if len(full_name) > 1 else "User"
+            
+            email = user.get("email")
+            if not email or email == "Not provided":
+                # Mock email if not available
+                did_clean = user.get("did", "unknown").replace(":", "_")
+                email = f"{did_clean}@semantic-croissant.local"
+                
+            password = "GeoIDPassword@1234"
+            
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    # 2. Try signup
+                    signup_data = {
+                        "first_name": first_name,
+                        "last_name": last_name,
+                        "email": email,
+                        "password": password,
+                        "role": "farmer",
+                        "country": "USA"
+                    }
+                    try:
+                        await client.post(f"{geoid_server}/signup", json=signup_data)
+                    except Exception:
+                        pass # Ignore signup errors, might already exist
+                        
+                    # 3. Login
+                    login_data = {
+                        "username": email,
+                        "password": password
+                    }
+                    login_res = await client.post(
+                        f"{geoid_server}/login", 
+                        data=login_data,
+                        headers={"Content-Type": "application/x-www-form-urlencoded"}
+                    )
+                    
+                    if login_res.status_code != 200:
+                        return JSONResponse({"success": False, "error": f"Login failed: {login_res.text}"})
+                        
+                    token_data = login_res.json()
+                    access_token = token_data.get("access_token")
+                    
+                    if not access_token:
+                        return JSONResponse({"success": False, "error": "No access token received"})
+                        
+                    # 4. Register a point to get a GeoID
+                    register_point_data = {
+                        "wkt": "POINT(-87.03022062778474 14.84065777807457)",
+                        "field_name": "Profile Location Point"
+                    }
+                    register_res = await client.post(
+                        f"{geoid_server}/register-point",
+                        json=register_point_data,
+                        headers={"Authorization": f"Bearer {access_token}"}
+                    )
+                    
+                    if register_res.status_code != 200:
+                        return JSONResponse({"success": False, "error": f"Register point failed: {register_res.text}"})
+                        
+                    reg_data = register_res.json()
+                    geoid_value = reg_data.get("Geo Id")
+                    
+                    if not geoid_value:
+                        return JSONResponse({"success": False, "error": "No Geo Id received"})
+                        
+                    resp = JSONResponse({"success": True})
+                    resp.set_cookie("geoid_token", access_token, max_age=86400 * 30, path="/", samesite="lax")
+                    resp.set_cookie("geoid_value", geoid_value, max_age=86400 * 30, path="/", samesite="lax")
+                    return resp
+            except Exception as e:
+                return JSONResponse({"success": False, "error": str(e)})
+
         async def view_add(request):
             import os
             from starlette.responses import FileResponse
@@ -5321,10 +5453,13 @@ def main(port: int, transport: str) -> int:
                 Route("/api/dataverse/process", endpoint=process_dataverse, methods=["POST"]),
                 Route("/delpher", endpoint=view_delpher),
                 Route("/api/delpher/process", endpoint=process_delpher, methods=["POST"]),
+                Route("/profile", endpoint=view_profile),
+                Route("/groups", endpoint=view_groups_index),
                 Route("/login", endpoint=view_login),
                 Route("/api/auth/logout", endpoint=api_auth_logout, methods=["POST"]),
                 Route("/api/auth/status", endpoint=api_auth_status, methods=["GET"]),
                 Route("/api/auth/save", endpoint=api_auth_save, methods=["POST"]),
+                Route("/api/geoid/connect", endpoint=api_geoid_connect, methods=["POST"]),
                 Route("/api/auth/debug", endpoint=api_auth_debug, methods=["POST"]),
                 Route("/add", endpoint=view_add),
                 Route("/api/generic/process", endpoint=process_generic, methods=["POST"]),
@@ -5341,6 +5476,7 @@ def main(port: int, transport: str) -> int:
                 Route("/groups/{id}", endpoint=group_html_viewer, methods=["GET"]),
                 Route("/api/groups/{id}", endpoint=api_groups_put, methods=["PUT"]),
                 Route("/api/groups/{id}", endpoint=api_groups_delete, methods=["DELETE"]),
+                Route("/api/groups/{id}/join", endpoint=api_groups_join, methods=["POST"]),
                 Route("/api/collections", endpoint=api_collections_get, methods=["GET"]),
                 Route("/api/collections", endpoint=api_collections_post, methods=["POST"]),
 

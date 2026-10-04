@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Profile - Semantic Croissant</title>
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #333333;
+            --border-color: #e0e0e0;
+            --accent-color: #1a73e8;
+            --panel-bg: #f8f9fa;
+            --border: #e0e0e0;
+            --accent: #1a73e8;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--panel-bg);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .header { background: white; height: 96px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 20px 0 0; position: sticky; top: 0; z-index: 100; }
+        .main-content {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 40px;
+        }
+        .profile-card {
+            background: var(--bg-color);
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 500px;
+            border: 1px solid var(--border-color);
+        }
+        .profile-card h2 {
+            margin-top: 0;
+            color: var(--accent-color);
+            border-bottom: 2px solid var(--accent-color);
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .info-row {
+            margin-bottom: 15px;
+            font-size: 15px;
+        }
+        .info-row strong {
+            display: inline-block;
+            width: 80px;
+            color: #555;
+        }
+        .info-row span {
+            color: var(--text-color);
+        }
+        .back-btn {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 10px 20px;
+            background: var(--accent-color);
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .back-btn:hover {
+            opacity: 0.9;
+        }
+        .footer {
+            text-align: center;
+            font-size: 0.85rem;
+            color: #888;
+            padding: 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            background-color: var(--panel-bg);
+        }
+    </style>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div style="width: 274px; padding: 0; height: 100%; border-right: 1px solid var(--border); display: flex; align-items: center; box-sizing: border-box;">
+            {{VAULT_LOGO_HTML}}
+        </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+            <div style="display: flex; align-items: center; gap: 12px; margin-right: 15px; font-size: 0.95rem;">
+                <a href="/#collections" style="color: var(--accent); text-decoration: none; font-weight: 600;">Collections</a>
+                <span style="color: var(--border);">|</span>
+                <a href="/groups" style="color: var(--accent); text-decoration: none; font-weight: 600;">Groups</a>
+                <span style="color: var(--border);">|</span>
+                <a href="/#vault" style="color: var(--accent); text-decoration: none; font-weight: 600;">Vault</a>
+            </div>
+            <button onclick="window.location.href='/'" style="padding: 8px 16px; background-color: #f1f3f4; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-weight: 500;">Back to App</button>
+            {{LOGIN_BUTTON_HTML}}
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="profile-card">
+            <h2>User Profile</h2>
+            <div class="info-row"><strong>Name:</strong> <span>{{USER_NAME}}</span></div>
+            <div class="info-row"><strong>Email:</strong> <span>{{USER_EMAIL}}</span></div>
+            <div class="info-row"><strong>ORCID:</strong> <span>{{USER_ORCID}}</span></div>
+            <div class="info-row"><strong>DID:</strong> <span style="word-break: break-all; font-family: monospace; font-size: 13px;">{{USER_DID}}</span></div>
+            
+            <div style="margin-top: 30px; border-top: 1px solid var(--border-color); padding-top: 20px;">
+                {{GEOID_SECTION}}
+                <a href="/" class="back-btn">Back to Home</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        {{VAULT_FOOTER_HTML}}
+    </div>
+    
+    <script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const mapDiv = document.getElementById('geoid-map');
+        if (mapDiv) {
+            const lat = 14.84065777807457;
+            const lng = -87.03022062778474;
+            const map = L.map('geoid-map').setView([lat, lng], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap'
+            }).addTo(map);
+            L.marker([lat, lng]).addTo(map).bindPopup('GeoID Location').openPopup();
+        }
+    });
+
+    async function connectGeoId() {
+        const btn = document.getElementById('connect-geoid-btn');
+        const loader = document.getElementById('geoid-loading');
+        if(btn) btn.style.display = 'none';
+        if(loader) loader.style.display = 'inline-block';
+        
+        try {
+            const res = await fetch('/api/geoid/connect', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert('GeoID Connect failed: ' + (data.error || JSON.stringify(data)));
+                if(btn) btn.style.display = 'inline-block';
+                if(loader) loader.style.display = 'none';
+            }
+        } catch (e) {
+            alert('Error connecting to GeoID: ' + e);
+            if(btn) btn.style.display = 'inline-block';
+            if(loader) loader.style.display = 'none';
+        }
+    }
+    </script>
+</body>
+</html>

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Groups - Semantic Croissant</title>
+    <style>
+        :root { --bg-color: #ffffff; --text-color: #333333; --border-color: #e0e0e0; --accent-color: #1a73e8; --panel-bg: #f8f9fa; --border: #e0e0e0; --accent: #1a73e8; }
+        body { font-family: sans-serif; background-color: var(--panel-bg); color: var(--text-color); margin: 0; padding: 0; display: flex; flex-direction: column; min-height: 100vh; }
+        .header { background: white; height: 96px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 20px 0 0; position: sticky; top: 0; z-index: 100; }
+        .container { background: var(--bg-color); padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 800px; border: 1px solid var(--border-color); margin: 40px auto; flex: 1; }
+        .group-item { border-bottom: 1px solid var(--border-color); padding: 15px 0; display: flex; justify-content: space-between; align-items: center; }
+        .group-item:last-child { border-bottom: none; }
+        .group-info h3 { margin: 0 0 5px 0; color: var(--accent-color); font-size: 1.1rem; }
+        .group-info p { margin: 0; font-size: 0.9rem; color: #666; }
+        .btn-join { background: #008855; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.9rem; }
+        .btn-join:hover { opacity: 0.9; }
+        .back-btn { display: inline-block; margin-top: 20px; padding: 10px 20px; background: var(--accent-color); color: white; text-decoration: none; border-radius: 4px; font-weight: 500; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div style="width: 274px; padding: 0; height: 100%; border-right: 1px solid var(--border); display: flex; align-items: center; box-sizing: border-box;">
+            {{VAULT_LOGO_HTML}}
+        </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+            <div style="display: flex; align-items: center; gap: 12px; margin-right: 15px; font-size: 0.95rem;">
+                <a href="/#collections" style="color: var(--accent); text-decoration: none; font-weight: 600;">Collections</a>
+                <span style="color: var(--border);">|</span>
+                <a href="/groups" style="color: var(--accent); text-decoration: none; font-weight: 600;">Groups</a>
+                <span style="color: var(--border);">|</span>
+                <a href="/#vault" style="color: var(--accent); text-decoration: none; font-weight: 600;">Vault</a>
+            </div>
+            <button onclick="window.location.href='/'" style="padding: 8px 16px; background-color: #f1f3f4; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-weight: 500;">Back to App</button>
+            {{LOGIN_BUTTON_HTML}}
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>Joined Groups</h2>
+        <div id="joined-groups">Loading groups...</div>
+        <h2 style="margin-top:30px;">Pending Requests</h2>
+        <div id="pending-groups">Loading groups...</div>
+        <h2 style="margin-top:30px;">Available Groups</h2>
+        <div id="available-groups">Loading groups...</div>
+    </div>
+
+    <!-- Footer -->
+    <div style="text-align: center; font-size: 0.85rem; color: #888; margin-top: auto; padding: 20px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: center; gap: 10px;">
+        {{VAULT_FOOTER_HTML}}
+    </div>
+
+    <script>
+    let allGroups = [];
+    async function loadGroups() {
+        try {
+            const res = await fetch('/api/groups');
+            const data = await res.json();
+            allGroups = data.groups || [];
+            renderGroups();
+        } catch (e) {
+            document.getElementById('available-groups').innerHTML = '<p>Error loading groups.</p>';
+            document.getElementById('joined-groups').innerHTML = '';
+            document.getElementById('pending-groups').innerHTML = '';
+        }
+    }
+    
+    function renderGroups() {
+        const joinedIds = JSON.parse(localStorage.getItem('groups_joined') || '[]');
+        const pendingIds = JSON.parse(localStorage.getItem('groups_pending') || '[]');
+        
+        const joinedGroups = allGroups.filter(g => joinedIds.includes(g.id));
+        const pendingGroups = allGroups.filter(g => pendingIds.includes(g.id));
+        const availableGroups = allGroups.filter(g => !joinedIds.includes(g.id) && !pendingIds.includes(g.id));
+        
+        const renderList = (groups, showBtn, btnText, clickHandler) => {
+            if (groups.length === 0) return '<p>No groups in this section.</p>';
+            return groups.map(g => `
+                <div class="group-item">
+                    <div class="group-info">
+                        <h3><a href="/groups/${g.id}" style="text-decoration:none; color:var(--accent-color);">${g.name}</a></h3>
+                        <p>${g.description}</p>
+                    </div>
+                    ${showBtn ? `<button class="btn-join" onclick="${clickHandler}('${g.id}')">${btnText}</button>` : ''}
+                </div>
+            `).join('');
+        };
+        
+        document.getElementById('joined-groups').innerHTML = renderList(joinedGroups, false, '', '');
+        document.getElementById('pending-groups').innerHTML = renderList(pendingGroups, false, '', '');
+        document.getElementById('available-groups').innerHTML = renderList(availableGroups, true, 'Join Group', 'requestJoin');
+    }
+    
+    async function requestJoin(groupId) {
+        try {
+            await fetch('/api/groups/' + groupId + '/join', { method: 'POST' });
+            let pendingIds = JSON.parse(localStorage.getItem('groups_pending') || '[]');
+            if (!pendingIds.includes(groupId)) pendingIds.push(groupId);
+            localStorage.setItem('groups_pending', JSON.stringify(pendingIds));
+            renderGroups();
+        } catch(e) {
+            alert("Error requesting to join group: " + e);
+        }
+    }
+    
+    loadGroups();
+    </script>
+</body>
+</html>
