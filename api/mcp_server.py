@@ -3537,12 +3537,8 @@ def main(port: int, transport: str) -> int:
             import os
             from starlette.responses import HTMLResponse
             index_path = "/app/static/doc_viewer.html"
-            with open(index_path, "r", encoding="utf-8") as f:
-                html_content = f.read()
-            logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
-            logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; text-decoration:none; padding: 5px; height: 100%; box-sizing: border-box;"><img src="{logo_url}" style="max-width: 250px; max-height: 100%; width: auto; height: 100%; object-fit: contain;" alt="Logo" /></a>' if logo_url else ""
-            html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
-            html_content = html_content.replace('{{LOGIN_BUTTON_HTML}}', get_login_button_html(request))
+            if not os.path.exists(index_path): index_path = "api/static/doc_viewer.html"
+            html_content = render_html_template(index_path, request)
             return HTMLResponse(content=html_content)
             
         async def vault_es_doc_raw(request):
@@ -4742,16 +4738,8 @@ def main(port: int, transport: str) -> int:
             import os
             from starlette.responses import HTMLResponse
             index_path = "/app/static/group_viewer.html"
-            try:
-                with open(index_path, "r", encoding="utf-8") as f:
-                    html_content = f.read()
-            except:
-                with open("api/static/group_viewer.html", "r", encoding="utf-8") as f:
-                    html_content = f.read()
-            logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
-            logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; text-decoration:none; padding: 5px; height: 100%; box-sizing: border-box;"><img src="{logo_url}" style="max-width: 250px; max-height: 100%; width: auto; height: 100%; object-fit: contain;" alt="Logo" /></a>' if logo_url else ""
-            html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
-            html_content = html_content.replace('{{LOGIN_BUTTON_HTML}}', get_login_button_html(request))
+            if not os.path.exists(index_path): index_path = "api/static/group_viewer.html"
+            html_content = render_html_template(index_path, request)
             return HTMLResponse(content=html_content)
 
         async def view_dataverse(request):
