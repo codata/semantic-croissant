@@ -1,0 +1,19 @@
+curl -X POST -H 'Content-type: application/json' http://localhost:8080/api/admin/externalTools -d \
+'{
+  "displayName": "Ghostwriter 2.0",
+  "toolName": "ghostwriter",
+  "description": "Ghostwriter 2.0",
+  "scope": "dataset",
+  "type": "explore",
+  "toolUrl": "https://ai.codata.org/dataverse",
+  "toolParameters": {
+    "queryParameters": [
+      {
+        "datasetPid": "{datasetPid}"
+      },
+      {
+        "siteUrl": "{siteUrl}"
+      }
+    ]
+  }
+}'
