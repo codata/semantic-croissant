@@ -37,6 +37,7 @@ All agents acting in this environment SHOULD identify themselves through a **Dec
 |---|---|
 | `search_croissant_datasets` | Search the QLever graph with natural language keywords. |
 | `get_croissant_dataset` | Get full Croissant JSON-LD for a dataset by ID or URL. |
+| `read_croissant_file` | Read the contents of a specific file from a Croissant dataset's distribution. |
 | `elasticsearch_fulltext_search` | Full-text search across all indexed datasets. |
 | `ask_expert` | Query a specific expert index: `croissant`, `dataverse`, `ollama`, `huggingface`, `openml`, `hips`, `honduras`. |
 
@@ -81,15 +82,20 @@ All agents acting in this environment SHOULD identify themselves through a **Dec
 ### External Integrations
 | Tool | Description |
 |---|---|
-| `google-drive` | Search, read, or upload files to Google Drive. Operations: `search`, `read`, `upload`. |
+| `google-drive` | Search, read, or upload files to Google Drive. Operations: `search`, `read`, `upload` (supports `suggest_mode`). |
 | `search_web` | Web search (only exposed to Claude Desktop clients). |
+
+### Available Prompts
+| Prompt | Description |
+|---|---|
+| `extract_keyfigures` | Prompt used to extract numerical facts and key figures from a block of text. |
 
 ---
 
 ## 4. Critical Agent Rules
 
 ### 4.1 — Vault Saving Protocol
-When saving dataset summaries or analytical results to the Vault:
+When saving dataset summaries, analytical results, or updating documents in the Vault (using `save_to_vault` or `update_vault_document`):
 1. You **MUST** automatically generate complete Croissant JSON-LD metadata.
 2. Do **NOT** wait for the user to ask — generate it proactively.
 3. Do **NOT** truncate the JSON-LD payload or use placeholders like `"...rest of variables..."`.

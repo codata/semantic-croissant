@@ -12,12 +12,12 @@ CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent.co
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     config = json.load(f)
 
-OLLAMA_HOST = config.get("OLLAMA_HOST", "http://10.147.18.82:11435")
-MODEL = config.get("MODEL", "gemma4:e4b")
-MCP_URL = config.get("MCP_URL", "http://localhost:7070/sse")
-AI_MODEL_OVERRIDE = config.get("ai_model_override", "Semantic Croissant AI Agent v.0.1")
-SYSTEM_PROMPT = config.get("system_prompt", "You are an autonomous AI data analyst agent connected to an MCP tool ecosystem.")
-USER_PROMPT_TEMPLATE = config.get("user_prompt_template", "Execute the user's query: \"{query}\"")
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", config.get("OLLAMA_HOST", "http://10.147.18.82:11435"))
+MODEL = os.environ.get("MODEL", config.get("MODEL", "gemma4:e4b"))
+MCP_URL = os.environ.get("MCP_URL", config.get("MCP_URL", "http://localhost:7070/sse"))
+AI_MODEL_OVERRIDE = os.environ.get("AI_MODEL_OVERRIDE", config.get("ai_model_override", "Semantic Croissant AI Agent v.0.1"))
+SYSTEM_PROMPT = os.environ.get("SYSTEM_PROMPT", config.get("system_prompt", "You are an autonomous AI data analyst agent connected to an MCP tool ecosystem."))
+USER_PROMPT_TEMPLATE = os.environ.get("USER_PROMPT_TEMPLATE", config.get("user_prompt_template", "Execute the user's query: \"{query}\""))
 
 def mcp_tool_to_ollama(tool):
     """Convert an MCP Tool schema to Ollama's Chat Completion tool schema."""

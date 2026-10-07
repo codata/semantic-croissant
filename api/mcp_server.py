@@ -1685,6 +1685,70 @@ async def update_vault_document(target_id: str, referenced_ids: list[str], new_c
         return [types.TextContent(type="text", text=f"Successfully created new version in vault as {new_id}")]
     except Exception as e:
         return [types.TextContent(type="text", text=f"Error updating vault document: {str(e)}")]
+
+async def read_croissant_file(dataset_id_or_url: str, file_name: str) -> list[types.TextContent]:
+    import httpx, json
+    try:
+        async with httpx.AsyncClient(timeout=60.0, headers=get_auth_headers(get_auth_headers())) as client:
+            # 1. Get the dataset JSON-LD
+            response = await client.get(f"{API_BASE}/croissant", params={"id": dataset_id_or_url})
+            response.raise_for_status()
+            dataset_jsonld = response.json()
+            
+            # 2. Find the file in distribution
+            distribution = dataset_jsonld.get("distribution", [])
+            if not isinstance(distribution, list):
+                distribution = [distribution]
+                
+            target_url = None
+            for item in distribution:
+                if isinstance(item, dict):
+                    name = item.get("name", "")
+                    content_url = item.get("contentUrl", "")
+                    if file_name.lower() in name.lower() or file_name.lower() in content_url.lower():
+                        target_url = content_url
+                        break
+                        
+            if not target_url:
+                available = [i.get("name", "") for i in distribution if isinstance(i, dict) and "name" in i]
+                return [types.TextContent(type="text", text=f"File '{file_name}' not found in dataset. Available files: {', '.join(available)}")]
+                
+            # 3. Fetch file content
+            file_res = await client.get(target_url, follow_redirects=True)
+            file_res.raise_for_status()
+            
+            try:
+                content = file_res.text
+            except UnicodeDecodeError:
+                return [types.TextContent(type="text", text=f"File at {target_url} appears to be binary and cannot be read as text.")]
+                
+            # Truncate if too long (e.g. max 100KB)
+            if len(content) > 100000:
+                content = content[:100000] + "\n\n... (truncated due to length limits)"
+                
+            return [types.TextContent(type="text", text=f"File Content from {target_url}:\n\n{content}")]
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"Failed to read file from Croissant: {str(e)}")]
+
+async def read_direct_file(url: str) -> list[types.TextContent]:
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            res = await client.get(url, follow_redirects=True)
+            res.raise_for_status()
+            
+            try:
+                content = res.text
+            except UnicodeDecodeError:
+                return [types.TextContent(type="text", text=f"File at {url} appears to be binary and cannot be read as text.")]
+                
+            if len(content) > 100000:
+                content = content[:100000] + "\n\n... (truncated due to length limits)"
+                
+            return [types.TextContent(type="text", text=f"File Content from {url}:\n\n{content}")]
+    except Exception as e:
+        return [types.TextContent(type="text", text=f"Failed to read direct file: {str(e)}")]
+
 async def get_croissant_dataset(id: str) -> list[types.TextContent]:
 
     try:
@@ -2415,6 +2479,8 @@ SYSTEM INSTRUCTION FOR LLM - Navigation Guide:
 12. If the user asks to "Search across all collections: <query>", use the 'elasticsearch_fulltext_search' tool to query elastic and summarize the relevant metadata based on the query.
 
 13. If the user asks to "Answer this question based on the datasets in collection <ID>: <query>", use the 'get_collection_documents' tool with the given collection ID to get the metadata of the datasets in that collection. Then, answer the user's question using that retrieved information.
+
+14. If the user asks to read or analyze files from a dataset or vault document (e.g., "Read files...", "Read files from vault <ID>"), you MUST use the 'read_croissant_file' tool. Pass the dataset's ID, DOI, or vault URL as 'dataset_id_or_url', and pass the specific file name as 'file_name'. DO NOT use 'read_direct_file' or 'read_vault_article' for dataset files. Only use 'read_direct_file' if the user provides a direct raw file URL.
 """
     return [types.TextContent(type="text", text=text)]
 
@@ -2450,6 +2516,8 @@ Here is detailed information about how every tool works:
 12. If the user asks to "Search across all collections: <query>", use the 'elasticsearch_fulltext_search' tool to query elastic and summarize the relevant metadata based on the query.
 
 13. If the user asks to "Answer this question based on the datasets in collection <ID>: <query>", use the 'get_collection_documents' tool with the given collection ID to get the metadata of the datasets in that collection. Then, answer the user's question using that retrieved information.
+
+14. If the user asks to read or analyze files from a dataset or vault document (e.g., "Read files...", "Read files from vault <ID>"), you MUST use the 'read_croissant_file' tool. Pass the dataset's ID, DOI, or vault URL as 'dataset_id_or_url', and pass the specific file name as 'file_name'. DO NOT use 'read_direct_file' or 'read_vault_article' for dataset files. Only use 'read_direct_file' if the user provides a direct raw file URL.
 """
         return [types.TextContent(type="text", text=guidance)]
     elif name == "search_web":
@@ -2547,6 +2615,13 @@ Here is detailed information about how every tool works:
         )
     elif name == "get_croissant_dataset":
         return await get_croissant_dataset(id=arguments.get("id"))
+    elif name == "read_croissant_file":
+        return await read_croissant_file(
+            dataset_id_or_url=arguments.get("dataset_id_or_url"),
+            file_name=arguments.get("file_name")
+        )
+    elif name == "read_direct_file":
+        return await read_direct_file(url=arguments.get("url"))
     elif name == "hazards_info_profile":
         return await get_hazard_info_profiles(q=arguments.get("q"))
     elif name == "hazards_translation":
@@ -2744,7 +2819,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="read_vault_article",
-            description="Read the contents of an article or document from the MinIO vault. You can pass the exact filename (e.g. 'article.md'), the raw document ID (e.g. 'QkGa...'), or the original URL of the article. If you omit the .md extension, it will be automatically appended.",
+            description="Read the contents of an article or document from the MinIO vault. Use this ONLY to read the text contents of a markdown document. If the user asks to read the DATASET FILES or records from a vault document (e.g., 'Read files from vault <ID>'), DO NOT use this tool. Instead, construct the URL 'https://ai.mediaquantum.eu/vault/doc/<ID>' and use 'read_direct_file'.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -2791,6 +2866,29 @@ async def list_tools() -> list[types.Tool]:
                 "required": ["id"],
                 "properties": {
                     "id": {"type": "string", "description": "The internal dataset ID (e.g. 'bn36') or the full URL (e.g. 'https://data.marine.copernicus.eu/...'). IMPORTANT: Pass the EXACT URL or ID as provided. Do not reformat it, and do not remove punctuation or slashes."}
+                }
+            }
+        ),
+        types.Tool(
+            name="read_croissant_file",
+            description="Read the contents of a specific file from a Croissant dataset's distribution. Use this when the user explicitly asks to read or download a file from a dataset.",
+            inputSchema={
+                "type": "object",
+                "required": ["dataset_id_or_url", "file_name"],
+                "properties": {
+                    "dataset_id_or_url": {"type": "string", "description": "The dataset ID or URL."},
+                    "file_name": {"type": "string", "description": "The name or URL of the file to read (from the dataset's distribution)."}
+                }
+            }
+        ),
+        types.Tool(
+            name="read_direct_file",
+            description="Read the contents of a raw file directly from a URL. Use this when you have a direct URL to a file you need to read.",
+            inputSchema={
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                    "url": {"type": "string", "description": "The exact URL of the file to download and read."}
                 }
             }
         ),
@@ -3216,48 +3314,48 @@ def main(port: int, transport: str) -> int:
                     from starlette.responses import JSONResponse
                     return JSONResponse({"success": False, "error": "No question provided"})
                     
-                import os, httpx, json
+                prompt = f"""Context:
+{context_text}
+
+Question: {question}
+
+Please answer the question based ONLY on the context provided above, or by using your tools if you need to fetch additional files or data (like reading specific files from a dataset)."""
                 
-                ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-                ollama_token = os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY")
-                headers = {}
-                if ollama_token:
-                    headers["Authorization"] = f"Bearer {ollama_token}"
+                import asyncio
+                import subprocess
+                import os
+                
+                def run_agent():
+                    env = os.environ.copy()
+                    env["MCP_URL"] = "http://localhost:7070/sse"
+                    env["MODEL"] = model_name
                     
-                endpoints = [ollama_host]
-                if os.path.exists("gateway_config.json"):
-                    with open("gateway_config.json", "r") as f:
-                        cfg = json.load(f)
-                        endpoints.extend(cfg.get("ollama_endpoints", []))
+                    proc = subprocess.run(
+                        ["python3", "/app/agents/agent_reference_script.py", "-q", prompt],
+                        env=env,
+                        capture_output=True,
+                        text=True
+                    )
+                    return proc
                 
-                # Determine which endpoint has the model
-                target_endpoint = endpoints[0]
-                async with httpx.AsyncClient(timeout=10.0, headers=headers) as temp_client:
-                    for ep in endpoints:
-                        try:
-                            resp = await temp_client.get(f"{ep}/api/tags")
-                            if resp.status_code == 200:
-                                tags_data = resp.json()
-                                if any(m.get("name") == model_name for m in tags_data.get("models", [])):
-                                    target_endpoint = ep
-                                    break
-                        except Exception:
-                            pass
-                            
-                prompt = f"Context:\\n{context_text}\\n\\nQuestion: {question}\\n\\nPlease answer the question based ONLY on the context provided above."
+                # Run the subprocess in a background thread to avoid blocking the async event loop
+                proc = await asyncio.to_thread(run_agent)
                 
-                async with httpx.AsyncClient(timeout=120.0, headers=headers) as client:
-                    res = await client.post(f"{target_endpoint}/api/generate", json={
-                        "model": model_name,
-                        "prompt": prompt,
-                        "stream": False
-                    })
-                    if res.status_code == 200:
-                        from starlette.responses import JSONResponse
-                        return JSONResponse({"success": True, "answer": res.json().get("response", "")})
-                    else:
-                        from starlette.responses import JSONResponse
-                        return JSONResponse({"success": False, "error": f"Ollama error: {res.status_code}"})
+                if proc.returncode != 0:
+                    from starlette.responses import JSONResponse
+                    return JSONResponse({"success": False, "error": f"Agent failed with code {proc.returncode}. Error: {proc.stderr[-500:] if proc.stderr else proc.stdout[-500:]}"})
+                
+                # Parse the final answer
+                output = proc.stdout
+                final_answer_marker = "✅ [Agent] Final Answer:\n"
+                if final_answer_marker in output:
+                    answer = output.split(final_answer_marker)[-1].strip()
+                else:
+                    answer = output.strip()
+                    
+                from starlette.responses import JSONResponse
+                return JSONResponse({"success": True, "answer": answer})
+                
             except Exception as e:
                 from starlette.responses import JSONResponse
                 return JSONResponse({"success": False, "error": str(e)})
@@ -3537,12 +3635,8 @@ def main(port: int, transport: str) -> int:
             import os
             from starlette.responses import HTMLResponse
             index_path = "/app/static/doc_viewer.html"
-            with open(index_path, "r", encoding="utf-8") as f:
-                html_content = f.read()
-            logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
-            logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; text-decoration:none; padding: 5px; height: 100%; box-sizing: border-box;"><img src="{logo_url}" style="max-width: 250px; max-height: 100%; width: auto; height: 100%; object-fit: contain;" alt="Logo" /></a>' if logo_url else ""
-            html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
-            html_content = html_content.replace('{{LOGIN_BUTTON_HTML}}', get_login_button_html(request))
+            if not os.path.exists(index_path): index_path = "api/static/doc_viewer.html"
+            html_content = render_html_template(index_path, request)
             return HTMLResponse(content=html_content)
             
         async def vault_es_doc_raw(request):
@@ -4742,16 +4836,8 @@ def main(port: int, transport: str) -> int:
             import os
             from starlette.responses import HTMLResponse
             index_path = "/app/static/group_viewer.html"
-            try:
-                with open(index_path, "r", encoding="utf-8") as f:
-                    html_content = f.read()
-            except:
-                with open("api/static/group_viewer.html", "r", encoding="utf-8") as f:
-                    html_content = f.read()
-            logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
-            logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; text-decoration:none; padding: 5px; height: 100%; box-sizing: border-box;"><img src="{logo_url}" style="max-width: 250px; max-height: 100%; width: auto; height: 100%; object-fit: contain;" alt="Logo" /></a>' if logo_url else ""
-            html_content = html_content.replace('{{VAULT_LOGO_HTML}}', logo_html)
-            html_content = html_content.replace('{{LOGIN_BUTTON_HTML}}', get_login_button_html(request))
+            if not os.path.exists(index_path): index_path = "api/static/group_viewer.html"
+            html_content = render_html_template(index_path, request)
             return HTMLResponse(content=html_content)
 
         async def view_dataverse(request):
