@@ -808,7 +808,7 @@ async def build_collection_from_expert(collection_name: str, expert_index: str, 
                     "query": {
                         "query_string": {
                             "query": q_str,
-                            "fields": ["_full_text", "_markdown_text", "name", "description", "schema:name", "schema:description", "title", "dcterms:title", "dsDescription.dsDescriptionValue", "citation:dsDescriptionValue", "label", "keywords", "*"]
+                            "fields": ["_full_text", "_markdown_text", "name", "description", "schema:name", "schema:description", "title", "dcterms:title", "dsDescription.dsDescriptionValue", "citation:dsDescriptionValue", "label", "keywords"]
                         }
                     }
                 }
@@ -8758,7 +8758,7 @@ Please answer the question based ONLY on the context provided above (including t
                             "query": {
                                 "query_string": {
                                     "query": es_query,
-                                    "fields": ["_full_text", "_markdown_text", "name", "description", "schema:name", "schema:description", "title", "dcterms:title", "dsDescription.dsDescriptionValue", "citation:dsDescriptionValue", "*"]
+                                    "fields": ["_full_text", "_markdown_text", "name", "description", "schema:name", "schema:description", "title", "dcterms:title", "dsDescription.dsDescriptionValue", "citation:dsDescriptionValue", "label", "keywords"]
                                 }
                             }
                         }

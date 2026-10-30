@@ -1095,6 +1095,12 @@
                                     <input type="text" id="dash-var-search" placeholder="Search variables, files, or types..." oninput="filterDashboardVariables()" style="padding: 6px 12px; font-size: 0.85rem; border: 1px solid #d1d5db; border-radius: 6px; width: 250px; outline: none; background: #fff;">
                                 </div>
 
+                                <!-- Explain Button directly next to search/filter (same as variableindex) -->
+                                <button type="button" id="dash-var-explain-btn" onclick="explainCollectionVariables()" style="padding: 6px 14px; background: #6366f1; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 3px rgba(99, 102, 241, 0.3); transition: all 0.2s ease;" title="Use Ollama to read CDIF variables in current filter, explain variables with units of measure, and download report">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"></path><path d="M12 12L2.5 7.5"></path><path d="M12 12v9"></path></svg>
+                                    <span>Explain</span>
+                                </button>
+
                                 <!-- 2. Refresh Button -->
                                 <button class="dash-tool-btn" onclick="loadAndRenderVariables(true)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg> Refresh</button>
 
@@ -2205,7 +2211,7 @@
             const saveBtnBottom = document.getElementById('var-qa-save-btn-bottom');
             const saveBtnTextBottom = document.getElementById('var-qa-save-btn-text-bottom');
             const alertBox = document.getElementById('var-qa-vault-alert');
-            const searchInput = document.getElementById('var-quick-filter');
+            const searchInput = document.getElementById('dash-var-search') || document.getElementById('var-quick-filter');
             const queryStr = searchInput ? searchInput.value.trim() : '';
             const modelSelect = document.getElementById('var-qa-model-select');
             const selectedModel = modelSelect ? modelSelect.value : 'gemma4:31b-cloud';
@@ -2214,7 +2220,9 @@
                 ? `https://${window.location.host}/export?q=${encodeURIComponent(queryStr)}`
                 : (window.location.origin + `/api/collections/${colId}/variables`);
 
-            const vars = (filteredVariablesData || (cachedVariablesData ? cachedVariablesData.variables : []) || []).slice(0, 100);
+            const vars = ((filteredVariablesList && filteredVariablesList.length > 0)
+                ? filteredVariablesList
+                : (filteredVariablesData || (cachedVariablesData ? cachedVariablesData.variables : []) || [])).slice(0, 100);
 
             if (saveBtn) saveBtn.disabled = true;
             if (saveBtnText) saveBtnText.textContent = 'Saving...';
@@ -2269,10 +2277,12 @@
         }
 
         async function explainCollectionVariables(modelOverride) {
-            // Get currently active variables or filtered variables
-            const vars = filteredVariablesData || (cachedVariablesData ? cachedVariablesData.variables : []) || [];
+            // Get currently active variables from the search filter (or collection total)
+            const vars = (filteredVariablesList && filteredVariablesList.length > 0)
+                ? filteredVariablesList
+                : (filteredVariablesData || (cachedVariablesData ? cachedVariablesData.variables : []) || []);
             if (!vars || vars.length === 0) {
-                alert('No variables in current filter/collection to explain.');
+                alert('No variables in current filter/collection to explain. Please clear or adjust your filter.');
                 return;
             }
 
@@ -2281,8 +2291,10 @@
 
             const resultBox = document.getElementById('var-qa-result');
             const contentBox = document.getElementById('var-qa-content');
-            const searchInput = document.getElementById('var-quick-filter');
+            const searchInput = document.getElementById('dash-var-search') || document.getElementById('var-quick-filter');
             const filterText = searchInput ? searchInput.value.trim() : '';
+            const explainBtn = document.getElementById('dash-var-explain-btn');
+            const runBtn = document.getElementById('var-qa-run-btn');
 
             if (resultBox) resultBox.style.display = 'block';
             if (contentBox) {
@@ -2295,6 +2307,15 @@
                         </div>
                     </div>
                 `;
+            }
+
+            if (explainBtn) {
+                explainBtn.disabled = true;
+                explainBtn.innerHTML = '<span class="var-spinner" style="width: 12px; height: 12px; border-top-color: white;"></span> <span>Explaining...</span>';
+            }
+            if (runBtn) {
+                runBtn.disabled = true;
+                runBtn.innerHTML = '<span class="var-spinner" style="width: 10px; height: 10px; border-top-color: white;"></span> <span>Running...</span>';
             }
 
             try {
@@ -2331,6 +2352,18 @@
             } catch (err) {
                 if (contentBox) {
                     contentBox.innerHTML = `<span style="color: #dc3545;">Error generating explanation: ${escapeHtml(err.message)}</span>`;
+                }
+            } finally {
+                if (explainBtn) {
+                    explainBtn.disabled = false;
+                    explainBtn.innerHTML = `
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"></path><path d="M12 12L2.5 7.5"></path><path d="M12 12v9"></path></svg>
+                        <span>Explain</span>
+                    `;
+                }
+                if (runBtn) {
+                    runBtn.disabled = false;
+                    runBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 21"></polygon></svg> <span>Run</span>';
                 }
             }
         }
