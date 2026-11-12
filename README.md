@@ -39,12 +39,29 @@ See [docs/architecture.md](docs/architecture.md) for the full list of components
    git submodule update --init --recursive
    ```
 
-3. Start the infrastructure using the default local profile:
+3. Install Ollama with Docker and pull the default model (`gemma4:e2b`). The AI features (AI Studio chat, Ask, key-figure extraction and the MCP agent) need an Ollama endpoint for LLM inference:
+   ```bash
+   docker pull ollama/ollama:latest
+   docker run -d --name ollama --restart unless-stopped \
+     -p 11434:11434 -v ollama:/root/.ollama ollama/ollama:latest
+   # On a host with an NVIDIA GPU (and nvidia-container-toolkit installed), add: --gpus=all
+
+   docker exec ollama ollama pull gemma4:e2b
+   docker exec ollama ollama list   # check that gemma4:e2b is listed
+   ```
+   `profiles/default.env` already points to this instance:
+   ```ini
+   OLLAMA_HOST=http://host.docker.internal:11434
+   OLLAMA_DEFAULT_MODEL=gemma4:e2b
+   ```
+   To use a remote or cloud Ollama endpoint instead, change `OLLAMA_HOST` and set `OLLAMA_API_KEY` in your profile.
+
+4. Start the infrastructure using the default local profile:
    ```bash
    docker compose --profile ./profiles/default.env up -d
    ```
 
-4. *(Optional)* DDI-CDI Studio is not started by default. To enable it, build the image locally and add `--profile ddicdi`:
+5. *(Optional)* DDI-CDI Studio is not started by default. To enable it, build the image locally and add `--profile ddicdi`:
    ```bash
    git clone https://github.com/benjaminbeuster/DDICDI_generator_gen2.git tools/DDICDI_generator_gen2
    docker build -t ddicdi-studio:latest tools/DDICDI_generator_gen2
