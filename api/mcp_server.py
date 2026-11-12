@@ -5592,6 +5592,7 @@ def main(port: int, transport: str) -> int:
             return Minio(endpoint, access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"), secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"), secure=False)
 
         async def vault_ask(request):
+            import asyncio, sys, os
             try:
                 data = await request.json()
                 question = data.get("question", "").strip()
@@ -5672,37 +5673,22 @@ def main(port: int, transport: str) -> int:
                             pass
 
                         if not croissant_json:
-                            # Fallback via local endpoints (proxy_vault /vault/{id}.jsonld or /vault/doc/raw/{id}.jsonld)
-                            for fallback_url in [
-                                f"http://127.0.0.1:7070/vault/{clean_id}.jsonld",
-                                f"http://127.0.0.1:7070/vault/doc/raw/{clean_id}.jsonld"
-                            ]:
-                                try:
-                                    import urllib.request
-                                    with urllib.request.urlopen(fallback_url, timeout=5) as u_resp:
-                                        content = u_resp.read().decode("utf-8")
-                                        if content.strip().startswith("{"):
-                                            croissant_json = content
-                                            break
-                                except Exception:
-                                    pass
-
-                        if not croissant_json:
                             # Fallback to Elasticsearch search across configured ES nodes
                             try:
-                                import httpx
+                                import httpx, json
                                 es_urls = get_elasticsearch_lookup_urls()
                                 for es_base in es_urls:
                                     try:
-                                        r_es = await asyncio.to_thread(lambda u=es_base: httpx.post(
-                                            f"{u}/_search",
-                                            json={"query": {"ids": {"values": [clean_id]}}, "size": 1},
-                                            timeout=3.0
-                                        ))
+                                        def do_es_post(u_val):
+                                            return httpx.post(
+                                                f"{u_val}/_search",
+                                                json={"query": {"ids": {"values": [clean_id]}}, "size": 1},
+                                                timeout=3.0
+                                            )
+                                        r_es = await asyncio.to_thread(do_es_post, es_base)
                                         if r_es.status_code == 200:
                                             hits = r_es.json().get("hits", {}).get("hits", [])
                                             if hits:
-                                                import json
                                                 croissant_doc_dict = hits[0].get("_source", {})
                                                 croissant_json = json.dumps(croissant_doc_dict)
                                                 break
@@ -5774,15 +5760,34 @@ def main(port: int, transport: str) -> int:
 
                                 # If distributions or recordSets are massive, trim them to preserve complete metadata
                                 jsonld_to_inject = croissant_json
-                                if isinstance(croissant_doc_dict.get("distribution"), list) and len(croissant_doc_dict["distribution"]) > 10:
+                                need_trim = (
+                                    (isinstance(croissant_doc_dict.get("distribution"), list) and len(croissant_doc_dict["distribution"]) > 10) or
+                                    (isinstance(croissant_doc_dict.get("recordSet"), list) and len(croissant_doc_dict["recordSet"]) > 0) or
+                                    len(croissant_json) > 15000
+                                )
+                                if need_trim:
                                     import copy, json
                                     trimmed_doc = copy.deepcopy(croissant_doc_dict)
-                                    trimmed_doc["distribution"] = trimmed_doc["distribution"][:10]
-                                    trimmed_doc["distribution_total_count"] = total_files
-                                    trimmed_doc["distribution_note"] = f"CRITICAL: The complete dataset contains {total_files} files in total. Only the first 10 sample files are shown in this array snippet for brevity."
-                                    if "recordSet" in trimmed_doc and isinstance(trimmed_doc["recordSet"], list) and len(trimmed_doc["recordSet"]) > 3:
-                                        trimmed_doc["recordSet"] = trimmed_doc["recordSet"][:3]
-                                        trimmed_doc["recordSet_note"] = "Trimming remaining recordSets for brevity."
+                                    if isinstance(trimmed_doc.get("distribution"), list):
+                                        trimmed_doc["distribution"] = trimmed_doc["distribution"][:10]
+                                        trimmed_doc["distribution_total_count"] = total_files
+                                        trimmed_doc["distribution_note"] = f"CRITICAL: The complete dataset contains {total_files} files in total. Only the first 10 sample files are shown in this array snippet for brevity."
+                                    if "recordSet" in trimmed_doc and isinstance(trimmed_doc["recordSet"], list):
+                                        trimmed_rs = []
+                                        for rs_item in trimmed_doc["recordSet"][:2]:
+                                            if isinstance(rs_item, dict):
+                                                rs_copy = copy.deepcopy(rs_item)
+                                                if "field" in rs_copy and isinstance(rs_copy["field"], list) and len(rs_copy["field"]) > 15:
+                                                    total_flds = len(rs_copy["field"])
+                                                    rs_copy["field"] = rs_copy["field"][:10]
+                                                    rs_copy["field_total_count"] = total_flds
+                                                    rs_copy["field_note"] = f"Showing first 10 of {total_flds} fields in this recordSet."
+                                                trimmed_rs.append(rs_copy)
+                                            else:
+                                                trimmed_rs.append(rs_item)
+                                        trimmed_doc["recordSet"] = trimmed_rs
+                                        if len(trimmed_doc["recordSet"]) < len(croissant_doc_dict.get("recordSet", [])):
+                                            trimmed_doc["recordSet_note"] = f"Showing first {len(trimmed_rs)} of {len(croissant_doc_dict['recordSet'])} recordSets for brevity."
                                     jsonld_to_inject = json.dumps(trimmed_doc, indent=2)
 
                             context_text = f"IMPORTANT DATASET OVERVIEW:\n- Title: {ds_name}\n- Authors / Creators: {', '.join(ds_creators) if ds_creators else 'Unknown'}\n- Total files: {total_files}\n\n" + croissant_summary_snippet + "=== CROISSANT JSON-LD METADATA (Record: " + clean_id + ") ===\n" + jsonld_to_inject + "\n\n" + context_text
@@ -6007,9 +6012,25 @@ def main(port: int, transport: str) -> int:
                                         "ValueAndConceptDescription", "MeasureComponent"
                                     }
                                     if isinstance(models, list):
-                                        cdif_data["DDICDIModels"] = [m for m in models if isinstance(m, dict) and m.get("@type") not in heavy_types]
+                                        filtered_models = [m for m in models if isinstance(m, dict) and m.get("@type") not in heavy_types]
+                                        # InstanceVariable can have hundreds/thousands of columns. Cap them to prevent context overflow.
+                                        iv_models = [m for m in filtered_models if m.get("@type") == "InstanceVariable"]
+                                        non_iv_models = [m for m in filtered_models if m.get("@type") != "InstanceVariable"]
+                                        if len(iv_models) > 20:
+                                            total_ivs = len(iv_models)
+                                            sample_iv_names = [m.get("name", {}).get("name") if isinstance(m.get("name"), dict) else str(m.get("name", "")) for m in iv_models[:15]]
+                                            iv_models = iv_models[:15]
+                                            non_iv_models.append({
+                                                "@type": "VariableSummary",
+                                                "totalVariables": total_ivs,
+                                                "sampleVariables": sample_iv_names,
+                                                "note": f"Showing first 15 of {total_ivs} instance variables. Full list trimmed to fit context."
+                                            })
+                                        cdif_data["DDICDIModels"] = non_iv_models + iv_models
 
                                     cdif_json_str = json.dumps(cdif_data, indent=2)
+                                    if len(cdif_json_str) > 25000:
+                                        cdif_json_str = cdif_json_str[:25000] + "\n... [CDIF models payload truncated for length]"
                                     cdif_snippets.append(f"{cdif_stat_summary}=== CDIF (DDI-CDI) EXPORT ({exp_target}) ===\n{cdif_json_str}\n{sample_table_str}")
                             except Exception as exp_err:
                                 print(f"Warning: Failed to fetch CDIF export for QA prompt ({exp_target}): {exp_err}")
@@ -6028,6 +6049,14 @@ Please answer the question based ONLY on the context provided above (including t
 
                 # Clean any null characters or control characters that could break C/POSIX subprocess or shells
                 prompt = prompt.replace("\x00", "").replace("\r", "")
+
+                # Safety guard: Ensure overall prompt never exceeds Ollama context limits (~32k characters max)
+                MAX_PROMPT_CHARS = 32000
+                if len(prompt) > MAX_PROMPT_CHARS:
+                    # Keep question and prompt instructions intact at the end
+                    suffix = f"\n\nQuestion: {question}\n\nPlease answer the question based ONLY on the context provided above (including the downloaded file content if available), or by using your tools if you need to fetch additional files or data."
+                    allowed_ctx_len = MAX_PROMPT_CHARS - len(suffix) - 50
+                    prompt = f"Context:\n{context_text[:allowed_ctx_len]}\n... [Context truncated to fit model context limit]\n{suffix}"
 
                 import asyncio
                 import subprocess
