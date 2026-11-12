@@ -1,23 +1,29 @@
 services:
   init:
-    container_name: ${PROFILE_NAME:-croissant-live}-init
+    container_name: ${PROFILE_NAME:-default}-init
     profiles:
-      - ${PROFILE_NAME:-croissant-live}
+      - ${PROFILE_NAME:-default}
+      - ./profiles/${PROFILE_NAME:-default}.env
+      - profiles/${PROFILE_NAME:-default}.env
+      - croissant-live
     image: docker.io/library/busybox
     command:
       ["sh", "-c", "chown -R 65534:0 /data/server && chown -R 65534:0 /data/ui && chown -R 1000:0 /data/es && chown -R 65532:65532 /data/minio"]
     stop_grace_period: 0s
     restart: "no"
     volumes:
-      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-croissant-live}/server:/data/server
-      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-croissant-live}/ui:/data/ui
-      - ./volumes/${PROFILE_NAME:-croissant-live}/es:/data/es
-      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-croissant-live}/minio:/data/minio
+      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-default}/server:/data/server
+      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-default}/ui:/data/ui
+      - ./volumes/${PROFILE_NAME:-default}/es:/data/es
+      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-default}/minio:/data/minio
 
   server:
-    container_name: ${PROFILE_NAME:-croissant-live}-server
+    container_name: ${PROFILE_NAME:-default}-server
     profiles:
-      - ${PROFILE_NAME:-croissant-live}
+      - ${PROFILE_NAME:-default}
+      - ./profiles/${PROFILE_NAME:-default}.env
+      - profiles/${PROFILE_NAME:-default}.env
+      - croissant-live
     image: ghcr.io/zazukoians/qlever-server:latest
     user: "65534:0"
     stop_grace_period: 0s
@@ -27,40 +33,46 @@ services:
     ports:
       - "${QLEVER_SERVER_PORT:-7011}:7011"
     env_file:
-      - ./profiles/${PROFILE_NAME:-croissant-live}.env
+      - ./profiles/${PROFILE_NAME:-default}.env
     environment:
       - INDEXING=${INDEXING:-false}
       - FORCE_INDEXING=${FORCE_INDEXING:-false}
     volumes:
-      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-croissant-live}/server:/data
+      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-default}/server:/data
       - ${DATA_DIR:-./qlever-tests/data}:/raw_data:ro
 
   ui:
-    container_name: ${PROFILE_NAME:-croissant-live}-ui
+    container_name: ${PROFILE_NAME:-default}-ui
     profiles:
-      - ${PROFILE_NAME:-croissant-live}
+      - ${PROFILE_NAME:-default}
+      - ./profiles/${PROFILE_NAME:-default}.env
+      - profiles/${PROFILE_NAME:-default}.env
+      - croissant-live
     image: ghcr.io/zazukoians/qlever-ui:latest
     user: "65534:0"
     stop_grace_period: 0s
     ports:
       - "${QLEVER_UI_PORT:-7012}:7012"
     env_file:
-      - ./profiles/${PROFILE_NAME:-croissant-live}.env
+      - ./profiles/${PROFILE_NAME:-default}.env
     volumes:
-      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-croissant-live}/ui:/app/db
+      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-default}/ui:/app/db
     depends_on:
       - server
 
   elasticsearch:
-    container_name: ${PROFILE_NAME:-croissant-live}-elasticsearch
+    container_name: ${PROFILE_NAME:-default}-elasticsearch
     profiles:
-      - ${PROFILE_NAME:-croissant-live}
+      - ${PROFILE_NAME:-default}
+      - ./profiles/${PROFILE_NAME:-default}.env
+      - profiles/${PROFILE_NAME:-default}.env
+      - croissant-live
     image: docker.elastic.co/elasticsearch/elasticsearch:8.14.3
     depends_on:
       init:
         condition: service_completed_successfully
     env_file:
-      - ./profiles/${PROFILE_NAME:-croissant-live}.env
+      - ./profiles/${PROFILE_NAME:-default}.env
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
@@ -69,7 +81,7 @@ services:
     ports:
       - "${ES_PORT:-9200}:9200"
     volumes:
-      - ./volumes/${PROFILE_NAME:-croissant-live}/es:/usr/share/elasticsearch/data
+      - ./volumes/${PROFILE_NAME:-default}/es:/usr/share/elasticsearch/data
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -qv '\"status\":\"red\"'"]
       interval: 15s
@@ -77,15 +89,23 @@ services:
       retries: 10
 
   api:
-    container_name: ${PROFILE_NAME:-croissant-live}-api
+    container_name: ${PROFILE_NAME:-default}-api
     profiles:
-      - ${PROFILE_NAME:-croissant-live}
-    image: api-${PROFILE_NAME:-croissant-live}
+      - ${PROFILE_NAME:-default}
+      - ./profiles/${PROFILE_NAME:-default}.env
+      - profiles/${PROFILE_NAME:-default}.env
+      - croissant-live
+    image: api-${PROFILE_NAME:-default}
     pull_policy: never
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${API_PORT:-7013}:8000"
     env_file:
-      - ./profiles/${PROFILE_NAME:-croissant-live}.env
+      - ./profiles/${PROFILE_NAME:-default}.env
     environment:
       - ELASTICSEARCH_URL=${ELASTICSEARCH_URL:-http://elasticsearch:9200}
       - ES_GLOBAL_HOST=${ES_GLOBAL_HOST:-}
@@ -97,7 +117,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./hips:/app/hips:ro
       - ${DATA_DIR:-./qlever-tests/data}:/data
-      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-croissant-live}/server:/volumes/server
+      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-default}/server:/volumes/server
       - ./convertors:/app/convertors:ro
       - ./agents:/app/agents:ro
       - ~/.odrl:/app/.odrl
@@ -117,23 +137,30 @@ services:
       - ./nodes.conf:/app/nodes.conf:ro
       - ./profiles:/app/profiles:ro
       - ./dumps:/app/dumps:ro
-      - ./dumps:/app/dumps:ro
     depends_on:
       - server
       - elasticsearch
 
   mcp:
-    container_name: ${PROFILE_NAME:-croissant-live}-mcp
+    container_name: ${PROFILE_NAME:-default}-mcp
     profiles:
-      - ${PROFILE_NAME:-croissant-live}
-    image: api-${PROFILE_NAME:-croissant-live}
+      - ${PROFILE_NAME:-default}
+      - ./profiles/${PROFILE_NAME:-default}.env
+      - profiles/${PROFILE_NAME:-default}.env
+      - croissant-live
+    image: api-${PROFILE_NAME:-default}
     pull_policy: never
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     command: ["python", "/app/mcp_server.py", "--transport", "sse"]
     ports:
       - "${MCP_PORT:-7070}:7070"
     env_file:
-      - ./profiles/${PROFILE_NAME:-croissant-live}.env
+      - ./profiles/${PROFILE_NAME:-default}.env
     environment:
       - API_BASE=http://api:8000
       - MCP_TRANSPORT=sse
@@ -172,9 +199,12 @@ services:
       - elasticsearch
 
   minio:
-    container_name: ${PROFILE_NAME:-croissant-live}-minio
+    container_name: ${PROFILE_NAME:-default}-minio
     profiles:
-      - ${PROFILE_NAME:-croissant-live}
+      - ${PROFILE_NAME:-default}
+      - ./profiles/${PROFILE_NAME:-default}.env
+      - profiles/${PROFILE_NAME:-default}.env
+      - croissant-live
     image: ${MINIO_IMAGE:-cgr.dev/chainguard/minio:latest}
     ports:
       - "${MINIO_API_PORT:-9005}:9000"
@@ -184,13 +214,16 @@ services:
       - MINIO_ROOT_PASSWORD=minioadmin
     command: server /data --console-address ":9001"
     volumes:
-      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-croissant-live}/minio:/data
+      - ${VOLUME_DIR:-./qlever-tests/volumes}/${PROFILE_NAME:-default}/minio:/data
 
   converters:
-    container_name: ${PROFILE_NAME:-croissant-live}-converters
+    container_name: ${PROFILE_NAME:-default}-converters
     profiles:
-      - ${PROFILE_NAME:-croissant-live}
-    image: ${PROFILE_NAME:-croissant-live}-converters
+      - ${PROFILE_NAME:-default}
+      - ./profiles/${PROFILE_NAME:-default}.env
+      - profiles/${PROFILE_NAME:-default}.env
+      - croissant-live
+    image: ${PROFILE_NAME:-default}-converters
     pull_policy: never
     build:
       context: ./tools/converters
@@ -209,9 +242,12 @@ services:
       start_period: 15s
 
   ddicdi:
-    container_name: ${PROFILE_NAME:-croissant-live}-ddicdi
+    container_name: ${PROFILE_NAME:-default}-ddicdi
     profiles:
-      - ${PROFILE_NAME:-croissant-live}
+      - ${PROFILE_NAME:-default}
+      - ./profiles/${PROFILE_NAME:-default}.env
+      - profiles/${PROFILE_NAME:-default}.env
+      - croissant-live
     image: ddicdi-studio:latest
     restart: unless-stopped
     ports:

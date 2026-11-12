@@ -12,7 +12,9 @@ CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent.co
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     config = json.load(f)
 
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", config.get("OLLAMA_HOST", "http://10.147.18.24:11444"))
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", config.get("OLLAMA_HOST", "http://host.docker.internal:11434"))
+if os.path.exists("/.dockerenv") and ("localhost:" in OLLAMA_HOST or "127.0.0.1:" in OLLAMA_HOST):
+    OLLAMA_HOST = OLLAMA_HOST.replace("localhost:", "host.docker.internal:").replace("127.0.0.1:", "host.docker.internal:")
 MODEL = os.environ.get("MODEL") or os.environ.get("OLLAMA_DEFAULT_MODEL") or config.get("MODEL") or "gemma4:e2b"
 OLLAMA_TOKEN = os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY") or "test-api-key-12345"
 MCP_URL = os.environ.get("MCP_URL", config.get("MCP_URL", "http://localhost:7070/sse"))
@@ -73,14 +75,14 @@ async def run_agent(query: str, expert: str = "openml", limit: int = 10, save_va
                                 "tools": ollama_tools,
                                 "stream": False,
                                 "options": {
-                                    "num_ctx": 8192
+                                    "num_ctx": 16384
                                 }
                             },
                             headers=req_headers
                         )
                     except Exception as e:
                         # Fallback attempt if host fails
-                        fallback_host = "http://10.147.18.24:11434" if OLLAMA_HOST != "http://10.147.18.24:11434" else "http://10.147.18.24:11444"
+                        fallback_host = "http://host.docker.internal:11434" if OLLAMA_HOST != "http://host.docker.internal:11434" else "http://localhost:11434"
                         try:
                             response = await client.post(
                                 f"{fallback_host}/api/chat",
@@ -90,7 +92,7 @@ async def run_agent(query: str, expert: str = "openml", limit: int = 10, save_va
                                     "tools": ollama_tools,
                                     "stream": False,
                                     "options": {
-                                        "num_ctx": 8192
+                                        "num_ctx": 16384
                                     }
                                 },
                                 headers=req_headers
@@ -134,7 +136,7 @@ async def run_agent(query: str, expert: str = "openml", limit: int = 10, save_va
                             })
                     else:
                         keepalive_task.cancel()
-                        final_answer = msg.get("content", "")
+                        final_answer = (msg.get("content") or msg.get("thinking") or "").strip()
                         print("\n✅ [Agent] Final Answer:")
                         print(final_answer)
                         

@@ -10,9 +10,10 @@
 - A **Vault** (MinIO) for persistent storage of AI-generated summaries and their Croissant JSON-LD metadata.
 - A rich **Web UI** for browsing, reading, and interacting with Vault documents.
 
-This development is funded by:
+Semantic Croissant platform is being used by following European projects:
 - The **Climate-Adapt4EOSC** project (Horizon Europe, Grant N° 101188248).
 - **CDIF4EOSC**: Cross-Domain Interoperability Framework for EOSC (Grant 101292473).
+- **AI4Social+** - AI Readiness for Social Impact aiming to integrate artificial intelligence into the social sciences and humanities (SSH) through the European Open Science Cloud (EOSC), Grant agreement ID: 101292886.
 
 ---
 
@@ -39,14 +40,14 @@ This development is funded by:
 # Initialize submodules
 git submodule update --init --recursive
 
-# Build the API image
-docker build -t api-croissant-live api/
+# Build the local DDI-CDI Studio image
+docker build -t ddicdi-studio:latest tools/DDICDI_generator_gen2
 
-# Start the full stack
-docker compose --profile croissant-live up -d
+# Start the full local stack (default profile)
+docker-compose --profile ./profiles/default.env up -d
 
 # Stop the stack
-docker compose --profile croissant-live down
+docker-compose --profile ./profiles/default.env down
 
 # Run a specific profile (e.g., ca4eosc)
 PROFILE_NAME=ca4eosc docker compose --env-file profiles/ca4eosc.env -p ca4eosc --profile ca4eosc up -d
@@ -228,7 +229,7 @@ Environment profiles in `profiles/` enable isolated multi-tenant deployments:
 
 | Profile | File |
 |---|---|
-| `croissant-live` | `profiles/croissant-live.env` |
+| `default` | `profiles/default.env` |
 | `codata` | `profiles/codata.env` |
 | `codata-dev` | `profiles/codata-dev.env` |
 | `ca4eosc` | `profiles/ca4eosc.env` |

@@ -103,11 +103,11 @@ docker pull cgr.dev/chainguard/minio:latest
 docker tag cgr.dev/chainguard/minio:latest minio/minio:latest
 ```
 
-### C. Build the Profile API Image
-The FastAPI / MCP backend image is tagged per profile (`api-<PROFILE_NAME>`):
+### C. Build the Profile API Image (Optional)
+Docker Compose automatically builds `api-default` and `default-converters` when using the `default` profile. If building manually for a custom profile (`api-<PROFILE_NAME>`):
 ```bash
-# For default croissant-live profile:
-docker build -t api-croissant-live api/
+# For default local profile:
+docker build -t api-default api/
 
 # For a custom profile (e.g., dvneurope, ca4eosc, codata):
 docker build -t api-dvneurope api/
@@ -120,7 +120,7 @@ docker build -t api-dvneurope api/
 Deployments are isolated via profile environment files located in `profiles/*.env`.
 
 ### Available Profiles
-- `croissant-live.env` (Default production / live instance)
+- `default.env` (Default fully local setup)
 - `dvneurope.env` (Dataverse Europe configuration)
 - `ca4eosc.env` (Climate-Adapt4EOSC project)
 - `cdif4eosc.env` (CDIF4EOSC project)
@@ -165,13 +165,10 @@ Run Docker Compose with the desired profile and env-file:
 docker compose --env-file profiles/dvneurope.env -p dvneurope --profile dvneurope up -d
 ```
 
-### Example: Starting the Default `croissant-live` Profile
+### Example: Starting the Default Local Profile (`default.env`)
 ```bash
-# 1. Build API image if not done yet
-docker build -t api-croissant-live api/
-
-# 2. Launch stack
-docker compose --env-file profiles/croissant-live.env -p croissant-live --profile croissant-live up -d
+# Launch the full local stack (builds api-default and default-converters automatically)
+docker-compose --profile ./profiles/default.env up -d
 ```
 
 ---

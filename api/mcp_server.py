@@ -6026,14 +6026,14 @@ def main(port: int, transport: str) -> int:
                                         cdif_data["DDICDIModels"] = non_iv_models + iv_models
 
                                     cdif_json_str = json.dumps(cdif_data, indent=2)
-                                    if len(cdif_json_str) > 25000:
-                                        cdif_json_str = cdif_json_str[:25000] + "\n... [CDIF models payload truncated for length]"
+                                    if len(cdif_json_str) > 8000:
+                                        cdif_json_str = cdif_json_str[:8000] + "\n... [CDIF models payload truncated for length]"
                                     cdif_snippets.append(f"{cdif_stat_summary}=== CDIF (DDI-CDI) EXPORT ({exp_target}) ===\n{cdif_json_str}\n{sample_table_str}")
                             except Exception as exp_err:
                                 print(f"Warning: Failed to fetch CDIF export for QA prompt ({exp_target}): {exp_err}")
 
                     if cdif_snippets:
-                        context_text = "\n\n".join(cdif_snippets) + "\n\n" + context_text
+                        context_text = context_text + "\n\n" + "\n\n".join(cdif_snippets)
                 except Exception as ex_cdif:
                     print(f"Warning: Error processing CDIF export for QA prompt: {ex_cdif}")
                     
@@ -6047,8 +6047,8 @@ Please answer the question based ONLY on the context provided above (including t
                 # Clean any null characters or control characters that could break C/POSIX subprocess or shells
                 prompt = prompt.replace("\x00", "").replace("\r", "")
 
-                # Safety guard: Ensure overall prompt never exceeds Ollama context limits (~32k characters max)
-                MAX_PROMPT_CHARS = 32000
+                # Safety guard: Ensure overall prompt never exceeds Ollama context limits (~24k characters max)
+                MAX_PROMPT_CHARS = 24000
                 if len(prompt) > MAX_PROMPT_CHARS:
                     # Keep question and prompt instructions intact at the end
                     suffix = f"\n\nQuestion: {question}\n\nPlease answer the question based ONLY on the context provided above (including the downloaded file content if available), or by using your tools if you need to fetch additional files or data."
@@ -6065,10 +6065,16 @@ Please answer the question based ONLY on the context provided above (including t
                 def run_agent():
                     env = os.environ.copy()
                     env["MCP_URL"] = "http://localhost:7070/sse"
-                    ollama_h = os.environ.get("OLLAMA_HOST", "http://10.147.18.24:11444")
+                    ollama_h = os.environ.get("OLLAMA_HOST", "http://host.docker.internal:11434")
+                    if os.path.exists("/.dockerenv") and ("localhost:" in ollama_h or "127.0.0.1:" in ollama_h):
+                        ollama_h = ollama_h.replace("localhost:", "host.docker.internal:").replace("127.0.0.1:", "host.docker.internal:")
                     env["OLLAMA_HOST"] = ollama_h
                     env["MODEL"] = model_name
                     env["OLLAMA_TOKEN"] = os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY") or "test-api-key-12345"
+                    if "SYSTEM_PROMPT" not in os.environ:
+                        env["SYSTEM_PROMPT"] = "You are an expert AI data analyst assistant connected to an MCP tool ecosystem. When context is already provided in the prompt, answer the user's question directly, accurately, and concisely based on the provided context. Only invoke MCP tools if additional external data not already in the context is explicitly required."
+                    if "USER_PROMPT_TEMPLATE" not in os.environ:
+                        env["USER_PROMPT_TEMPLATE"] = "{query}"
                     
                     proc = subprocess.run(
                         ["python3", "/app/agents/agent_reference_script.py", "-q", "-"],
@@ -6104,30 +6110,34 @@ Please answer the question based ONLY on the context provided above (including t
 
         async def vault_models(request):
             import os, httpx
-            ollama_host = os.environ.get("OLLAMA_HOST", "http://10.147.18.24:11444")
+            ollama_host = os.environ.get("OLLAMA_HOST", "http://host.docker.internal:11434").strip()
+            if os.path.exists("/.dockerenv") and ("localhost:" in ollama_host or "127.0.0.1:" in ollama_host):
+                ollama_host = ollama_host.replace("localhost:", "host.docker.internal:").replace("127.0.0.1:", "host.docker.internal:")
             ollama_token = os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY")
             headers = {}
             if ollama_token:
                 headers["Authorization"] = f"Bearer {ollama_token}"
             try:
                 import json
-                endpoints = ["http://10.147.18.24:11434", "http://10.147.18.24:11444"]
-                if ollama_host and ollama_host not in endpoints:
-                    endpoints.insert(0, ollama_host)
-                    endpoints.append(ollama_host)
-                if "http://10.147.18.82:11435" not in endpoints:
-                    endpoints.append("http://10.147.18.82:11435")
-                cfg_candidates = ["gateway_config.json", os.path.join(os.path.dirname(__file__), "gateway_config.json")]
-                for cfg_file in cfg_candidates:
-                    if os.path.exists(cfg_file):
-                        try:
-                            with open(cfg_file, "r") as f:
-                                cfg = json.load(f)
-                                for ep in cfg.get("ollama_endpoints", []):
-                                    if ep not in endpoints:
-                                        endpoints.append(ep)
-                        except Exception:
-                            pass
+                endpoints = []
+                if ollama_host:
+                    endpoints.append(ollama_host.rstrip("/"))
+                for env_k in ("OLLAMA_HOST_2", "OLLAMA_HOST_3"):
+                    extra_ep = os.environ.get(env_k, "").strip().rstrip("/")
+                    if extra_ep and extra_ep not in endpoints:
+                        endpoints.append(extra_ep)
+                if not endpoints:
+                    cfg_candidates = ["gateway_config.json", os.path.join(os.path.dirname(__file__), "gateway_config.json")]
+                    for cfg_file in cfg_candidates:
+                        if os.path.exists(cfg_file):
+                            try:
+                                with open(cfg_file, "r") as f:
+                                    cfg = json.load(f)
+                                    for ep in cfg.get("ollama_endpoints", []):
+                                        if ep not in endpoints:
+                                            endpoints.append(ep)
+                            except Exception:
+                                pass
                 
                 all_models = []
                 seen_ids = set()
@@ -6145,11 +6155,6 @@ Please answer the question based ONLY on the context provided above (including t
                         except Exception as e:
                             print(f"Failed to fetch models from {ep}: {e}")
                             
-                # Ensure OLLAMA_DEFAULT_MODEL alias is available and prioritized
-                if OLLAMA_DEFAULT_MODEL not in seen_ids:
-                    all_models.insert(0, {"id": OLLAMA_DEFAULT_MODEL, "object": "model", "created": 1788289193, "owned_by": "ollama.com"})
-                    seen_ids.add(OLLAMA_DEFAULT_MODEL)
-
                 # Sort models so OLLAMA_DEFAULT_MODEL is first
                 all_models.sort(key=lambda m: 0 if m.get("id") == OLLAMA_DEFAULT_MODEL else (1 if "cloud" in m.get("id", "") else 2))
 

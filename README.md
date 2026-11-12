@@ -2,13 +2,14 @@
 
 This repository contains the deployment infrastructure for the `croissant-live` semantic database, leveraging [QLever](https://github.com/ad-freiburg/qlever).
 
-This development is funded by:
+Semantic Croissant platform is being used by following European projects:
 - The Climate-Adapt4EOSC project has received funding from the Horizon Europe Framework Programme under grant agreement N° 101188248.
 - CDIF4EOSC: Developing and implementing the Cross-Domain Interoperability Framework for EOSC is funded by the European Union under Grant Agreement 101292473.
+- AI4Social+ - AI Readiness for Social Impact aiming to integrate artificial intelligence into the social sciences and humanities (SSH) through the European Open Science Cloud (EOSC), Grant agreement ID: 101292886.
 
 ## Architecture
 - **qlever-tests**: The original `qlever-tests` repository is linked here as a **Git Submodule**. This provides access to the required environment variables (`.env` files) and Docker build contexts (`Dockerfile`s).
-- **compose.yaml**: The Docker Compose file defines the `croissant-live` profile to run the server and UI concurrently with standard QLever components.
+- **compose.yaml**: The Docker Compose file defines the `default` profile (`./profiles/default.env`) to run the server, UI, API, MCP server, Elasticsearch, MinIO, Converters, and DDI-CDI Studio in a fully local setup.
 
 ## Deploying
 
@@ -17,9 +18,14 @@ This development is funded by:
    git submodule update --init --recursive
    ```
 
-2. Start the infrastructure:
+2. Build the local DDI-CDI Studio image (first-time setup):
    ```bash
-   docker compose --profile croissant-live up -d
+   docker build -t ddicdi-studio:latest tools/DDICDI_generator_gen2
+   ```
+
+3. Start the infrastructure using the default local profile:
+   ```bash
+   docker-compose --profile ./profiles/default.env up -d
    ```
 
 ### Volume Parameterization
@@ -28,11 +34,16 @@ By default, the Docker compose configuration uses volumes located at `./qlever-t
 You can override these directories by providing environment variables before running docker-compose:
 
 ```bash
-VOLUME_DIR=/path/to/my/volumes DATA_DIR=/path/to/my/data docker compose --profile croissant-live up -d
+VOLUME_DIR=/path/to/my/volumes DATA_DIR=/path/to/my/data docker-compose --profile ./profiles/default.env up -d
 ```
 
 ### Profiles
-The infrastructure supports running multiple independent instances of Semantic Croissant concurrently on the same machine by using isolated profiles. Environment variables (such as port mappings and `DATA_DIR`) for each profile are stored in the `profiles/` directory (e.g., `profiles/codata.env`, `profiles/cdif4eosc.env`, `profiles/ca4eosc.env`).
+The infrastructure supports running multiple independent instances of Semantic Croissant concurrently on the same machine by using isolated profiles. Environment variables (such as port mappings and `DATA_DIR`) for each profile are stored in the `profiles/` directory (e.g., `profiles/default.env`, `profiles/codata.env`, `profiles/cdif4eosc.env`, `profiles/ca4eosc.env`).
+
+For the default local setup, simply run:
+```bash
+docker-compose --profile ./profiles/default.env up -d
+```
 
 To build and run a specific profile (for example, `ca4eosc`), you must pass the `--env-file` flag pointing to the profile's configuration file and set the `PROFILE_NAME` variable.
 
@@ -71,15 +82,15 @@ To update the data and restart the services:
 1. Ensure your updated `data.nt` file is placed in the configured data directory (by default, `./qlever-tests/data/data.nt`).
 2. Bring down the currently running services:
    ```bash
-   docker compose --profile croissant-live down
+   docker-compose --profile ./profiles/default.env down
    ```
 3. Remove the old QLever index cache files. Because these files are created by the Docker root user, you can use a transient Alpine container to delete them cleanly from the volume folder:
    ```bash
-   docker run --rm -v $(pwd)/qlever-tests/volumes/croissant-live/server:/server alpine sh -c "rm -f /server/croissant.*"
+   docker run --rm -v $(pwd)/qlever-tests/volumes/default/server:/server alpine sh -c "rm -f /server/croissant.*"
    ```
 4. Restart the services:
    ```bash
-   docker compose --profile croissant-live up -d
+   docker-compose --profile ./profiles/default.env up -d
    ```
 
 Upon startup, the server will detect that the index files are missing and automatically parse the new `data/data.nt` file to rebuild the index from scratch.
@@ -87,14 +98,14 @@ Upon startup, the server will detect that the index files are missing and automa
 ### Using Pre-built Indexes
 If you already possess the pre-built QLever index files (such as `croissant.index.*`, `croissant.vocabulary.*`, etc.) from another machine or backup, you can entirely skip the lengthy index building phase.
 
-1. Ensure the `server-croissant-live` container is stopped.
+1. Ensure the `default-server` container is stopped.
 2. Copy all your pre-built index files directly into the mounted server volume directory. By default, this is:
    ```bash
-   ./qlever-tests/volumes/croissant-live/server/
+   ./qlever-tests/volumes/default/server/
    ```
-   *(If you customized `$VOLUME_DIR`, place them in `$VOLUME_DIR/croissant-live/server/`)*
+   *(If you customized `$VOLUME_DIR`, place them in `$VOLUME_DIR/default/server/`)*
 3. Ensure the files are named correctly (e.g., prefixed with `croissant.`) and belong to the correct permissions (the QLever Docker container reads them as user `65534:0`).
-4. Run `docker compose --profile croissant-live up -d`. The server will instantly detect the existing index and load the graph into memory.
+4. Run `docker-compose --profile ./profiles/default.env up -d`. The server will instantly detect the existing index and load the graph into memory.
 
 ## Data Ingestion (API)
 
@@ -225,19 +236,18 @@ The repository includes a dedicated MCP service (`mcp-croissant-live`) that expo
 This enables you to ask AI assistants to "search for datasets about X" or "extract the full JSON-LD for dataset Y", and they will seamlessly execute these tasks against your live QLever instance.
 
 ### Running the MCP Service
-The MCP service is automatically included when you start the `croissant-live` profile. By default, it runs as an HTTP Server-Sent Events (SSE) server exposed on port `7070`.
+The MCP service is automatically included when you start the `default` profile. By default, it runs as an HTTP Server-Sent Events (SSE) server exposed on port `7070`.
 
 ```bash
-docker compose --profile croissant-live up -d
+docker-compose --profile ./profiles/default.env up -d
 ```
 You can connect remote MCP clients directly to `http://localhost:7070/sse`.
 
 ### Rebuilding and Restarting the MCP Service
-If you make changes to the MCP server code (`api/mcp_server.py`), you need to rebuild the API Docker image and restart the MCP container:
+If you make changes to the MCP server code (`api/mcp_server.py`), you can rebuild and restart the MCP container:
 
 ```bash
-docker build -t api-croissant-live api/
-docker compose --profile croissant-live up -d --force-recreate mcp-croissant-live
+docker-compose --profile ./profiles/default.env up -d --build --force-recreate mcp
 ```
 
 ### ODRL / DID Authentication

@@ -154,9 +154,11 @@ DATA_DIR = "/data"
 INDEX_DIR = "/volumes/server"
 DATA_FILE = os.path.join(DATA_DIR, "data.nt")
 QLEVER_FILE = os.path.join(INDEX_DIR, "Qleverfile")
+QLEVER_URL = os.environ.get("QLEVER_URL", "http://server:7011").rstrip("/")
+PROFILE_NAME = os.environ.get("PROFILE_NAME", "default")
 
 def generate_qleverfile():
-    content = """[data]
+    content = f"""[data]
 NAME = croissant
 GET_DATA_CMD = cat data.nt > croissant.nt
 INDEX_INPUT_FILES = croissant.nt
@@ -164,10 +166,10 @@ INDEX_INPUT_FILES = croissant.nt
 [server]
 PORT = 7011
 ACCESS_TOKEN = croissant_7643543846_Zs6nw7yi3Z9m
-HOST_NAME = server-croissant-live
+HOST_NAME = {PROFILE_NAME}-server
 
 [runtime]
-SERVER_CONTAINER = codata-server
+SERVER_CONTAINER = {PROFILE_NAME}-server
 SYSTEM = native
 """
     with open(QLEVER_FILE, "w") as f:
@@ -189,7 +191,7 @@ def rebuild_index():
         
         # 2. Restart QLever Server
         subprocess.run(
-            ["docker", "restart", "codata-server"],
+            ["docker", "restart", f"{PROFILE_NAME}-server"],
             check=True
         )
         print("Index rebuild completed and server restarted.", flush=True)
@@ -250,7 +252,7 @@ async def add_record(request: Request, background_tasks: BackgroundTasks, rebuil
         if nt_data.strip():
             insert_query = f"INSERT DATA {{ {nt_data} }}".encode("utf-8")
             req = urllib.request.Request(
-                "http://server:7041/", 
+                f"{QLEVER_URL}/", 
                 data=insert_query,
                 headers={
                     "Content-type": "application/sparql-update",
@@ -309,7 +311,7 @@ def search_datasets(q: str):
         }} LIMIT 5000
         """
         
-        url = "http://server:7041/"
+        url = f"{QLEVER_URL}/"
         data = urllib.parse.urlencode({"query": query}).encode('ascii')
         req = urllib.request.Request(url, data=data, headers={"User-Agent": "curl/7.68.0"})
         try:
@@ -369,7 +371,7 @@ def get_datasets_properties(dataset_ids):
     """
     
     encoded = urllib.parse.urlencode({"query": sparql}).encode("utf-8")
-    url = "http://server:7041/"
+    url = f"{QLEVER_URL}/"
     req = urllib.request.Request(
         url, 
         data=encoded,
@@ -1270,7 +1272,7 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
         
         def run_q(query):
             encoded = urllib.parse.urlencode({"query": query})
-            url = f"http://server:7041/?{encoded}"
+            url = f"{QLEVER_URL}/?{encoded}"
             req = urllib.request.Request(url, headers={"Accept": "application/json"})
             with urllib.request.urlopen(req) as response:
                 return json.loads(response.read().decode()).get("results", {}).get("bindings", [])
@@ -1447,7 +1449,7 @@ def get_croissant_catalog(id: str = None, q: str = None, limit: int = 500, page:
                 OFFSET {offset}
                 """
                 encoded_query = urllib.parse.urlencode({"query": sparql}).encode("utf-8")
-                url = "http://server:7041/"
+                url = f"{QLEVER_URL}/"
                 req = urllib.request.Request(
                     url, 
                     data=encoded_query,
@@ -1588,7 +1590,7 @@ def get_variables_sparql(id: str):
         }} LIMIT 1
         """
         enc_res = urllib.parse.urlencode({"query": resolve_query}).encode("utf-8")
-        req_res = urllib.request.Request("http://server:7041/", data=enc_res, headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"})
+        req_res = urllib.request.Request(f"{QLEVER_URL}/", data=enc_res, headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"})
         try:
             with urllib.request.urlopen(req_res) as response_res:
                 res_bindings = json.loads(response_res.read().decode()).get("results", {}).get("bindings", [])
@@ -1650,7 +1652,7 @@ def get_variables_sparql(id: str):
     """
     
     encoded = urllib.parse.urlencode({"query": query}).encode("utf-8")
-    url = "http://server:7041/"
+    url = f"{QLEVER_URL}/"
     req = urllib.request.Request(
         url, 
         data=encoded,
