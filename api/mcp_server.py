@@ -5660,7 +5660,7 @@ def main(port: int, transport: str) -> int:
                 if doc_id:
                     try:
                         clean_id = doc_id.replace(".jsonld", "").replace(".md", "")
-                        # Fetch the full Croissant record from the Vault (try MinIO first, then fallback to local endpoint)
+                        # Fetch the full Croissant record from the Vault (try MinIO first, then local endpoints, then ES)
                         croissant_json = ""
                         try:
                             m_client = get_minio_client()
@@ -5669,28 +5669,88 @@ def main(port: int, transport: str) -> int:
                             j_resp.close()
                             j_resp.release_conn()
                         except Exception as m_err:
-                            # Fallback via local HTTP if MinIO direct call fails
+                            pass
+
+                        if not croissant_json:
+                            # Fallback via local endpoints (proxy_vault /vault/{id}.jsonld or /vault/doc/raw/{id}.jsonld)
+                            for fallback_url in [
+                                f"http://127.0.0.1:7070/vault/{clean_id}.jsonld",
+                                f"http://127.0.0.1:7070/vault/doc/raw/{clean_id}.jsonld"
+                            ]:
+                                try:
+                                    import urllib.request
+                                    with urllib.request.urlopen(fallback_url, timeout=5) as u_resp:
+                                        content = u_resp.read().decode("utf-8")
+                                        if content.strip().startswith("{"):
+                                            croissant_json = content
+                                            break
+                                except Exception:
+                                    pass
+
+                        if not croissant_json:
+                            # Fallback to Elasticsearch search across configured ES nodes
                             try:
-                                import urllib.request
-                                with urllib.request.urlopen(f"http://127.0.0.1:7070/vault/doc/raw/{clean_id}.jsonld", timeout=5) as u_resp:
-                                    croissant_json = u_resp.read().decode("utf-8")
+                                import httpx
+                                es_urls = get_elasticsearch_lookup_urls()
+                                for es_base in es_urls:
+                                    try:
+                                        r_es = await asyncio.to_thread(lambda u=es_base: httpx.post(
+                                            f"{u}/_search",
+                                            json={"query": {"ids": {"values": [clean_id]}}, "size": 1},
+                                            timeout=3.0
+                                        ))
+                                        if r_es.status_code == 200:
+                                            hits = r_es.json().get("hits", {}).get("hits", [])
+                                            if hits:
+                                                import json
+                                                croissant_doc_dict = hits[0].get("_source", {})
+                                                croissant_json = json.dumps(croissant_doc_dict)
+                                                break
+                                    except Exception:
+                                        pass
                             except Exception:
                                 pass
 
                         if croissant_json:
                             try:
                                 import json
-                                croissant_doc_dict = json.loads(croissant_json)
+                                if not croissant_doc_dict:
+                                    croissant_doc_dict = json.loads(croissant_json)
                             except Exception:
                                 pass
 
-                            # Build an explicit, high-level summary of the dataset distributions and count
+                            # Build an explicit, high-level summary of the dataset (title, creators, publisher, files)
                             if croissant_doc_dict:
+                                ds_name = croissant_doc_dict.get("name") or croissant_doc_dict.get("title") or ""
+                                ds_creators = []
+                                raw_creators = croissant_doc_dict.get("creator") or croissant_doc_dict.get("author") or []
+                                if isinstance(raw_creators, list):
+                                    for c in raw_creators:
+                                        if isinstance(c, dict):
+                                            c_nm = c.get("name") or f"{c.get('givenName', '')} {c.get('familyName', '')}".strip()
+                                            aff = c.get("affiliation", {})
+                                            aff_nm = aff.get("name") if isinstance(aff, dict) else (str(aff) if aff else "")
+                                            if c_nm:
+                                                ds_creators.append(f"{c_nm} ({aff_nm})" if aff_nm else c_nm)
+                                        elif isinstance(c, str) and c.strip():
+                                            ds_creators.append(c.strip())
+                                elif isinstance(raw_creators, dict):
+                                    c_nm = raw_creators.get("name") or ""
+                                    if c_nm: ds_creators.append(c_nm)
+                                elif isinstance(raw_creators, str) and raw_creators.strip():
+                                    ds_creators.append(raw_creators.strip())
+
+                                ds_pub = croissant_doc_dict.get("publisher", {})
+                                ds_pub_name = ds_pub.get("name") if isinstance(ds_pub, dict) else (str(ds_pub) if ds_pub else "")
+                                ds_date = croissant_doc_dict.get("datePublished") or croissant_doc_dict.get("dateModified") or ""
+                                ds_desc = croissant_doc_dict.get("description") or ""
+
                                 dists_list = croissant_doc_dict.get("distribution") or croissant_doc_dict.get("fileObject") or []
+                                total_files = len(dists_list) if isinstance(dists_list, list) else 0
+                                ext_summary = ""
+                                sample_names = []
                                 if isinstance(dists_list, list):
-                                    total_files = len(dists_list)
                                     ext_counts = {}
-                                    sample_names = []
                                     for d_item in dists_list:
                                         if isinstance(d_item, dict):
                                             nm = d_item.get("name", "")
@@ -5699,28 +5759,33 @@ def main(port: int, transport: str) -> int:
                                             if len(sample_names) < 15 and nm:
                                                 sample_names.append(nm)
                                     ext_summary = ", ".join(f"{k}: {v}" for k, v in sorted(ext_counts.items(), key=lambda x: -x[1]))
-                                    croissant_summary_snippet = (
-                                        f"=== CROISSANT DATASET FILES SUMMARY (Record: {clean_id}) ===\n"
-                                        f"- Total Distribution Files in Dataset: {total_files}\n"
-                                        f"- Total Number of Files / Distributions in Dataset: {total_files}\n"
-                                        f"- File Formats Breakdown: {ext_summary}\n"
-                                        f"- Sample Files (first {len(sample_names)}): {', '.join(sample_names)}\n\n"
-                                    )
 
-                                # If distributions list is massive (e.g. hundreds of items), trim the distribution array inside the JSON-LD snippet
-                                # to preserve complete dataset metadata (name, creators, datePublished, license, description) under LLM context limits
+                                croissant_summary_snippet = (
+                                    f"=== CROISSANT DATASET SUMMARY (Record: {clean_id}) ===\n"
+                                    f"- Dataset Title / Name: {ds_name}\n"
+                                    f"- Authors / Creators: {', '.join(ds_creators) if ds_creators else 'Not specified'}\n"
+                                    f"- Publisher: {ds_pub_name or 'Not specified'}\n"
+                                    f"- Publication Date: {ds_date or 'Not specified'}\n"
+                                    f"- Total Files / Distributions: {total_files}\n"
+                                    f"- File Types Breakdown: {ext_summary or 'None'}\n"
+                                    f"- Sample Files: {', '.join(sample_names) if sample_names else 'None'}\n"
+                                    f"- Description: {ds_desc[:300]}...\n\n"
+                                )
+
+                                # If distributions or recordSets are massive, trim them to preserve complete metadata
                                 jsonld_to_inject = croissant_json
-                                if croissant_doc_dict and isinstance(croissant_doc_dict.get("distribution"), list) and len(croissant_doc_dict["distribution"]) > 15:
+                                if isinstance(croissant_doc_dict.get("distribution"), list) and len(croissant_doc_dict["distribution"]) > 10:
                                     import copy, json
                                     trimmed_doc = copy.deepcopy(croissant_doc_dict)
                                     trimmed_doc["distribution"] = trimmed_doc["distribution"][:10]
-                                    trimmed_doc["distribution_note"] = f"Showing first 10 of {total_files} distributions. See CROISSANT DATASET FILES SUMMARY above for complete totals and format breakdown."
                                     trimmed_doc["distribution_total_count"] = total_files
                                     trimmed_doc["distribution_note"] = f"CRITICAL: The complete dataset contains {total_files} files in total. Only the first 10 sample files are shown in this array snippet for brevity."
+                                    if "recordSet" in trimmed_doc and isinstance(trimmed_doc["recordSet"], list) and len(trimmed_doc["recordSet"]) > 3:
+                                        trimmed_doc["recordSet"] = trimmed_doc["recordSet"][:3]
+                                        trimmed_doc["recordSet_note"] = "Trimming remaining recordSets for brevity."
                                     jsonld_to_inject = json.dumps(trimmed_doc, indent=2)
 
-                            context_text = croissant_summary_snippet + "=== CROISSANT JSON-LD METADATA (Record: " + clean_id + ") ===\n" + jsonld_to_inject + "\n\n" + context_text
-                            context_text = f"IMPORTANT DATASET OVERVIEW:\n- Total files in dataset: {total_files}\n\n" + croissant_summary_snippet + "=== CROISSANT JSON-LD METADATA (Record: " + clean_id + ") ===\n" + jsonld_to_inject + "\n\n" + context_text
+                            context_text = f"IMPORTANT DATASET OVERVIEW:\n- Title: {ds_name}\n- Authors / Creators: {', '.join(ds_creators) if ds_creators else 'Unknown'}\n- Total files: {total_files}\n\n" + croissant_summary_snippet + "=== CROISSANT JSON-LD METADATA (Record: " + clean_id + ") ===\n" + jsonld_to_inject + "\n\n" + context_text
                     except Exception as doc_err:
                         print(f"Warning: doc_id handling error in vault_ask: {doc_err}")
                 model_name = data.get("model", OLLAMA_DEFAULT_MODEL).strip()
