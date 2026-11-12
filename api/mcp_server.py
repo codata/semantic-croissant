@@ -8768,14 +8768,16 @@ Please answer the question based ONLY on the context provided above (including t
             if not is_authorized:
                 return Response(json.dumps({"detail": "Unauthorized: Invalid API Key"}), status_code=401, media_type="application/json")
                 
-            endpoints = config.get("ollama_endpoints", [])
-            env_endpoint = os.environ.get("OLLAMA_HOST", "http://10.147.18.24:11444")
-            if "http://10.147.18.24:11444" not in endpoints:
-                endpoints.insert(0, "http://10.147.18.24:11444")
-            if "http://10.147.18.24:11434" not in endpoints:
-                endpoints.append("http://10.147.18.24:11434")
-            if env_endpoint and env_endpoint not in endpoints:
+            endpoints = []
+            env_endpoint = os.environ.get("OLLAMA_HOST")
+            if env_endpoint:
                 endpoints.append(env_endpoint)
+            for ep in config.get("ollama_endpoints", []):
+                if ep not in endpoints:
+                    endpoints.append(ep)
+            for fallback_ep in ["http://10.147.18.24:11444", "http://10.147.18.24:11434"]:
+                if fallback_ep not in endpoints:
+                    endpoints.append(fallback_ep)
                 
             if not endpoints:
                 return Response(json.dumps({"detail": "Gateway Error: No backend Ollama endpoints configured"}), status_code=500, media_type="application/json")
@@ -8799,7 +8801,11 @@ Please answer the question based ONLY on the context provided above (including t
             async def get_all_models_and_mapping():
                 all_models = []
                 model_to_endpoint = {}
-                async with httpx.AsyncClient(timeout=10.0) as temp_client:
+                # Also include headers for endpoints that need Ollama authentication
+                ep_headers = {}
+                if env_key:
+                    ep_headers["Authorization"] = f"Bearer {env_key}"
+                async with httpx.AsyncClient(timeout=10.0, headers=ep_headers) as temp_client:
                     for ep in endpoints:
                         try:
                             resp = await temp_client.get(f"{ep}/api/tags")
