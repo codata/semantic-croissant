@@ -79,11 +79,12 @@ git submodule update --init --recursive
 
 Some microservices in the stack are built from local source rather than pulled from public registries:
 
-### A. DDI-CDI Studio (`ddicdi-studio:latest`)
+### A. DDI-CDI Studio (`ddicdi-studio:latest`) — optional
+DDI-CDI Studio is **not** part of the default stack. Only build it if you want it, then start it with `--profile ddicdi`:
 ```bash
-cd tools/DDICDI_generator_gen2
-docker build -t ddicdi-studio:latest .
-cd ../..
+git clone https://github.com/benjaminbeuster/DDICDI_generator_gen2.git tools/DDICDI_generator_gen2
+docker build -t ddicdi-studio:latest tools/DDICDI_generator_gen2
+docker compose --profile ./profiles/default.env --profile ddicdi up -d
 ```
 
 ### B. MinIO Base Image (if pulling `minio/minio:latest` is restricted)
@@ -191,7 +192,7 @@ All services should display `Up` / `healthy`:
 | `api` | `<profile>-api` | FastAPI backend & UI portal | `7013` | `curl http://localhost:7013/api/health` |
 | `mcp` | `<profile>-mcp` | MCP server (SSE & stdio) | `7115` | `curl http://localhost:7115/sse` |
 | `converters` | `<profile>-converters` | CDIF / Croissant conversion service | `8082` | `curl http://localhost:8082/api/health` |
-| `ddicdi` | `<profile>-ddicdi` | DDI-CDI Studio tool | `8083` | `curl http://localhost:8083/api/health` |
+| `ddicdi` *(optional, `--profile ddicdi`)* | `<profile>-ddicdi` | DDI-CDI Studio tool | `8083` | `curl http://localhost:8083/api/health` |
 
 ---
 
@@ -230,7 +231,7 @@ docker compose --env-file profiles/dvneurope.env -p dvneurope --profile dvneurop
    - The `init` container fixes volume permissions upon startup (`chown -R 65534:0` for QLever, `chown -R 1000:0` for Elasticsearch & MinIO). Ensure host directories under `./volumes/<profile>` or `./qlever-tests/volumes` are readable/writable by Docker.
 
 2. **Pull Access Denied on `ddicdi-studio:latest`**
-   - Build it locally first: `docker build -t ddicdi-studio:latest tools/DDICDI_generator_gen2`.
+   - DDI-CDI Studio is optional and no longer started by default. If you enable it with `--profile ddicdi`, build it locally first: `docker build -t ddicdi-studio:latest tools/DDICDI_generator_gen2`.
 
 3. **Elasticsearch Fails to Start (`max virtual memory areas vm.max_map_count [65530] is too low`)**
    - Run `sudo sysctl -w vm.max_map_count=262144`.

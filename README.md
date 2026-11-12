@@ -1,8 +1,6 @@
-# Semantic Croissant
+# Semantic Croissant AI Studio
 
-This repository contains the deployment infrastructure for the `croissant-live` semantic database, leveraging [QLever](https://github.com/ad-freiburg/qlever).
-
-Semantic Croissant platform is being used by following European projects:
+The platform is being tested by following European projects:
 - The Climate-Adapt4EOSC project has received funding from the Horizon Europe Framework Programme under grant agreement N° 101188248.
 - CDIF4EOSC: Developing and implementing the Cross-Domain Interoperability Framework for EOSC is funded by the European Union under Grant Agreement 101292473.
 - AI4Social+ - AI Readiness for Social Impact aiming to integrate artificial intelligence into the social sciences and humanities (SSH) through the European Open Science Cloud (EOSC), Grant agreement ID: 101292886.
@@ -18,14 +16,16 @@ Semantic Croissant platform is being used by following European projects:
    git submodule update --init --recursive
    ```
 
-2. Build the local DDI-CDI Studio image (first-time setup):
+2. Start the infrastructure using the default local profile:
    ```bash
-   docker build -t ddicdi-studio:latest tools/DDICDI_generator_gen2
+   docker compose --profile ./profiles/default.env up -d
    ```
 
-3. Start the infrastructure using the default local profile:
+3. *(Optional)* DDI-CDI Studio is not started by default. To enable it, build the image locally and add `--profile ddicdi`:
    ```bash
-   docker-compose --profile ./profiles/default.env up -d
+   git clone https://github.com/benjaminbeuster/DDICDI_generator_gen2.git tools/DDICDI_generator_gen2
+   docker build -t ddicdi-studio:latest tools/DDICDI_generator_gen2
+   docker compose --profile ./profiles/default.env --profile ddicdi up -d
    ```
 
 ### Volume Parameterization

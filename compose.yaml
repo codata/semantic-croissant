@@ -243,12 +243,14 @@ services:
 
   ddicdi:
     container_name: ${PROFILE_NAME:-default}-ddicdi
+    # Optional service: not started by default. The ddicdi-studio image is not
+    # published on a registry and must be built locally first:
+    #   docker build -t ddicdi-studio:latest tools/DDICDI_generator_gen2
+    # then enable it with:  --profile ddicdi
     profiles:
-      - ${PROFILE_NAME:-default}
-      - ./profiles/${PROFILE_NAME:-default}.env
-      - profiles/${PROFILE_NAME:-default}.env
-      - croissant-live
+      - ddicdi
     image: ddicdi-studio:latest
+    pull_policy: never
     restart: unless-stopped
     ports:
       - "${DDI_CDI_PORT:-8083}:8000"
