@@ -811,10 +811,7 @@ def render_html_template(file_path: str, request=None, auth_status=None):
     logo_url = os.environ.get("VAULT_LOGO_URL", "/logo.png")
     logo_html = f'<a href="/" style="display:flex; align-items:center; justify-content:center; text-decoration:none; padding: 10px;"><img src="{logo_url}" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Logo" /></a>' if logo_url else ""
     
-    footer_html = os.environ.get("VAULT_FOOTER_HTML", """            <span>Ghostwriter 2.0 UI | Semantic Croissant with CDIF 1.1 (v2.3)</span>
-            <span style="color: #ccc;">|</span>
-            <span>Created by <a href="https://codata.org" target="_blank" style="color: #888; text-decoration: none; font-weight: 500;">CODATA</a> in <a href="https://cdif4eosc.eu" target="_blank" style="color: #888; text-decoration: none; font-weight: 500;">CDIF4EOSC</a> under Grant Agreement 101292473</span>
-            <img src="https://www.cdif4eosc.eu/assets/images/eu_flag.svg" alt="EU Flag" style="height: 20px;">""")
+    footer_html = os.environ.get("VAULT_FOOTER_HTML", """            <span>Ghostwriter 2.0 UI | Semantic Croissant engine with CDIF playbook 1.1</span>""")
     
     html = html.replace('{{VAULT_LOGO_HTML}}', logo_html)
     html = html.replace('{{VAULT_FOOTER_HTML}}', footer_html)
