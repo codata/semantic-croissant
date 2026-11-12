@@ -9,19 +9,42 @@ The platform is being tested by following European projects:
 
 See [docs/architecture.md](docs/architecture.md) for the full list of components, ports, submodules and bundled code.
 
-## Deploying
+## Installation
 
-1. Ensure the submodule is fully initialized:
+1. Install Docker Engine and the Docker Compose plugin (skip this step if `docker --version` and `docker compose version` already work).
+
+   On Linux, the official convenience script installs Docker Engine, the CLI, containerd, Buildx and Docker Compose v2:
    ```bash
+   sudo apt-get update && sudo apt-get install -y curl git   # Debian/Ubuntu; use dnf/yum on RHEL/Fedora
+   curl -fsSL https://get.docker.com | sudo sh
+   sudo systemctl enable --now docker
+   sudo usermod -aG docker $USER   # run docker without sudo (log out and back in afterwards)
+   ```
+   Elasticsearch also needs a higher memory-map limit:
+   ```bash
+   sudo sysctl -w vm.max_map_count=262144
+   echo "vm.max_map_count=262144" | sudo tee /etc/sysctl.d/99-elasticsearch.conf
+   ```
+   Check the installation:
+   ```bash
+   docker --version
+   docker compose version
+   ```
+   On macOS or Windows, install [Docker Desktop](https://docs.docker.com/desktop/) instead; it includes Docker Compose. For distribution-specific instructions, see the [Docker Engine install guide](https://docs.docker.com/engine/install/) and [Quickstart.md](Quickstart.md).
+
+2. Clone the repository and initialize the submodules:
+   ```bash
+   git clone https://github.com/codata/semantic-croissant.git
+   cd semantic-croissant
    git submodule update --init --recursive
    ```
 
-2. Start the infrastructure using the default local profile:
+3. Start the infrastructure using the default local profile:
    ```bash
    docker compose --profile ./profiles/default.env up -d
    ```
 
-3. *(Optional)* DDI-CDI Studio is not started by default. To enable it, build the image locally and add `--profile ddicdi`:
+4. *(Optional)* DDI-CDI Studio is not started by default. To enable it, build the image locally and add `--profile ddicdi`:
    ```bash
    git clone https://github.com/benjaminbeuster/DDICDI_generator_gen2.git tools/DDICDI_generator_gen2
    docker build -t ddicdi-studio:latest tools/DDICDI_generator_gen2
