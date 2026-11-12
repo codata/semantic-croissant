@@ -36,5 +36,6 @@ The `semantic-croissant` repository isn't just a database; it is the physical re
 ---
 
 ## Technical Documentation
+- [Architecture](architecture.md): Stack components, containers, default ports, submodules and bundled code.
 - [CDIF Variable Search & Extraction Specification](cdif_variable_search.md): Details the multi-field Elasticsearch queries and Python variable extraction rules across `cdif` and Croissant indices.
 
