@@ -37,5 +37,7 @@ The `semantic-croissant` repository isn't just a database; it is the physical re
 
 ## Technical Documentation
 - [Architecture](architecture.md): Stack components, containers, default ports, submodules and bundled code.
+- [Configuration](configuration.md): Volume parameterization, isolated profiles and custom Ollama inference endpoints.
+- [Data Pipeline, Ingestion and Usage Guide](data-pipeline.md): Conversion pipeline, index rebuilds, ingestion API, Croissant Toolkit, URL ingestion and Q&A.
 - [CDIF Variable Search & Extraction Specification](cdif_variable_search.md): Details the multi-field Elasticsearch queries and Python variable extraction rules across `cdif` and Croissant indices.
 
