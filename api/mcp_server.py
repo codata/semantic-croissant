@@ -222,6 +222,23 @@ def get_variable_elasticsearch_url() -> str:
 _GLOBAL_COLLECTION_CACHE_UPDATING = set()
 _GLOBAL_VARIABLES_CACHE_UPDATING = False
 
+async def pick_cdif_elasticsearch_url():
+    """Return the ES node holding the largest 'cdif' index (None if none reachable).
+    Prevents a near-empty local ES from shadowing ES_GLOBAL_HOST."""
+    import httpx
+    best, best_cnt = None, -1
+    for cand in get_elasticsearch_lookup_urls():
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as chk:
+                r = await chk.get(f"{cand}/cdif/_count")
+                if r.status_code == 200:
+                    c = r.json().get("count", 0)
+                    if c > best_cnt:
+                        best, best_cnt = cand, c
+        except Exception:
+            continue
+    return best
+
 def get_minio_lookup_urls() -> list[str]:
     """
     Returns an ordered list of MinIO base endpoints to query across all known nodes.
@@ -12162,15 +12179,7 @@ Instructions:
             import httpx, json, sys, time
             try:
                 if not es_url:
-                    for cand in get_elasticsearch_lookup_urls():
-                        try:
-                            async with httpx.AsyncClient(timeout=3.0) as chk:
-                                r = await chk.get(f"{cand}/cdif/_count")
-                                if r.status_code == 200:
-                                    es_url = cand
-                                    break
-                        except Exception:
-                            continue
+                    es_url = await pick_cdif_elasticsearch_url()
                 if not es_url:
                     es_url = get_elasticsearch_lookup_urls()[0]
                 print(f"[VariablesCache] Background cache refresh started with {es_url}...", file=sys.stderr)
@@ -12442,16 +12451,7 @@ Instructions:
             q_param = (request.query_params.get("q") or request.query_params.get("query") or "").strip()
 
             es_candidates = get_elasticsearch_lookup_urls()
-            active_es = None
-            for cand in es_candidates:
-                try:
-                    async with httpx.AsyncClient(timeout=3.0) as chk:
-                        r = await chk.get(f"{cand}/cdif/_count")
-                        if r.status_code == 200:
-                            active_es = cand
-                            break
-                except Exception:
-                    continue
+            active_es = await pick_cdif_elasticsearch_url()
             es_url = active_es or (es_candidates[0] if es_candidates else os.environ.get("ELASTICSEARCH_URL", "http://elasticsearch:9200").rstrip("/"))
 
             # Check if cache hit is available for instant response (fast statistical values + first 100 records)
@@ -13019,16 +13019,7 @@ Instructions:
                 return JSONResponse({"answer": "Please provide a question about the variables."})
 
             es_candidates = get_elasticsearch_lookup_urls()
-            active_es = None
-            for cand in es_candidates:
-                try:
-                    async with httpx.AsyncClient(timeout=3.0) as chk:
-                        r = await chk.get(f"{cand}/cdif/_count")
-                        if r.status_code == 200:
-                            active_es = cand
-                            break
-                except Exception:
-                    continue
+            active_es = await pick_cdif_elasticsearch_url()
             es_url = active_es or (es_candidates[0] if es_candidates else os.environ.get("ELASTICSEARCH_URL", "http://elasticsearch:9200").rstrip("/"))
             payload = {
                 "query": {"match_all": {}},
