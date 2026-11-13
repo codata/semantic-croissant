@@ -338,77 +338,47 @@ def fetch_url_markdown(url, traverse=False, use_computer_vision=False):
                 print("Detected PDF document. Extracting text with PyMuPDF...")
                 doc = fitz.open(stream=pdf_bytes, filetype="pdf")
                 text = ""
-                for page in doc:
+                for page_idx, page in enumerate(doc, start=1):
                     extracted = page.get_text()
-                    if extracted:
-                        text += extracted + "\n\n"
+                    if extracted and extracted.strip():
+                        text += f"### Page {page_idx}\n\n" + extracted.strip() + "\n\n"
                     
                 if use_computer_vision:
-                    print("Running Computer Vision extraction on PDF with Palefire...")
-                    cv_done = False
-                    palefire_url = os.environ.get("PALEFIRE_API_URL", "http://10.147.18.24:8000/parse-url")
                     try:
-                        print(f"Calling Palefire API service at {palefire_url}...")
-                        vision_model = os.environ.get("VISION_MODEL", "gemma4:31b-cloud")
-                        resp = requests.post(
-                            palefire_url,
-                            json={
-                                "url": url,
-                                "vision_extract": True,
-                                "vision_model": vision_model
-                            },
-                            timeout=600
-                        )
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            episodes = data.get("episodes", [])
-                            cv_text_blocks = []
-                            for ep in episodes:
-                                if isinstance(ep, dict):
-                                    cnt = ep.get("content", {})
-                                    analysis = cnt.get("analysis", "") if isinstance(cnt, dict) else str(cnt)
-                                    src = cnt.get("source_file", "") if isinstance(cnt, dict) else ""
-                                    if analysis:
-                                        cv_text_blocks.append(f"### Visual Analysis ({src})\n{analysis}")
-                            if cv_text_blocks:
-                                text += "\n\n## Computer Vision Extracted Insights & Maps\n\n" + "\n\n".join(cv_text_blocks) + "\n"
-                                print(f"Successfully added {len(cv_text_blocks)} visual analysis blocks from Palefire API.")
-                                cv_done = True
-                            elif data.get("text"):
-                                # If palefire returned full text with CV integrated
-                                if "## Computer Vision" in data.get("text", ""):
-                                    text = data["text"]
-                                    cv_done = True
-                        else:
-                            print(f"Palefire API returned status {resp.status_code}: {resp.text[:200]}")
-                    except Exception as e_api:
-                        print(f"Palefire API call failed: {e_api}")
+                        import sys as _sys
+                        _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+                        import datamaps_runner
+                    except Exception:
+                        datamaps_runner = None
 
-                    if not cv_done:
-                        print("Fallback: Attempting local Palefire CV script execution...")
+                    use_datamaps_cv = bool(datamaps_runner and datamaps_runner.url_matches(url))
+                    if use_datamaps_cv:
+                        print("URL matches DATAMAPS_URL_PATTERNS, running datamaps CV pipeline...")
                         try:
-                            import tempfile, subprocess
-                            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_pdf:
-                                tmp_pdf.write(pdf_bytes)
-                                tmp_pdf_path = tmp_pdf.name
-                            
-                            out_ep_file = tmp_pdf_path + "_episodes.json"
-                            palefire_cv_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "../palefire/extract_computer_vision.py"))
-                            if not os.path.exists(palefire_cv_script):
-                                palefire_cv_script = "palefire/extract_computer_vision.py"
-                                
-                            cv_cmd = [
-                                "python3", palefire_cv_script,
-                                "--pdf", tmp_pdf_path,
-                                "--vision-model", os.environ.get("VISION_MODEL", "gemma4:31b-cloud"),
-                                "--output", out_ep_file
-                            ]
-                            print(f"Executing: {' '.join(cv_cmd)}")
-                            subprocess.run(cv_cmd, check=True, timeout=600)
-                            
-                            if os.path.exists(out_ep_file):
-                                with open(out_ep_file, 'r', encoding='utf-8') as f_ep:
-                                    episodes = json.load(f_ep)
+                            dm_result = datamaps_runner.run(url)
+                            if dm_result:
+                                text += datamaps_runner.to_markdown(dm_result)
+                        except Exception as e_dm:
+                            print(f"Warning: datamaps pipeline failed: {e_dm}")
+                    else:
+                        print("Running Computer Vision extraction on PDF with Palefire...")
+                        cv_done = False
+                        palefire_url = os.environ.get("PALEFIRE_API_URL", "http://10.147.18.24:8000/parse-url")
+                        try:
+                            print(f"Calling Palefire API service at {palefire_url}...")
+                            vision_model = os.environ.get("VISION_MODEL", "gemma4:31b-cloud")
+                            resp = requests.post(
+                                palefire_url,
+                                json={
+                                    "url": url,
+                                    "vision_extract": True,
+                                    "vision_model": vision_model
+                                },
+                                timeout=600
+                            )
+                            if resp.status_code == 200:
+                                data = resp.json()
+                                episodes = data.get("episodes", [])
                                 cv_text_blocks = []
                                 for ep in episodes:
                                     if isinstance(ep, dict):
@@ -419,16 +389,63 @@ def fetch_url_markdown(url, traverse=False, use_computer_vision=False):
                                             cv_text_blocks.append(f"### Visual Analysis ({src})\n{analysis}")
                                 if cv_text_blocks:
                                     text += "\n\n## Computer Vision Extracted Insights & Maps\n\n" + "\n\n".join(cv_text_blocks) + "\n"
+                                    print(f"Successfully added {len(cv_text_blocks)} visual analysis blocks from Palefire API.")
+                                    cv_done = True
+                                elif data.get("text"):
+                                    # If palefire returned full text with CV integrated
+                                    if "## Computer Vision" in data.get("text", ""):
+                                        text = data["text"]
+                                        cv_done = True
+                            else:
+                                print(f"Palefire API returned status {resp.status_code}: {resp.text[:200]}")
+                        except Exception as e_api:
+                            print(f"Palefire API call failed: {e_api}")
+
+                        if not cv_done:
+                            print("Fallback: Attempting local Palefire CV script execution...")
+                            try:
+                                import tempfile, subprocess
+                                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_pdf:
+                                    tmp_pdf.write(pdf_bytes)
+                                    tmp_pdf_path = tmp_pdf.name
+                                
+                                out_ep_file = tmp_pdf_path + "_episodes.json"
+                                palefire_cv_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "../palefire/extract_computer_vision.py"))
+                                if not os.path.exists(palefire_cv_script):
+                                    palefire_cv_script = "palefire/extract_computer_vision.py"
+                                    
+                                cv_cmd = [
+                                    "python3", palefire_cv_script,
+                                    "--pdf", tmp_pdf_path,
+                                    "--vision-model", os.environ.get("VISION_MODEL", "gemma4:31b-cloud"),
+                                    "--output", out_ep_file
+                                ]
+                                print(f"Executing: {' '.join(cv_cmd)}")
+                                subprocess.run(cv_cmd, check=True, timeout=600)
+                                
+                                if os.path.exists(out_ep_file):
+                                    with open(out_ep_file, 'r', encoding='utf-8') as f_ep:
+                                        episodes = json.load(f_ep)
+                                    cv_text_blocks = []
+                                    for ep in episodes:
+                                        if isinstance(ep, dict):
+                                            cnt = ep.get("content", {})
+                                            analysis = cnt.get("analysis", "") if isinstance(cnt, dict) else str(cnt)
+                                            src = cnt.get("source_file", "") if isinstance(cnt, dict) else ""
+                                            if analysis:
+                                                cv_text_blocks.append(f"### Visual Analysis ({src})\n{analysis}")
+                                    if cv_text_blocks:
+                                        text += "\n\n## Computer Vision Extracted Insights & Maps\n\n" + "\n\n".join(cv_text_blocks) + "\n"
+                                    try:
+                                        os.unlink(out_ep_file)
+                                    except Exception:
+                                        pass
                                 try:
-                                    os.unlink(out_ep_file)
+                                    os.unlink(tmp_pdf_path)
                                 except Exception:
                                     pass
-                            try:
-                                os.unlink(tmp_pdf_path)
-                            except Exception:
-                                pass
-                        except Exception as e_cv:
-                            print(f"Warning: Local computer vision extraction failed: {e_cv}")
+                            except Exception as e_cv:
+                                print(f"Warning: Local computer vision extraction failed: {e_cv}")
                     
                 meta = {
                     "name": url.split('/')[-1] or "PDF Document",
@@ -1848,6 +1865,29 @@ def convert_to_croissant(url, is_slice=False, traverse=False, reingest=False, us
                     print("Aborting conversion due to invalid JSON after max retries.")
                     return
 
+
+        # Attach datamaps outputs (CSV + JSON-LD) as distributions, uploaded to the vault
+        try:
+            import datamaps_runner
+            dm_result = datamaps_runner.RESULTS.get(resolve_direct_url(url)) or datamaps_runner.RESULTS.get(url)
+            if dm_result:
+                dm_client = None
+                try:
+                    from minio import Minio
+                    _murl = os.environ.get("MINIO_URL", "http://minio:9000")
+                    dm_client = Minio(_murl.replace("http://", "").replace("https://", ""),
+                                      access_key=os.environ.get("MINIO_ROOT_USER", "minioadmin"),
+                                      secret_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin"),
+                                      secure=_murl.startswith("https"))
+                except Exception as e_mc:
+                    print(f"Warning: MinIO unavailable for datamaps upload: {e_mc}")
+                dm_dists = datamaps_runner.upload_and_distributions(dm_result, dm_client, f"https://{MCP_DOMAIN}")
+                output = datamaps_runner.inject_distributions(output, dm_dists)
+                print(f"Added {len(dm_dists)} datamaps distributions to Croissant.")
+        except ImportError:
+            pass
+        except Exception as e_dm:
+            print(f"Warning: failed to attach datamaps distributions: {e_dm}")
 
         output_filename = f"{safe_name}_croissant.jsonld"
         

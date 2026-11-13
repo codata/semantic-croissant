@@ -1,4 +1,9 @@
 from fastapi import FastAPI, Request, BackgroundTasks
+from pydantic import BaseModel
+from typing import Optional
+class GenericProcessRequest(BaseModel):
+    url: Optional[str] = None
+    vision: bool = False
 import os
 import time
 import subprocess
@@ -519,11 +524,20 @@ async def process_dspace(url: str):
     return croissant
 
 @app.post("/api/generic/process")
-async def process_generic(url: str = None, vision: bool = False):
+async def process_generic(request: Request, url: str = None, vision: bool = False):
     import asyncio
     import re
     from fastapi import HTTPException
     
+    if not url:
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                url = body.get("url") or url
+                if "vision" in body:
+                    vision = bool(body.get("vision"))
+        except Exception:
+            pass
     if not url:
         raise HTTPException(status_code=400, detail="Missing required parameter url")
         
@@ -656,7 +670,9 @@ async def process_dataverse(callback: str = None, url: str = None, siteUrl: str 
         print(f"Error processing dataverse callback: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-from pydantic import BaseModel
+class GenericProcessRequest(BaseModel):
+    url: str
+    vision: bool = False
 class TextProcessRequest(BaseModel):
     text: str
 
@@ -1704,7 +1720,9 @@ def get_variables_sparql(id: str):
     except Exception as e:
         return {"error": str(e), "variables": []}
 
-from pydantic import BaseModel
+class GenericProcessRequest(BaseModel):
+    url: str
+    vision: bool = False
 
 class RawJsonLDPayload(BaseModel):
     jsonld: dict

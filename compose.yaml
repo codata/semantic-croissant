@@ -113,6 +113,10 @@ services:
       - QLEVER_URL=${QLEVER_URL:-http://server:7011}
       - MINIO_GLOBAL_HOST=${MINIO_GLOBAL_HOST:-}
       - MINIO_URL=${MINIO_URL:-http://minio:9000}
+      - DATAMAPS_IMAGE=datamaps-${PROFILE_NAME:-default}
+      - DATAMAPS_VOLUME=${PROFILE_NAME:-default}-datamaps-work
+      - DATAMAPS_WORK_DIR=/datamaps-work
+      - DATAMAPS_URL_PATTERNS=${DATAMAPS_URL_PATTERNS:-cenaos.copeco.gob.hn/productos/pronostico}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./hips:/app/hips:ro
@@ -137,6 +141,7 @@ services:
       - ./nodes.conf:/app/nodes.conf:ro
       - ./profiles:/app/profiles:ro
       - ./dumps:/app/dumps:ro
+      - datamaps-work:/datamaps-work
     depends_on:
       - server
       - elasticsearch
@@ -263,3 +268,24 @@ services:
       start_period: 15s
 
 
+  # One-shot job image: built with the stack, run per CV job by the converter
+  # via `docker run --rm -v <DATAMAPS_VOLUME>:/work datamaps-<profile> <url> /work/<job>`
+  datamaps:
+    profiles:
+      - ${PROFILE_NAME:-default}
+      - croissant-live
+    image: datamaps-${PROFILE_NAME:-default}
+    pull_policy: never
+    build:
+      context: ./palefire/datamaps
+      dockerfile: ../../docker/datamaps/Dockerfile
+      additional_contexts:
+        jobctx: ./docker/datamaps
+    entrypoint: ["true"]
+    restart: "no"
+    volumes:
+      - datamaps-work:/work
+
+volumes:
+  datamaps-work:
+    name: ${PROFILE_NAME:-default}-datamaps-work

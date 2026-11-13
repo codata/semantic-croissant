@@ -5787,7 +5787,97 @@ def main(port: int, transport: str) -> int:
                                             trimmed_doc["recordSet_note"] = f"Showing first {len(trimmed_rs)} of {len(croissant_doc_dict['recordSet'])} recordSets for brevity."
                                     jsonld_to_inject = json.dumps(trimmed_doc, indent=2)
 
-                            context_text = f"IMPORTANT DATASET OVERVIEW:\n- Title: {ds_name}\n- Authors / Creators: {', '.join(ds_creators) if ds_creators else 'Unknown'}\n- Total files: {total_files}\n\n" + croissant_summary_snippet + "=== CROISSANT JSON-LD METADATA (Record: " + clean_id + ") ===\n" + jsonld_to_inject + "\n\n" + context_text
+                                # Check if there are datamaps JSON-LD distributions in MinIO and build a complete page-by-page index
+                                datamaps_page_summary = ""
+                                try:
+                                    dm_keys = []
+                                    if isinstance(dists_list, list):
+                                        for d_item in dists_list:
+                                            if isinstance(d_item, dict):
+                                                did = str(d_item.get("@id", ""))
+                                                durl = str(d_item.get("contentUrl", ""))
+                                                if did.startswith("datamaps/") and did.endswith(".json"):
+                                                    dm_keys.append((did, durl or f"/vault/{did}"))
+                                                elif "/vault/datamaps/" in durl and durl.endswith(".json"):
+                                                    k = durl.split("/vault/")[-1]
+                                                    dm_keys.append((k, durl))
+                                    if dm_keys:
+                                        m_client = get_minio_client()
+                                        dm_pages = []
+                                        q_lower = question.lower()
+                                        matched_loc_details = []
+                                        for dm_key, dm_url in dm_keys:
+                                            try:
+                                                r_dm = m_client.get_object("vault", dm_key)
+                                                dm_obj = json.loads(r_dm.read().decode("utf-8"))
+                                                r_dm.close()
+                                                r_dm.release_conn()
+                                                pg = dm_obj.get("page")
+                                                side = dm_obj.get("side") or ""
+                                                vtitle = dm_obj.get("variable_page_title") or os.path.basename(dm_key)
+                                                leg = dm_obj.get("legend") or []
+                                                leg_str = " | ".join(leg[:2]) if leg else ""
+                                                obs_graph = dm_obj.get("@graph") or []
+                                                color_ranges = dm_obj.get("color_ranges") or {}
+                                                color_palette = dm_obj.get("color_palette") or {}
+                                                active_locs = []
+                                                for obs in obs_graph:
+                                                    lnm = obs.get("name", "")
+                                                    col = obs.get("color", "Unknown")
+                                                    hx = obs.get("hex") or obs.get("palette_hex") or ""
+                                                    p_hx = obs.get("palette_hex") or hx
+                                                    val = obs.get("value", "")
+                                                    vr = obs.get("value_range") or obs.get("value_percentage") or obs.get("value_temperature") or ""
+                                                    ar = obs.get("absolute_range") or ""
+                                                    lbl = obs.get("label") or ""
+                                                    anom = obs.get("anomaly", "")
+                                                    # Also resolve from color_palette or color_ranges if present
+                                                    cp_info = (color_palette.get(p_hx) or color_palette.get(hx) or {}) if isinstance(color_palette, dict) else {}
+                                                    cr_info = color_ranges.get(col, {}) if isinstance(color_ranges, dict) else {}
+                                                    if not p_hx:
+                                                        p_hx = cp_info.get("hex") or cr_info.get("hex") or ""
+                                                    if (not vr or vr in ("Unknown", "N/A")) and (cp_info.get("value_range") or cr_info.get("value_range")) not in (None, "Unknown", "N/A"):
+                                                        vr = cp_info.get("value_range") if cp_info.get("value_range") not in (None, "Unknown", "N/A") else cr_info.get("value_range")
+                                                    if (not ar or ar in ("Unknown", "N/A")) and (cp_info.get("absolute_range") or cr_info.get("absolute_range")) not in (None, "Unknown", "N/A"):
+                                                        ar = cp_info.get("absolute_range") if cp_info.get("absolute_range") not in (None, "Unknown", "N/A") else cr_info.get("absolute_range")
+                                                    if (not lbl or lbl in ("Unknown", "N/A")) and (cp_info.get("label") or cr_info.get("label")) not in (None, "Unknown", "N/A"):
+                                                        lbl = cp_info.get("label") if cp_info.get("label") not in (None, "Unknown", "N/A") else cr_info.get("label")
+                                                    range_parts = []
+                                                    if vr and vr not in ("Unknown", "N/A", "No Map"):
+                                                        range_parts.append(f"Range={vr}")
+                                                    if ar and ar not in ("Unknown", "N/A") and ar != vr:
+                                                        range_parts.append(f"Absolute={ar}")
+                                                    if lbl and lbl not in ("Unknown", "N/A") and lbl != vr:
+                                                        range_parts.append(f"Label={lbl}")
+                                                    range_desc = ", ".join(range_parts) if range_parts else (val if val not in ("Unknown", "Unknown (Unknown)") else "N/A")
+                                                    col_hex = f"{col} ({hx})" if hx else col
+                                                    has_valid_data = col not in ("Unknown", "No Map", "Map White") and (col != "Grey" or (vr and vr not in ("Unknown", "N/A", "No Map")) or (ar and ar not in ("Unknown", "N/A")))
+                                                    if has_valid_data:
+                                                        active_locs.append(f"{lnm}:{col_hex}" + (f"[{vr or ar}]" if (vr or ar) and (vr or ar) not in ("Unknown", "N/A") else ""))
+                                                    if lnm and (lnm.lower() in q_lower or (lnm == "Bay Islands" and ("islas" in q_lower or "bahia" in q_lower or "bahía" in q_lower or "guanaja" in q_lower or "roatan" in q_lower))):
+                                                        if col not in ("Unknown", "No Map") and range_desc not in ("No Map", "N/A"):
+                                                            lat_lon_str = f" (Coords: `{obs.get('latitude')}, {obs.get('longitude')}`)" if obs.get("latitude") is not None else ""
+                                                            matched_loc_details.append((pg or 999, side, f"- **Page {pg} ({side})** — `{vtitle}`" + (f" | Legend Text: _{leg_str}_" if leg_str else "") + f" | **{lnm}**{lat_lon_str}: Color=`{col}`" + (f" (Hex=`{hx}`, PaletteHex=`{p_hx}`)" if hx and hx != "N/A" else "") + f", Legend Range=`{range_desc}` | File: `{os.path.basename(dm_key)}`"))
+                                                if isinstance(color_palette, dict) and color_palette:
+                                                    cr_summary = ", ".join(f"{cv.get('color', ck)} ({ck}): {cv.get('value_range') if cv.get('value_range') not in (None, 'N/A', 'Unknown') else cv.get('absolute_range', 'N/A')}" + (f" ({cv.get('label')})" if cv.get('label') not in (None, 'N/A', 'Unknown') else "") for ck, cv in color_palette.items())
+                                                elif isinstance(color_ranges, dict) and color_ranges:
+                                                    cr_summary = ", ".join(f"{ck}: {cv.get('value_range') if cv.get('value_range') not in (None, 'N/A', 'Unknown') else cv.get('absolute_range', 'N/A')}" + (f" ({cv.get('label')})" if cv.get('label') not in (None, 'N/A', 'Unknown') else "") for ck, cv in color_ranges.items())
+                                                else:
+                                                    cr_summary = ""
+                                                if active_locs:
+                                                    dm_pages.append((pg or 999, side, f"Page {pg} ({side}): {vtitle}" + (f" [Legend Text: {leg_str}]" if leg_str else "") + (f" [Color Palette Scale: {cr_summary}]" if cr_summary else "") + f" -> Departments: {', '.join(active_locs)} (File: {os.path.basename(dm_key)})"))
+                                            except Exception:
+                                                pass
+                                        dm_pages.sort(key=lambda x: (x[0], x[1]))
+                                        matched_loc_details.sort(key=lambda x: (x[0], x[1]))
+                                        datamaps_page_summary = f"=== DATAMAPS PAGE-BY-PAGE SPATIAL EXTRACTIONS ({len(dm_pages)} active map datasets across all 28 pages) ===\n"
+                                        if matched_loc_details:
+                                            datamaps_page_summary += f"COMPLETE MATCHING LOCATION DATA ACROSS ALL {len(matched_loc_details)} MAPS (YOU MUST LIST EVERY SINGLE ONE OF THESE {len(matched_loc_details)} PAGES IN YOUR ANSWER WITH ITS PAGE NUMBER, SIDE, COLOR, HEX CODE, AND LEGEND RANGE):\n" + "\n".join(x[2] for x in matched_loc_details) + "\n\n"
+                                        datamaps_page_summary += "ALL PAGES MAP SUMMARY:\n" + "\n".join(x[2] for x in dm_pages) + "\n\n"
+                                except Exception as dm_sum_err:
+                                    print(f"Warning: datamaps_page_summary error: {dm_sum_err}")
+
+                                context_text = f"IMPORTANT DATASET OVERVIEW:\n- Title: {ds_name}\n- Authors / Creators: {', '.join(ds_creators) if ds_creators else 'Unknown'}\n- Total files: {total_files}\n\n" + croissant_summary_snippet + datamaps_page_summary + "=== CROISSANT JSON-LD METADATA (Record: " + clean_id + ") ===\n" + jsonld_to_inject + "\n\n" + context_text
                     except Exception as doc_err:
                         print(f"Warning: doc_id handling error in vault_ask: {doc_err}")
                 model_name = data.get("model", OLLAMA_DEFAULT_MODEL).strip()
@@ -6037,21 +6127,22 @@ def main(port: int, transport: str) -> int:
                 except Exception as ex_cdif:
                     print(f"Warning: Error processing CDIF export for QA prompt: {ex_cdif}")
                     
+                qa_instruction = "Please answer the question based ONLY on the context provided above (including the downloaded file content and DATAMAPS PAGE-BY-PAGE SPATIAL EXTRACTIONS if available). Always state explicitly: (1) EVERY page and side (e.g., Page 2 Right, Page 4 Left/Right, Page 5 Left/Right, Page 6 Left/Right, Pages 7-19 Left/Right, etc.) and JSON-LD map file where data is available (do NOT stop after the first page—list all matching pages!), and (2) the exact color name, hex code (#RRGGBB), coordinates, and numerical value range / absolute range / label from the map legend corresponding to the observed color."
                 prompt = f"""Context:
 {context_text}
 
 Question: {question}
 
-Please answer the question based ONLY on the context provided above (including the downloaded file content if available), or by using your tools if you need to fetch additional files or data."""
+{qa_instruction}"""
 
                 # Clean any null characters or control characters that could break C/POSIX subprocess or shells
                 prompt = prompt.replace("\x00", "").replace("\r", "")
 
-                # Safety guard: Ensure overall prompt never exceeds Ollama context limits (~24k characters max)
-                MAX_PROMPT_CHARS = 24000
+                # Safety guard: Ensure overall prompt never exceeds Ollama context limits (~32k characters max)
+                MAX_PROMPT_CHARS = 32000
                 if len(prompt) > MAX_PROMPT_CHARS:
                     # Keep question and prompt instructions intact at the end
-                    suffix = f"\n\nQuestion: {question}\n\nPlease answer the question based ONLY on the context provided above (including the downloaded file content if available), or by using your tools if you need to fetch additional files or data."
+                    suffix = f"\n\nQuestion: {question}\n\n{qa_instruction}"
                     allowed_ctx_len = MAX_PROMPT_CHARS - len(suffix) - 50
                     prompt = f"Context:\n{context_text[:allowed_ctx_len]}\n... [Context truncated to fit model context limit]\n{suffix}"
 
@@ -6607,10 +6698,10 @@ Please answer the question based ONLY on the context provided above (including t
                 }
                 
                 media_type = "text/markdown; charset=utf-8"
-                if filename.endswith(".jsonld") or filename.endswith(".jsonld.gz"):
+                if filename.endswith(".jsonld") or filename.endswith(".jsonld.gz") or filename.endswith(".json"):
                     media_type = "application/ld+json; charset=utf-8"
                 elif filename.endswith(".csv"):
-                    media_type = "text/csv"
+                    media_type = "text/csv; charset=utf-8"
                 
                 if filename.endswith(".gz"):
                     headers["Content-Encoding"] = "gzip"
@@ -14278,8 +14369,8 @@ Output a JSON object with:
                 Route("/vault/approve/{es_id}", endpoint=vault_approve_highlight, methods=["POST"]),
                 Route("/vault/doc/raw/{es_id}", endpoint=vault_es_doc_raw),
                 Route("/vault/print/{es_id}", endpoint=vault_es_doc_raw),
-                Route("/vault/{filename}", endpoint=proxy_vault),
-                Route("/downloads/{filename}", endpoint=proxy_downloads),
+                Route("/vault/{filename:path}", endpoint=proxy_vault),
+                Route("/downloads/{filename:path}", endpoint=proxy_downloads),
                 Route("/expert/{index_name}", endpoint=proxy_expert, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
                 Route("/expert/{index_name}/{path:path}", endpoint=proxy_expert, methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
                 Route("/gateway/v1/tools", endpoint=gateway_tools, methods=["GET"]),
