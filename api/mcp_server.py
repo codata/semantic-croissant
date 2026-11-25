@@ -6652,6 +6652,8 @@ Question: {question}
                     extra_ep = os.environ.get(env_k, "").strip().rstrip("/")
                     if extra_ep and extra_ep not in endpoints:
                         endpoints.append(extra_ep)
+                if os.environ.get("NODE15_API_KEY") and "https://66.220.3.91:4001" not in endpoints:
+                    endpoints.append("https://66.220.3.91:4001")
                 if not endpoints:
                     cfg_candidates = ["gateway_config.json", os.path.join(os.path.dirname(__file__), "gateway_config.json")]
                     for cfg_file in cfg_candidates:
@@ -6668,10 +6670,11 @@ Question: {question}
                 all_models = []
                 seen_ids = set()
                 
-                async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
+                async with httpx.AsyncClient(timeout=10.0, headers=headers, verify=False) as client:
                     for ep in endpoints:
                         try:
-                            res = await client.get(f"{ep}/v1/models")
+                            models_url = f"{ep}/models" if ep.endswith("/v1") else f"{ep}/v1/models"
+                            res = await client.get(models_url)
                             if res.status_code == 200:
                                 data = res.json().get("data", [])
                                 for m in data:
