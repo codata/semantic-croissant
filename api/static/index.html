@@ -1,13 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Semantic Croissant AI Studio</title>
-    
+
     <!-- Marked.js for Markdown parsing -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    
+
     <!-- Highlight.js for code highlighting -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
@@ -55,9 +56,11 @@
             background: rgba(0, 0, 0, 0.06);
             color: var(--accent-color) !important;
         }
+
         [data-theme="dark"] .nav-pill:hover {
             background: rgba(255, 255, 255, 0.08);
         }
+
         [data-theme="dark"] .top-nav-bar {
             background: rgba(255, 255, 255, 0.04) !important;
         }
@@ -101,7 +104,9 @@
             color: #5f6368;
         }
 
-        select, input[type="text"], input[type="password"] {
+        select,
+        input[type="text"],
+        input[type="password"] {
             background-color: var(--panel-bg);
             border: 1px solid var(--border-color);
             color: var(--text-color);
@@ -111,7 +116,8 @@
             font-size: 0.9rem;
         }
 
-        select:focus, input:focus {
+        select:focus,
+        input:focus {
             border-color: var(--accent-color);
         }
 
@@ -129,7 +135,7 @@
             color: var(--accent-color);
             text-decoration: none;
         }
-        
+
         .auth-card a:hover {
             text-decoration: underline;
         }
@@ -197,14 +203,15 @@
         .message-content p:first-child {
             margin-top: 0;
         }
-        
+
         .message-content p:last-child {
             margin-bottom: 0;
         }
 
         /* Input Area */
         .input-area {
-            padding: 20px 40px 70px 40px; /* Increased bottom padding by 50px */
+            padding: 20px 40px 70px 40px;
+            /* Increased bottom padding by 50px */
             background-color: var(--bg-color);
             border-top: 1px solid var(--border-color);
             display: flex;
@@ -256,7 +263,7 @@
             align-items: center;
             justify-content: center;
         }
-        
+
         .send-btn:disabled {
             background-color: #555;
             cursor: not-allowed;
@@ -267,17 +274,32 @@
         }
 
         @keyframes blink {
-            0% { opacity: 0.2; }
-            20% { opacity: 1; }
-            100% { opacity: 0.2; }
+            0% {
+                opacity: 0.2;
+            }
+
+            20% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 0.2;
+            }
         }
+
         .typing span {
             animation: blink 1.4s infinite both;
             font-weight: bold;
             font-size: 1.2em;
         }
-        .typing span:nth-child(2) { animation-delay: 0.2s; }
-        .typing span:nth-child(3) { animation-delay: 0.4s; }
+
+        .typing span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
 
         @media (prefers-color-scheme: dark) {
             :root:not([data-theme="light"]) {
@@ -290,7 +312,7 @@
                 --bot-msg-bg: #161b22;
             }
         }
-        
+
         :root[data-theme="dark"] {
             --bg-color: #0d1117;
             --text-color: #c9d1d9;
@@ -309,7 +331,7 @@
             padding: 5px 10px;
             border-radius: 6px;
         }
-        
+
         .popup-btn {
             padding: 6px 12px;
             font-size: 0.9rem;
@@ -320,12 +342,30 @@
             transition: all 0.2s ease;
             color: #fff;
         }
-        .btn-green { background: #10b981; }
-        .btn-green:hover { background: #059669; }
-        .btn-red { background: #ef4444; }
-        .btn-red:hover { background: #dc2626; }
-        .btn-blue { background: #3b82f6; }
-        .btn-blue:hover { background: #2563eb; }
+
+        .btn-green {
+            background: #10b981;
+        }
+
+        .btn-green:hover {
+            background: #059669;
+        }
+
+        .btn-red {
+            background: #ef4444;
+        }
+
+        .btn-red:hover {
+            background: #dc2626;
+        }
+
+        .btn-blue {
+            background: #3b82f6;
+        }
+
+        .btn-blue:hover {
+            background: #2563eb;
+        }
 
         .chat-response-actions {
             display: flex;
@@ -337,11 +377,13 @@
             border-top: 1px solid var(--border-color);
             flex-wrap: wrap;
         }
+
         .chat-action-group {
             display: inline-flex;
             align-items: center;
             gap: 8px;
         }
+
         .chat-action-btn {
             display: inline-flex;
             align-items: center;
@@ -357,14 +399,17 @@
             transition: all 0.15s ease;
             font-family: inherit;
         }
+
         .chat-action-btn:hover:not(:disabled) {
             background-color: #00558f;
             border-color: #00558f;
         }
+
         .chat-action-btn:disabled {
             opacity: 0.55;
             cursor: not-allowed;
         }
+
         .chat-action-status {
             width: 100%;
             font-size: 0.78rem;
@@ -372,14 +417,17 @@
             opacity: 0.9;
             margin-top: 2px;
         }
+
         .chat-action-status:empty {
             display: none;
         }
+
         .chat-action-status a {
             color: var(--accent-color);
             font-weight: 600;
             text-decoration: underline;
         }
+
         .chat-edit-area {
             width: 100%;
             min-height: 140px;
@@ -396,6 +444,7 @@
             box-sizing: border-box;
             resize: vertical;
         }
+
         .chat-doc-top-banner {
             display: flex;
             align-items: center;
@@ -410,6 +459,7 @@
             color: var(--text-color);
             flex-wrap: wrap;
         }
+
         .chat-doc-top-banner a {
             color: var(--accent-color);
             font-weight: 600;
@@ -417,158 +467,211 @@
         }
     </style>
 </head>
+
 <body>
 
     <div class="header">
-        <div style="width: 274px; padding: 0; height: 100%; border-right: 1px solid var(--border-color); display: flex; align-items: center; box-sizing: border-box;">
+        <div
+            style="width: 274px; padding: 0; height: 100%; border-right: 1px solid var(--border-color); display: flex; align-items: center; box-sizing: border-box;">
             {{VAULT_LOGO_HTML}}
         </div>
-        <div style="display:flex; flex-direction:column; justify-content:center; gap:8px; align-items:flex-end; flex:1; padding-left:15px; height:100%;">
+        <div
+            style="display:flex; flex-direction:column; justify-content:center; gap:8px; align-items:flex-end; flex:1; padding-left:15px; height:100%;">
             <!-- Line 1: Vault, History and User pictogram higher on one line -->
             <div style="display:flex; gap:10px; align-items:center;">
-                <a href="/#vault" id="menu-vault" class="nav-pill" style="color: var(--text-color); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 14px; border: 1px solid var(--border-color); background: rgba(0, 0, 0, 0.03); font-size: 0.8rem; transition: all 0.15s ease;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.75;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg> Vault</a>
-                <a href="/#history" id="menu-history" class="nav-pill" style="color: var(--text-color); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 14px; border: 1px solid var(--border-color); background: rgba(0, 0, 0, 0.03); font-size: 0.8rem; transition: all 0.15s ease;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.75;"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> History</a>
+                <a href="/#vault" id="menu-vault" class="nav-pill"
+                    style="color: var(--text-color); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 14px; border: 1px solid var(--border-color); background: rgba(0, 0, 0, 0.03); font-size: 0.8rem; transition: all 0.15s ease;"><svg
+                        width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                        stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.75;">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg> Vault</a>
+                <a href="/#history" id="menu-history" class="nav-pill"
+                    style="color: var(--text-color); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 14px; border: 1px solid var(--border-color); background: rgba(0, 0, 0, 0.03); font-size: 0.8rem; transition: all 0.15s ease;"><svg
+                        width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                        stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.75;">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg> History</a>
                 {{LOGIN_BUTTON_HTML}}
             </div>
             <!-- Line 2: Chat, Collections, Variables, Groups and Action Controls -->
             <div style="display:flex; gap:10px; align-items:center;">
-                <nav class="top-nav-bar" style="display: flex; align-items: center; gap: 4px; background: rgba(0, 0, 0, 0.03); border: 1px solid var(--border-color); padding: 3px 6px; border-radius: 20px; font-size: 0.82rem; margin-right: 5px;">
-                    <a href="/" id="menu-chat" class="nav-pill active" style="color: var(--accent-color); background: rgba(26, 115, 232, 0.1); text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: all 0.15s ease;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> Chat</a>
-                    <a href="/collectionsindex" id="menu-collections" class="nav-pill" style="color: var(--text-color); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 14px; transition: all 0.15s ease;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.75;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg> Collections</a>
-                    <a href="/variableindex" id="menu-variables" class="nav-pill" style="color: var(--text-color); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 14px; transition: all 0.15s ease;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.75;"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/><circle cx="18" cy="17" r="2"/></svg> Variables</a>
-                    <a href="/#groups" id="menu-groups" class="nav-pill" style="color: var(--text-color); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 14px; transition: all 0.15s ease;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.75;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg> Groups</a>
+                <nav class="top-nav-bar"
+                    style="display: flex; align-items: center; gap: 4px; background: rgba(0, 0, 0, 0.03); border: 1px solid var(--border-color); padding: 3px 6px; border-radius: 20px; font-size: 0.82rem; margin-right: 5px;">
+                    <a href="/" id="menu-chat" class="nav-pill active"
+                        style="color: var(--accent-color); background: rgba(26, 115, 232, 0.1); text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: all 0.15s ease;"><svg
+                            width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg> Chat</a>
+                    <a href="/collectionsindex" id="menu-collections" class="nav-pill"
+                        style="color: var(--text-color); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 14px; transition: all 0.15s ease;"><svg
+                            width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.75;">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z">
+                            </path>
+                        </svg> Collections</a>
+                    <a href="/variableindex" id="menu-variables" class="nav-pill"
+                        style="color: var(--text-color); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 14px; transition: all 0.15s ease;"><svg
+                            width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.75;">
+                            <path d="M4 7h16" />
+                            <path d="M4 12h16" />
+                            <path d="M4 17h10" />
+                            <circle cx="18" cy="17" r="2" />
+                        </svg> Variables</a>
+                    <a href="/#groups" id="menu-groups" class="nav-pill"
+                        style="color: var(--text-color); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 14px; transition: all 0.15s ease;"><svg
+                            width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.75;">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="9" cy="7" r="4"></circle>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                        </svg> Groups</a>
                 </nav>
-                <button class="theme-toggle" onclick="document.getElementById('add-text-modal').style.display='flex'; setTimeout(()=>document.getElementById('add-text-input').focus(), 50);" style="background-color: #008855; color: white; border: none; font-weight: 500;">Add text</button>
-                <button class="theme-toggle" onclick="openAddResourceModal()" style="background-color: #006bb3; color: white; border: none; font-weight: 500;">Add resource</button>
-                <input type="text" id="global-search" placeholder="Search across all collections..." style="padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); width: 300px; font-family: inherit; font-size: 14px;" onkeydown="if(event.key === 'Enter') window.location.href = '/?q=' + encodeURIComponent('Search Croissant datasets for: ' + this.value)">
+                <button class="theme-toggle"
+                    onclick="document.getElementById('add-text-modal').style.display='flex'; setTimeout(()=>document.getElementById('add-text-input').focus(), 50);"
+                    style="background-color: #008855; color: white; border: none; font-weight: 500;">Add text</button>
+                <button class="theme-toggle" onclick="openAddResourceModal()"
+                    style="background-color: #006bb3; color: white; border: none; font-weight: 500;">Add
+                    resource</button>
+                <input type="text" id="global-search" placeholder="Search across all collections..."
+                    style="padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); width: 300px; font-family: inherit; font-size: 14px;"
+                    onkeydown="if(event.key === 'Enter') window.location.href = '/?q=' + encodeURIComponent('Search Croissant datasets for: ' + this.value)">
             </div>
         </div>
     </div>
 
     <div class="main-container">
-    <div class="sidebar">
-        
-        <div class="control-group">
-            <label for="model-select">Model</label>
-            <select id="model-select">
-                <option value="">Loading models...</option>
-            </select>
-        </div>
-        
-        <div class="control-group">
-            <label for="api-key">API Key (Optional)</label>
-            <input type="password" id="api-key" placeholder="Enter gateway key">
+        <div class="sidebar">
+
+            <div class="control-group">
+                <label for="model-select">Model</label>
+                <select id="model-select">
+                    <option value="">Loading models...</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="api-key">API Key (Optional)</label>
+                <input type="password" id="api-key" placeholder="Enter gateway key">
+            </div>
+
+            <div class="auth-card">
+                <strong>ODRL Authentication</strong><br>
+                <span id="auth-status" style="color: #5f6368;">Checking...</span><br>
+                <a href="/login">Login with Identity</a>
+            </div>
         </div>
 
-        <div class="auth-card">
-            <strong>ODRL Authentication</strong><br>
-            <span id="auth-status" style="color: #5f6368;">Checking...</span><br>
-            <a href="/login">Login with Identity</a>
-        </div>
-    </div>
+        <div class="main-content">
 
-    <div class="main-content">
+            <div class="chat-history" id="chat-history">
+                <div class="message assistant">
+                    <div class="avatar">AI</div>
+                    <div class="message-content">
+                        <p>Welcome to the Semantic Croissant AI Studio! How can I help you query the dataset today?</p>
+                    </div>
+                </div>
+            </div>
 
-        <div class="chat-history" id="chat-history">
-            <div class="message assistant">
-                <div class="avatar">AI</div>
-                <div class="message-content">
-                    <p>Welcome to the Semantic Croissant AI Studio! How can I help you query the dataset today?</p>
+            <div class="input-area">
+                <div class="input-container">
+                    <textarea id="prompt-input" placeholder="Ask a question about the datasets..." rows="1"></textarea>
+                    <button id="send-btn" class="send-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
                 </div>
             </div>
         </div>
 
-        <div class="input-area">
-            <div class="input-container">
-                <textarea id="prompt-input" placeholder="Ask a question about the datasets..." rows="1"></textarea>
-                <button id="send-btn" class="send-btn">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        // Configure marked to use highlight.js
-        marked.setOptions({
-            highlight: function(code, lang) {
-                const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-                return hljs.highlight(code, { language }).value;
-            }
-        });
-
-        const chatHistory = document.getElementById('chat-history');
-        const promptInput = document.getElementById('prompt-input');
-        const sendBtn = document.getElementById('send-btn');
-        const modelSelect = document.getElementById('model-select');
-        const apiKeyInput = document.getElementById('api-key');
-        
-        let messages = [];
-        let chatHistoryStorage = JSON.parse(localStorage.getItem('ai_studio_history') || '[]');
-        let currentInteraction = null;
-        let availableTools = [];
-
-        // Auto-resize textarea
-        promptInput.addEventListener('input', function() {
-            this.style.height = 'auto';
-            promptInput.style.height = (promptInput.scrollHeight) + 'px';
-        });
-
-        // Static Menu Events
-        
-        document.getElementById('menu-history').addEventListener('click', async (e) => {
-            e.preventDefault();
-            
-            chatHistoryStorage = JSON.parse(localStorage.getItem('ai_studio_history') || '[]');
-            const ui = appendMessage('assistant', '<p>Loading your conversation history...</p>');
-            
-            let remoteHistory = [];
-            try {
-                const resp = await fetch('/vault/history');
-                if (resp.ok) {
-                    const data = await resp.json();
-                    remoteHistory = data.history || [];
+        <script>
+            // Configure marked to use highlight.js
+            marked.setOptions({
+                highlight: function (code, lang) {
+                    const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+                    return hljs.highlight(code, { language }).value;
                 }
-            } catch (err) {
-                console.error("Failed to fetch remote history", err);
-            }
-            
-            const combined = [...chatHistoryStorage];
-            // merge remote history
-            for (const item of remoteHistory) {
-                combined.push({
-                    prompt: item.prompt.raw || JSON.stringify(item.prompt),
-                    response: item.response,
-                    date: item.timestamp
-                });
-            }
-            
-            // sort descending
-            combined.sort((a, b) => new Date(b.date) - new Date(a.date));
-            
-            if (combined.length === 0) {
-                ui.contentDiv.innerHTML = '<p>No history found on this device.</p>';
-                chatHistory.scrollTop = chatHistory.scrollHeight;
-                return;
-            }
-            
-            let historyHTML = `<h3>Your Prompt History</h3><ul style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:15px;">`;
-            
-            const sortedHistory = combined;
-            
-            sortedHistory.forEach((item, index) => {
-                const dateStr = new Date(item.date).toLocaleString();
-                // Escape HTML from prompt to prevent XSS
-                const safePrompt = item.prompt.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                const shortPrompt = safePrompt.length > 80 ? safePrompt.substring(0, 80) + '...' : safePrompt;
-                
-                let docLink = "";
-                const idMatch = (item.prompt + " " + (item.response || "")).match(/[a-zA-Z0-9_-]{16,32}/);
-                if (idMatch) {
-                    docLink = `<a href="/vault/doc/${idMatch[0]}" target="_blank" onclick="event.stopPropagation();" style="font-size:0.9rem; font-weight:normal; text-decoration:underline;">View document</a>`;
+            });
+
+            const chatHistory = document.getElementById('chat-history');
+            const promptInput = document.getElementById('prompt-input');
+            const sendBtn = document.getElementById('send-btn');
+            const modelSelect = document.getElementById('model-select');
+            const apiKeyInput = document.getElementById('api-key');
+
+            let messages = [];
+            let chatHistoryStorage = JSON.parse(localStorage.getItem('ai_studio_history') || '[]');
+            let currentInteraction = null;
+            let availableTools = [];
+
+            // Auto-resize textarea
+            promptInput.addEventListener('input', function () {
+                this.style.height = 'auto';
+                promptInput.style.height = (promptInput.scrollHeight) + 'px';
+            });
+
+            // Static Menu Events
+
+            document.getElementById('menu-history').addEventListener('click', async (e) => {
+                e.preventDefault();
+
+                chatHistoryStorage = JSON.parse(localStorage.getItem('ai_studio_history') || '[]');
+                const ui = appendMessage('assistant', '<p>Loading your conversation history...</p>');
+
+                let remoteHistory = [];
+                try {
+                    const resp = await fetch('/vault/history');
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        remoteHistory = data.history || [];
+                    }
+                } catch (err) {
+                    console.error("Failed to fetch remote history", err);
                 }
-                
-                historyHTML += `
+
+                const combined = [...chatHistoryStorage];
+                // merge remote history
+                for (const item of remoteHistory) {
+                    combined.push({
+                        prompt: item.prompt.raw || JSON.stringify(item.prompt),
+                        response: item.response,
+                        date: item.timestamp
+                    });
+                }
+
+                // sort descending
+                combined.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+                if (combined.length === 0) {
+                    ui.contentDiv.innerHTML = '<p>No history found on this device.</p>';
+                    chatHistory.scrollTop = chatHistory.scrollHeight;
+                    return;
+                }
+
+                let historyHTML = `<h3>Your Prompt History</h3><ul style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:15px;">`;
+
+                const sortedHistory = combined;
+
+                sortedHistory.forEach((item, index) => {
+                    const dateStr = new Date(item.date).toLocaleString();
+                    // Escape HTML from prompt to prevent XSS
+                    const safePrompt = item.prompt.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    const shortPrompt = safePrompt.length > 80 ? safePrompt.substring(0, 80) + '...' : safePrompt;
+
+                    let docLink = "";
+                    const idMatch = (item.prompt + " " + (item.response || "")).match(/[a-zA-Z0-9_-]{16,32}/);
+                    if (idMatch) {
+                        docLink = `<a href="/vault/doc/${idMatch[0]}" target="_blank" onclick="event.stopPropagation();" style="font-size:0.9rem; font-weight:normal; text-decoration:underline;">View document</a>`;
+                    }
+
+                    historyHTML += `
                 <li style="background:var(--panel-bg); border:1px solid var(--border-color); border-radius:6px; padding:12px;">
                     <div style="font-size:0.85rem; color:#888; margin-bottom:5px;">${dateStr}</div>
                     <div style="font-weight:600; margin-bottom:10px; font-size:1.05rem;">Q: ${shortPrompt}</div>
@@ -582,42 +685,42 @@
                         </div>
                     </details>
                 </li>`;
+                });
+                historyHTML += `</ul>`;
+
+                const backBtnHTML = '<button onclick="this.closest(\'.message\').remove()" style="margin-bottom:15px; padding:6px 12px; background:var(--button-bg); color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.9rem;">&larr; Back</button>\n\n';
+
+                ui.contentDiv.innerHTML = backBtnHTML + historyHTML;
+                sortedHistory.forEach((item, index) => {
+                    const hDiv = ui.contentDiv.querySelector(`div[data-history-idx="${index}"]`);
+                    if (hDiv && item.response) {
+                        attachResponseActionButtons(hDiv, item.response, item.prompt || '');
+                    }
+                });
+                chatHistory.scrollTop = chatHistory.scrollHeight;
             });
-            historyHTML += `</ul>`;
-            
-            const backBtnHTML = '<button onclick="this.closest(\'.message\').remove()" style="margin-bottom:15px; padding:6px 12px; background:var(--button-bg); color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.9rem;">&larr; Back</button>\n\n';
-            
-            ui.contentDiv.innerHTML = backBtnHTML + historyHTML;
-            sortedHistory.forEach((item, index) => {
-                const hDiv = ui.contentDiv.querySelector(`div[data-history-idx="${index}"]`);
-                if (hDiv && item.response) {
-                    attachResponseActionButtons(hDiv, item.response, item.prompt || '');
+
+
+
+            async function loadCollectionsUI(container, parentId = null) {
+                container.innerHTML = '<p>Loading collections...</p>';
+                try {
+                    const res = await fetch('/api/collections');
+                    const data = await res.json();
+                    renderCollectionsList(container, data.collections || [], parentId);
+                } catch (err) {
+                    container.innerHTML = '<p>Error loading collections.</p>';
                 }
-            });
-            chatHistory.scrollTop = chatHistory.scrollHeight;
-        });
-
-
-        
-        async function loadCollectionsUI(container, parentId = null) {
-            container.innerHTML = '<p>Loading collections...</p>';
-            try {
-                const res = await fetch('/api/collections');
-                const data = await res.json();
-                renderCollectionsList(container, data.collections || [], parentId);
-            } catch (err) {
-                container.innerHTML = '<p>Error loading collections.</p>';
             }
-        }
-        
-        function renderCollectionsList(container, allCollections, parentId = null) {
-            const collections = allCollections.filter(c => (c.parent_id || null) === parentId);
-            
-            let html = `
+
+            function renderCollectionsList(container, allCollections, parentId = null) {
+                const collections = allCollections.filter(c => (c.parent_id || null) === parentId);
+
+                let html = `
                 <div style="margin-bottom: 20px;">
                     <h3 style="margin-top: 0;">${parentId ? 'Subcollections' : 'My Collections'}</h3>
                     <div style="display: flex; gap: 10px;">
-                        ${parentId ? `<button id="btn-back-col" data-parent="${allCollections.find(c=>c.id===parentId)?.parent_id || ''}" style="padding: 6px 12px; background: var(--button-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;">&larr; Back</button>` : ''}
+                        ${parentId ? `<button id="btn-back-col" data-parent="${allCollections.find(c => c.id === parentId)?.parent_id || ''}" style="padding: 6px 12px; background: var(--button-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;">&larr; Back</button>` : ''}
                         <button id="btn-add-collection" style="padding: 6px 12px; background: var(--accent-color); color: white; border: none; border-radius: 4px; cursor: pointer;">+ Add New ${parentId ? 'Subcollection' : 'Collection'}</button>
                         <button onclick="window.open('/collectionsindex', '_blank')" style="padding: 6px 12px; background: var(--button-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;">Open Collections</button>
                         <button onclick="window.open('/variableindex', '_blank')" style="padding: 6px 12px; background: #008855; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: inline-flex; align-items: center; gap: 5px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/><circle cx="18" cy="17" r="2"/></svg> Variables</button>
@@ -656,15 +759,15 @@
 
                 <div id="collections-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; font-family: Arial, sans-serif;">
             `;
-            
-            if (collections.length === 0) {
-                html += '<p>No collections found here. Create one above!</p>';
-            } else {
-                for (const col of collections) {
-                    const subcols = allCollections.filter(c => c.parent_id === col.id);
-                    const subcolsHtml = subcols.map(sub => `<a href="#" class="btn-col-link" data-id="${sub.id}" style="font-size: 0.85rem; color: #444; text-decoration: none;">${sub.name}</a>`).join(', ');
-                    
-                    html += `
+
+                if (collections.length === 0) {
+                    html += '<p>No collections found here. Create one above!</p>';
+                } else {
+                    for (const col of collections) {
+                        const subcols = allCollections.filter(c => c.parent_id === col.id);
+                        const subcolsHtml = subcols.map(sub => `<a href="#" class="btn-col-link" data-id="${sub.id}" style="font-size: 0.85rem; color: #444; text-decoration: none;">${sub.name}</a>`).join(', ');
+
+                        html += `
                         <div class="collection-card" style="padding: 10px; display: flex; flex-direction: column; background: var(--header-bg); border: 1px solid var(--border-color); border-radius: 6px;">
                             <div style="display: flex; justify-content: space-between; align-items: baseline;">
                                 <div>
@@ -672,7 +775,7 @@
                                 </div>
                                 <div style="display: flex; gap: 4px; opacity: 0.3;" class="col-actions" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.3">
                                     <button class="btn-col-link" data-id="${col.id}" style="font-size: 0.75rem; cursor: pointer; padding: 2px 4px; border: 1px solid #ccc; background: #eee; border-radius: 3px;" title="Open Viewer">👀</button>
-                                    <button class="btn-edit-col" data-id="${col.id}" data-name="${col.name.replace(/"/g, '&quot;')}" data-desc="${(col.description||'').replace(/"/g, '&quot;')}" data-link="${(col.link||'').replace(/"/g, '&quot;')}" style="font-size: 0.75rem; cursor: pointer; padding: 2px 4px; border: 1px solid #ccc; background: #eee; border-radius: 3px;" title="Edit">✏️</button>
+                                    <button class="btn-edit-col" data-id="${col.id}" data-name="${col.name.replace(/"/g, '&quot;')}" data-desc="${(col.description || '').replace(/"/g, '&quot;')}" data-link="${(col.link || '').replace(/"/g, '&quot;')}" style="font-size: 0.75rem; cursor: pointer; padding: 2px 4px; border: 1px solid #ccc; background: #eee; border-radius: 3px;" title="Edit">✏️</button>
                                     <button class="btn-add-subcol" data-id="${col.id}" style="font-size: 0.75rem; cursor: pointer; padding: 2px 4px; border: 1px solid #ccc; background: #eee; border-radius: 3px;" title="Add Subcollection">➕</button>
                                     <button class="btn-del-col" data-id="${col.id}" style="font-size: 0.75rem; cursor: pointer; padding: 2px 4px; border: 1px solid #ccc; background: #eee; border-radius: 3px;" title="Delete">🗑️</button>
                                     <button class="btn-share-col" data-id="${col.id}" style="font-size: 0.75rem; cursor: pointer; padding: 2px 4px; border: 1px solid #ccc; background: #eee; border-radius: 3px;" title="Share">🔗</button>
@@ -684,205 +787,205 @@
                             </div>
                         </div>
                     `;
+                    }
                 }
-            }
-            
-            html += '</div>';
-            container.innerHTML = html;
-            
-            if (parentId) {
-                container.querySelector('#btn-back-col').addEventListener('click', (e) => {
-                    e.preventDefault();
-                    let backId = e.target.getAttribute('data-parent') || null;
-                    if (backId === 'null') backId = null;
-                    loadCollectionsUI(container, backId);
-                });
-            }
 
-            container.querySelectorAll('.btn-col-link').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    window.open('/collections/' + btn.getAttribute('data-id'), '_blank');
-                });
-            });
+                html += '</div>';
+                container.innerHTML = html;
 
-            container.querySelectorAll('.btn-col-link').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    window.open('/collections/' + btn.getAttribute('data-id'), '_blank');
-                });
-            });
-
-            const filterCards = () => {
-                const textQuery = (container.querySelector('#col-text-filter').value || '').toLowerCase();
-                const letterQuery = container.getAttribute('data-alpha-filter') || 'ALL';
-                
-                container.querySelectorAll('.collection-card').forEach(card => {
-                    const titleEl = card.querySelector('.title-link');
-                    if (!titleEl) return;
-                    const title = titleEl.textContent.trim();
-                    const titleLower = title.toLowerCase();
-                    
-                    let matchesText = true;
-                    if (textQuery) {
-                        matchesText = titleLower.includes(textQuery);
-                    }
-                    
-                    let matchesLetter = true;
-                    if (letterQuery !== 'ALL') {
-                        matchesLetter = title.toUpperCase().startsWith(letterQuery);
-                    }
-                    
-                    card.style.display = (matchesText && matchesLetter) ? 'flex' : 'none';
-                });
-            };
-
-            const textFilterInput = container.querySelector('#col-text-filter');
-            if (textFilterInput) {
-                textFilterInput.addEventListener('input', filterCards);
-            }
-
-            container.querySelectorAll('.alpha-link').forEach(link => {
-                link.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    container.querySelectorAll('.alpha-link').forEach(l => {
-                        l.style.fontWeight = 'normal';
-                        l.style.background = 'transparent';
+                if (parentId) {
+                    container.querySelector('#btn-back-col').addEventListener('click', (e) => {
+                        e.preventDefault();
+                        let backId = e.target.getAttribute('data-parent') || null;
+                        if (backId === 'null') backId = null;
+                        loadCollectionsUI(container, backId);
                     });
-                    e.target.style.fontWeight = 'bold';
-                    e.target.style.background = 'var(--bg-color)';
-                    container.setAttribute('data-alpha-filter', e.target.getAttribute('data-letter'));
-                    filterCards();
-                });
-            });
+                }
 
-            container.querySelector('#btn-add-collection').addEventListener('click', () => {
-                container.querySelector('#col-id').value = '';
-                container.querySelector('#col-name').value = '';
-                container.querySelector('#col-desc').value = '';
-                container.querySelector('#col-link').value = '';
-                container.querySelector('#col-parent-id').value = parentId || '';
-                container.querySelector('#collection-form-container').style.display = 'block';
-            });
-            
-            container.querySelector('#btn-cancel-collection').addEventListener('click', () => {
-                container.querySelector('#collection-form-container').style.display = 'none';
-            });
-            
-            container.querySelector('#btn-save-collection').addEventListener('click', async () => {
-                const id = container.querySelector('#col-id').value;
-                const pId = container.querySelector('#col-parent-id').value;
-                const payload = {
-                    name: container.querySelector('#col-name').value,
-                    description: container.querySelector('#col-desc').value,
-                    link: container.querySelector('#col-link').value,
-                    parent_id: pId ? pId : null
+                container.querySelectorAll('.btn-col-link').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        window.open('/collections/' + btn.getAttribute('data-id'), '_blank');
+                    });
+                });
+
+                container.querySelectorAll('.btn-col-link').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        window.open('/collections/' + btn.getAttribute('data-id'), '_blank');
+                    });
+                });
+
+                const filterCards = () => {
+                    const textQuery = (container.querySelector('#col-text-filter').value || '').toLowerCase();
+                    const letterQuery = container.getAttribute('data-alpha-filter') || 'ALL';
+
+                    container.querySelectorAll('.collection-card').forEach(card => {
+                        const titleEl = card.querySelector('.title-link');
+                        if (!titleEl) return;
+                        const title = titleEl.textContent.trim();
+                        const titleLower = title.toLowerCase();
+
+                        let matchesText = true;
+                        if (textQuery) {
+                            matchesText = titleLower.includes(textQuery);
+                        }
+
+                        let matchesLetter = true;
+                        if (letterQuery !== 'ALL') {
+                            matchesLetter = title.toUpperCase().startsWith(letterQuery);
+                        }
+
+                        card.style.display = (matchesText && matchesLetter) ? 'flex' : 'none';
+                    });
                 };
-                if (!payload.name) return alert("Name is required");
-                
-                const method = id ? 'PUT' : 'POST';
-                const url = id ? '/api/collections/' + id : '/api/collections';
-                
-                try {
-                    await fetch(url, {
-                        method: method,
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify(payload)
-                    });
-                    loadCollectionsUI(container, parentId);
-                } catch(e) {
-                    alert("Error saving collection");
-                }
-            });
-            
-            container.querySelectorAll('.btn-edit-col').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const target = e.target;
-                    container.querySelector('#col-id').value = target.getAttribute('data-id');
-                    container.querySelector('#col-name').value = target.getAttribute('data-name');
-                    container.querySelector('#col-desc').value = target.getAttribute('data-desc');
-                    container.querySelector('#col-link').value = target.getAttribute('data-link');
-                    // Keep the current form parent_id unchanged for edit
-                    container.querySelector('#col-parent-id').value = parentId || ''; 
-                    container.querySelector('#collection-form-container').style.display = 'block';
-                    container.querySelector('#collection-form-container').scrollIntoView({behavior: 'smooth'});
-                });
-            });
 
-            container.querySelectorAll('.btn-add-subcol').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const targetId = e.target.getAttribute('data-id');
+                const textFilterInput = container.querySelector('#col-text-filter');
+                if (textFilterInput) {
+                    textFilterInput.addEventListener('input', filterCards);
+                }
+
+                container.querySelectorAll('.alpha-link').forEach(link => {
+                    link.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        container.querySelectorAll('.alpha-link').forEach(l => {
+                            l.style.fontWeight = 'normal';
+                            l.style.background = 'transparent';
+                        });
+                        e.target.style.fontWeight = 'bold';
+                        e.target.style.background = 'var(--bg-color)';
+                        container.setAttribute('data-alpha-filter', e.target.getAttribute('data-letter'));
+                        filterCards();
+                    });
+                });
+
+                container.querySelector('#btn-add-collection').addEventListener('click', () => {
                     container.querySelector('#col-id').value = '';
                     container.querySelector('#col-name').value = '';
                     container.querySelector('#col-desc').value = '';
                     container.querySelector('#col-link').value = '';
-                    container.querySelector('#col-parent-id').value = targetId; // set parent_id to this item
+                    container.querySelector('#col-parent-id').value = parentId || '';
                     container.querySelector('#collection-form-container').style.display = 'block';
-                    container.querySelector('#collection-form-container').scrollIntoView({behavior: 'smooth'});
                 });
-            });
-            
-            container.querySelectorAll('.btn-del-col').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    if (confirm("Are you sure you want to delete this collection?")) {
-                        const id = e.target.getAttribute('data-id');
-                        await fetch('/api/collections/' + id, {method: 'DELETE'});
+
+                container.querySelector('#btn-cancel-collection').addEventListener('click', () => {
+                    container.querySelector('#collection-form-container').style.display = 'none';
+                });
+
+                container.querySelector('#btn-save-collection').addEventListener('click', async () => {
+                    const id = container.querySelector('#col-id').value;
+                    const pId = container.querySelector('#col-parent-id').value;
+                    const payload = {
+                        name: container.querySelector('#col-name').value,
+                        description: container.querySelector('#col-desc').value,
+                        link: container.querySelector('#col-link').value,
+                        parent_id: pId ? pId : null
+                    };
+                    if (!payload.name) return alert("Name is required");
+
+                    const method = id ? 'PUT' : 'POST';
+                    const url = id ? '/api/collections/' + id : '/api/collections';
+
+                    try {
+                        await fetch(url, {
+                            method: method,
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
                         loadCollectionsUI(container, parentId);
+                    } catch (e) {
+                        alert("Error saving collection");
                     }
                 });
-            });
-            
-            container.querySelectorAll('.btn-share-col').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const id = e.target.getAttribute('data-id');
-                    const shareUrl = window.location.origin + '/api/collections/' + id;
-                    alert("Share this URL: " + shareUrl);
+
+                container.querySelectorAll('.btn-edit-col').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const target = e.target;
+                        container.querySelector('#col-id').value = target.getAttribute('data-id');
+                        container.querySelector('#col-name').value = target.getAttribute('data-name');
+                        container.querySelector('#col-desc').value = target.getAttribute('data-desc');
+                        container.querySelector('#col-link').value = target.getAttribute('data-link');
+                        // Keep the current form parent_id unchanged for edit
+                        container.querySelector('#col-parent-id').value = parentId || '';
+                        container.querySelector('#collection-form-container').style.display = 'block';
+                        container.querySelector('#collection-form-container').scrollIntoView({ behavior: 'smooth' });
+                    });
                 });
-            });
-        }
-        document.getElementById('menu-collections').addEventListener('click', (e) => {
-            // Navigate directly to Collections index page
-            window.location.href = '/collectionsindex';
-        });
 
-        
-        document.getElementById('menu-vault').addEventListener('click', async (e) => {
-            e.preventDefault();
-            const ui = appendMessage('assistant', '<p>Fetching vault records from Elasticsearch<span class="typing"><span>.</span><span>.</span><span>.</span></span></p>');
-            
-            // Bypass LLM and call the search tool directly with a wildcard query
-            const result = await executeTool('elasticsearch_fulltext_search', { q: "*", format: "vault_list", limit: 10 }, ui.contentDiv);
-            
-            let resText = "No records found.";
-            if (result && result.length > 0 && result[0].text) resText = result[0].text;
-            
-            // Strip the system instructions from the markdown text
-            resText = resText.replace(/\n---\nSYSTEM INSTRUCTION FOR LLM:.*$/g, '');
-            
-            // Add a Back button
-            const backBtnHTML = '<button onclick="this.closest(\'.message\').remove()" style="margin-bottom:15px; padding:6px 12px; background:var(--button-bg); color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.9rem;">&larr; Back</button>\n\n';
-            
-            ui.contentDiv.innerHTML = backBtnHTML + marked.parse(resText);
-            chatHistory.scrollTop = chatHistory.scrollHeight;
-        });
-        
+                container.querySelectorAll('.btn-add-subcol').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const targetId = e.target.getAttribute('data-id');
+                        container.querySelector('#col-id').value = '';
+                        container.querySelector('#col-name').value = '';
+                        container.querySelector('#col-desc').value = '';
+                        container.querySelector('#col-link').value = '';
+                        container.querySelector('#col-parent-id').value = targetId; // set parent_id to this item
+                        container.querySelector('#collection-form-container').style.display = 'block';
+                        container.querySelector('#collection-form-container').scrollIntoView({ behavior: 'smooth' });
+                    });
+                });
 
-        
+                container.querySelectorAll('.btn-del-col').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        if (confirm("Are you sure you want to delete this collection?")) {
+                            const id = e.target.getAttribute('data-id');
+                            await fetch('/api/collections/' + id, { method: 'DELETE' });
+                            loadCollectionsUI(container, parentId);
+                        }
+                    });
+                });
 
-        
-        async function loadGroupsUI(container) {
-            container.innerHTML = '<p>Loading groups...</p>';
-            try {
-                const res = await fetch('/api/groups');
-                const data = await res.json();
-                renderGroupsList(container, data.groups || []);
-            } catch (err) {
-                container.innerHTML = '<p>Error loading groups.</p>';
+                container.querySelectorAll('.btn-share-col').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const id = e.target.getAttribute('data-id');
+                        const shareUrl = window.location.origin + '/api/collections/' + id;
+                        alert("Share this URL: " + shareUrl);
+                    });
+                });
             }
-        }
-        
-        function renderGroupsList(container, groups) {
-            let html = `
+            document.getElementById('menu-collections').addEventListener('click', (e) => {
+                // Navigate directly to Collections index page
+                window.location.href = '/collectionsindex';
+            });
+
+
+            document.getElementById('menu-vault').addEventListener('click', async (e) => {
+                e.preventDefault();
+                const ui = appendMessage('assistant', '<p>Fetching vault records from Elasticsearch<span class="typing"><span>.</span><span>.</span><span>.</span></span></p>');
+
+                // Bypass LLM and call the search tool directly with a wildcard query
+                const result = await executeTool('elasticsearch_fulltext_search', { q: "*", format: "vault_list", limit: 10 }, ui.contentDiv);
+
+                let resText = "No records found.";
+                if (result && result.length > 0 && result[0].text) resText = result[0].text;
+
+                // Strip the system instructions from the markdown text
+                resText = resText.replace(/\n---\nSYSTEM INSTRUCTION FOR LLM:.*$/g, '');
+
+                // Add a Back button
+                const backBtnHTML = '<button onclick="this.closest(\'.message\').remove()" style="margin-bottom:15px; padding:6px 12px; background:var(--button-bg); color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.9rem;">&larr; Back</button>\n\n';
+
+                ui.contentDiv.innerHTML = backBtnHTML + marked.parse(resText);
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            });
+
+
+
+
+
+            async function loadGroupsUI(container) {
+                container.innerHTML = '<p>Loading groups...</p>';
+                try {
+                    const res = await fetch('/api/groups');
+                    const data = await res.json();
+                    renderGroupsList(container, data.groups || []);
+                } catch (err) {
+                    container.innerHTML = '<p>Error loading groups.</p>';
+                }
+            }
+
+            function renderGroupsList(container, groups) {
+                let html = `
                 <div style="margin-bottom: 20px;">
                     <h3 style="margin-top: 0;">User Groups</h3>
                     <button id="btn-add-group" style="padding: 6px 12px; background: var(--accent-color); color: white; border: none; border-radius: 4px; cursor: pointer;">+ Add New Group</button>
@@ -904,12 +1007,12 @@
                 </div>
                 <div id="groups-list" style="display: flex; flex-direction: column; gap: 15px;">
             `;
-            
-            if (groups.length === 0) {
-                html += '<p>No groups found. Create one above!</p>';
-            } else {
-                for (const grp of groups) {
-                    html += `
+
+                if (groups.length === 0) {
+                    html += '<p>No groups found. Create one above!</p>';
+                } else {
+                    for (const grp of groups) {
+                        html += `
                         <div class="group-card" style="padding: 15px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--header-bg);">
                             <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                                 <div>
@@ -917,915 +1020,971 @@
                                     ${grp.description ? `<p style="margin: 0; font-size: 0.9rem; opacity: 0.8;">${grp.description}</p>` : ''}
                                 </div>
                                 <div style="display: flex; gap: 8px;">
-                                    <button class="btn-edit-grp" data-id="${grp.id}" data-name="${grp.name.replace(/"/g, '&quot;')}" data-desc="${(grp.description||'').replace(/"/g, '&quot;')}" style="padding: 4px 8px; font-size: 0.8rem; background: var(--button-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;">Edit</button>
+                                    <button class="btn-edit-grp" data-id="${grp.id}" data-name="${grp.name.replace(/"/g, '&quot;')}" data-desc="${(grp.description || '').replace(/"/g, '&quot;')}" style="padding: 4px 8px; font-size: 0.8rem; background: var(--button-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;">Edit</button>
                                     <button class="btn-del-grp" data-id="${grp.id}" style="padding: 4px 8px; font-size: 0.8rem; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">Delete</button>
                                 </div>
                             </div>
                         </div>
                     `;
+                    }
                 }
-            }
-            
-            html += '</div>';
-            container.innerHTML = html;
-            
-            container.querySelector('#btn-add-group').addEventListener('click', () => {
-                container.querySelector('#grp-id').value = '';
-                container.querySelector('#grp-name').value = '';
-                container.querySelector('#grp-desc').value = '';
-                container.querySelector('#group-form-container').style.display = 'block';
-            });
-            
-            container.querySelector('#btn-cancel-group').addEventListener('click', () => {
-                container.querySelector('#group-form-container').style.display = 'none';
-            });
-            
-            container.querySelector('#btn-save-group').addEventListener('click', async () => {
-                const id = container.querySelector('#grp-id').value;
-                const payload = {
-                    name: container.querySelector('#grp-name').value,
-                    description: container.querySelector('#grp-desc').value
-                };
-                if (!payload.name) return alert("Name is required");
-                
-                const method = id ? 'PUT' : 'POST';
-                const url = id ? '/api/groups/' + id : '/api/groups';
-                
-                try {
-                    await fetch(url, {
-                        method: method,
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify(payload)
-                    });
-                    loadGroupsUI(container);
-                } catch(e) {
-                    alert("Error saving group");
-                }
-            });
-            
-            container.querySelectorAll('.btn-edit-grp').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const target = e.target;
-                    container.querySelector('#grp-id').value = target.getAttribute('data-id');
-                    container.querySelector('#grp-name').value = target.getAttribute('data-name');
-                    container.querySelector('#grp-desc').value = target.getAttribute('data-desc');
+
+                html += '</div>';
+                container.innerHTML = html;
+
+                container.querySelector('#btn-add-group').addEventListener('click', () => {
+                    container.querySelector('#grp-id').value = '';
+                    container.querySelector('#grp-name').value = '';
+                    container.querySelector('#grp-desc').value = '';
                     container.querySelector('#group-form-container').style.display = 'block';
-                    container.querySelector('#group-form-container').scrollIntoView({behavior: 'smooth'});
                 });
-            });
 
-            container.querySelectorAll('.btn-del-grp').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    if (confirm("Are you sure you want to delete this group?")) {
-                        const id = e.target.getAttribute('data-id');
-                        await fetch('/api/groups/' + id, {method: 'DELETE'});
+                container.querySelector('#btn-cancel-group').addEventListener('click', () => {
+                    container.querySelector('#group-form-container').style.display = 'none';
+                });
+
+                container.querySelector('#btn-save-group').addEventListener('click', async () => {
+                    const id = container.querySelector('#grp-id').value;
+                    const payload = {
+                        name: container.querySelector('#grp-name').value,
+                        description: container.querySelector('#grp-desc').value
+                    };
+                    if (!payload.name) return alert("Name is required");
+
+                    const method = id ? 'PUT' : 'POST';
+                    const url = id ? '/api/groups/' + id : '/api/groups';
+
+                    try {
+                        await fetch(url, {
+                            method: method,
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
                         loadGroupsUI(container);
+                    } catch (e) {
+                        alert("Error saving group");
                     }
                 });
+
+                container.querySelectorAll('.btn-edit-grp').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const target = e.target;
+                        container.querySelector('#grp-id').value = target.getAttribute('data-id');
+                        container.querySelector('#grp-name').value = target.getAttribute('data-name');
+                        container.querySelector('#grp-desc').value = target.getAttribute('data-desc');
+                        container.querySelector('#group-form-container').style.display = 'block';
+                        container.querySelector('#group-form-container').scrollIntoView({ behavior: 'smooth' });
+                    });
+                });
+
+                container.querySelectorAll('.btn-del-grp').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        if (confirm("Are you sure you want to delete this group?")) {
+                            const id = e.target.getAttribute('data-id');
+                            await fetch('/api/groups/' + id, { method: 'DELETE' });
+                            loadGroupsUI(container);
+                        }
+                    });
+                });
+            }
+
+            document.getElementById('menu-groups').addEventListener('click', (e) => {
+                e.preventDefault();
+                const ui = appendMessage('assistant', '<p>Opening Groups...</p>');
+                loadGroupsUI(ui.contentDiv);
             });
-        }
-        
-        document.getElementById('menu-groups').addEventListener('click', (e) => {
-            e.preventDefault();
-            const ui = appendMessage('assistant', '<p>Opening Groups...</p>');
-            loadGroupsUI(ui.contentDiv);
-        });
 
-        // Load models on startup
-        async function loadModels() {
-            try {
-                const res = await fetch('/gateway/v1/models');
-                const data = await res.json();
-                modelSelect.innerHTML = '';
-                if (data.data && data.data.length > 0) {
-                    // Sort models: prioritize configured default model, then local models, then alphabetical
-                    const envDefault = '{{OLLAMA_DEFAULT_MODEL}}';
-                    data.data.sort((a, b) => {
-                        if (a.id === envDefault) return -1;
-                        if (b.id === envDefault) return 1;
-                        const aCloud = (a.id || '').toLowerCase().includes('-cloud');
-                        const bCloud = (b.id || '').toLowerCase().includes('-cloud');
-                        if (!aCloud && bCloud) return -1;
-                        if (aCloud && !bCloud) return 1;
-                        return (a.display_name || a.id).localeCompare(b.display_name || b.id);
-                    });
+            // Load models on startup
+            async function loadModels() {
+                try {
+                    const res = await fetch('/vault/models');
+                    const data = await res.json();
+                    modelSelect.innerHTML = '';
+                    if (data.data && data.data.length > 0) {
+                        // Sort models: prioritize configured default model, then local models, then alphabetical
+                        const envDefault = '{{OLLAMA_DEFAULT_MODEL}}';
+                        data.data.sort((a, b) => {
+                            if (a.id === envDefault) return -1;
+                            if (b.id === envDefault) return 1;
+                            const aCloud = (a.id || '').toLowerCase().includes('-cloud');
+                            const bCloud = (b.id || '').toLowerCase().includes('-cloud');
+                            if (!aCloud && bCloud) return -1;
+                            if (aCloud && !bCloud) return 1;
+                            return (a.display_name || a.id).localeCompare(b.display_name || b.id);
+                        });
 
-                    // Determine the default model ID
-                    const defaultModel = data.data.find(m => m.id === envDefault) ||
-                        data.data.find(m => m.id === 'gemma4:31b') ||
-                        data.data.find(m => !m.id.includes('-cloud')) ||
-                        data.data[0];
+                        // Determine the default model ID
+                        const defaultModel = data.data.find(m => m.id === envDefault) ||
+                            data.data.find(m => m.id === 'gemma4:31b') ||
+                            data.data.find(m => !m.id.includes('-cloud')) ||
+                            data.data[0];
 
-                    data.data.forEach(model => {
-                        const opt = document.createElement('option');
-                        opt.value = model.id;
-                        opt.textContent = model.display_name || model.id;
-                        if (defaultModel && model.id === defaultModel.id) {
-                            opt.selected = true;
+                        data.data.forEach(model => {
+                            const opt = document.createElement('option');
+                            opt.value = model.id;
+                            opt.textContent = model.display_name || model.id;
+                            if (defaultModel && model.id === defaultModel.id) {
+                                opt.selected = true;
+                            }
+                            modelSelect.appendChild(opt);
+                        });
+                    } else {
+                        modelSelect.innerHTML = '<option value="">No models found</option>';
+                    }
+                } catch (err) {
+                    console.error("Failed to load models", err);
+                    modelSelect.innerHTML = '<option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>';
+                }
+            }
+
+            async function loadTools() {
+                try {
+                    const res = await fetch('/gateway/v1/tools');
+                    if (res.ok) {
+                        availableTools = await res.json();
+                        console.log("Loaded tools:", availableTools.length);
+                    }
+                } catch (err) {
+                    console.error("Failed to load tools", err);
+                }
+            }
+
+            loadModels();
+            loadTools();
+
+            function appendMessage(role, content) {
+                const msgDiv = document.createElement('div');
+                msgDiv.className = `message ${role}`;
+
+                const avatarDiv = document.createElement('div');
+                avatarDiv.className = 'avatar';
+                avatarDiv.textContent = role === 'user' ? 'U' : 'AI';
+
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'message-content';
+                contentDiv.innerHTML = marked.parse(content);
+
+                msgDiv.appendChild(avatarDiv);
+                msgDiv.appendChild(contentDiv);
+                chatHistory.appendChild(msgDiv);
+
+                // Scroll to bottom
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+                return { msgDiv, contentDiv };
+            }
+
+            let lastCreatedDocId = localStorage.getItem('ai_studio_last_doc_id') || '';
+
+            function extractDocIdFromText(text) {
+                if (!text) return '';
+                const m1 = text.match(/\/vault\/(?:doc\/)?([a-zA-Z0-9_-]{12,40})/);
+                if (m1 && m1[1] && m1[1] !== 'raw' && m1[1] !== 'update' && m1[1] !== 'annotations') {
+                    return m1[1].replace(/\.(md|jsonld|csv)$/, '');
+                }
+                return '';
+            }
+
+            function attachResponseActionButtons(contentDiv, responseText, promptText, options = {}) {
+                if (!contentDiv || !responseText || !responseText.trim()) return;
+                // Remove existing action bar if re-attaching
+                const oldBar = contentDiv.querySelector('.chat-response-actions');
+                if (oldBar) oldBar.remove();
+
+                let currentResponseText = responseText;
+                const isDocContext = Boolean(options && options.isDocContext);
+
+                const detectedId = (options && options.docId) || extractDocIdFromText(currentResponseText) || extractDocIdFromText(promptText);
+                if (detectedId && (!lastCreatedDocId || (options && options.docId))) {
+                    lastCreatedDocId = detectedId;
+                    localStorage.setItem('ai_studio_last_doc_id', lastCreatedDocId);
+                }
+
+                // Ensure markdown content above the bar is wrapped in a dedicated body container so Edit can swap it cleanly
+                let bodyWrapper = contentDiv.querySelector('.chat-response-body');
+                if (!bodyWrapper) {
+                    bodyWrapper = document.createElement('div');
+                    bodyWrapper.className = 'chat-response-body';
+                    while (contentDiv.firstChild) {
+                        bodyWrapper.appendChild(contentDiv.firstChild);
+                    }
+                    contentDiv.appendChild(bodyWrapper);
+                }
+
+                const bar = document.createElement('div');
+                bar.className = 'chat-response-actions';
+
+                const leftGroup = document.createElement('div');
+                leftGroup.className = 'chat-action-group';
+
+                const rightGroup = document.createElement('div');
+                rightGroup.className = 'chat-action-group';
+
+                const btnSave = document.createElement('button');
+                btnSave.className = 'chat-action-btn';
+                btnSave.title = 'Save this response as an annotation on the document';
+                btnSave.innerHTML = 'Save';
+
+                const btnEdit = document.createElement('button');
+                btnEdit.className = 'chat-action-btn';
+                btnEdit.title = 'Edit this response text';
+                btnEdit.innerHTML = 'Edit';
+
+                const btnCreate = document.createElement('button');
+                btnCreate.className = 'chat-action-btn';
+                btnCreate.title = 'Create a new Vault document from this response';
+                btnCreate.innerHTML = 'Create';
+
+                const btnAdd = document.createElement('button');
+                btnAdd.className = 'chat-action-btn';
+                btnAdd.title = 'Append this response to the last created document';
+                btnAdd.innerHTML = 'Add';
+
+                const btnUpdate = document.createElement('button');
+                btnUpdate.className = 'chat-action-btn';
+                btnUpdate.title = 'Update the active Vault document with the edited content';
+                btnUpdate.innerHTML = 'Update';
+                if (!isDocContext) {
+                    btnUpdate.style.display = 'none';
+                }
+
+                const statusSpan = document.createElement('div');
+                statusSpan.className = 'chat-action-status';
+                if (lastCreatedDocId) {
+                    statusSpan.innerHTML = `Target doc: <a href="/vault/doc/${lastCreatedDocId}" target="_blank">${lastCreatedDocId}</a>`;
+                }
+
+                function renderTopDocBanner(docId, docUrl, actionLabel, annotationsUrl) {
+                    if (!docId) return;
+                    const url = docUrl || `/vault/doc/${docId}`;
+                    let banner = contentDiv.querySelector('.chat-doc-top-banner');
+                    if (!banner) {
+                        banner = document.createElement('div');
+                        banner.className = 'chat-doc-top-banner';
+                        contentDiv.insertBefore(banner, contentDiv.firstChild);
+                    }
+                    let html = `<span>📄 <strong>${actionLabel || 'Document'}:</strong> <a href="${url}" target="_blank">${docId}</a></span>`;
+                    let links = `<a href="${url}" target="_blank">Open Document &rarr;</a>`;
+                    if (annotationsUrl) {
+                        links += ` &nbsp;|&nbsp; <a href="${annotationsUrl}" target="_blank">View Annotations</a>`;
+                    }
+                    html += `<span>${links}</span>`;
+                    banner.innerHTML = html;
+
+                    // Also show the link at the top of the corresponding user question bubble if present
+                    const msgEl = contentDiv.closest('.message');
+                    if (msgEl && msgEl.previousElementSibling && msgEl.previousElementSibling.classList.contains('user')) {
+                        const userContent = msgEl.previousElementSibling.querySelector('.message-content');
+                        if (userContent) {
+                            let uBanner = userContent.querySelector('.chat-doc-top-banner');
+                            if (!uBanner) {
+                                uBanner = document.createElement('div');
+                                uBanner.className = 'chat-doc-top-banner';
+                                userContent.insertBefore(uBanner, userContent.firstChild);
+                            }
+                            uBanner.innerHTML = html;
                         }
-                        modelSelect.appendChild(opt);
-                    });
-                } else {
-                    modelSelect.innerHTML = '<option value="">No models found</option>';
-                }
-            } catch (err) {
-                console.error("Failed to load models", err);
-                modelSelect.innerHTML = '<option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>';
-            }
-        }
-        
-        async function loadTools() {
-            try {
-                const res = await fetch('/gateway/v1/tools');
-                if (res.ok) {
-                    availableTools = await res.json();
-                    console.log("Loaded tools:", availableTools.length);
-                }
-            } catch (err) {
-                console.error("Failed to load tools", err);
-            }
-        }
-        
-        loadModels();
-        loadTools();
-
-        function appendMessage(role, content) {
-            const msgDiv = document.createElement('div');
-            msgDiv.className = `message ${role}`;
-            
-            const avatarDiv = document.createElement('div');
-            avatarDiv.className = 'avatar';
-            avatarDiv.textContent = role === 'user' ? 'U' : 'AI';
-            
-            const contentDiv = document.createElement('div');
-            contentDiv.className = 'message-content';
-            contentDiv.innerHTML = marked.parse(content);
-            
-            msgDiv.appendChild(avatarDiv);
-            msgDiv.appendChild(contentDiv);
-            chatHistory.appendChild(msgDiv);
-            
-            // Scroll to bottom
-            chatHistory.scrollTop = chatHistory.scrollHeight;
-            return { msgDiv, contentDiv };
-        }
-
-        let lastCreatedDocId = localStorage.getItem('ai_studio_last_doc_id') || '';
-
-        function extractDocIdFromText(text) {
-            if (!text) return '';
-            const m1 = text.match(/\/vault\/(?:doc\/)?([a-zA-Z0-9_-]{12,40})/);
-            if (m1 && m1[1] && m1[1] !== 'raw' && m1[1] !== 'update' && m1[1] !== 'annotations') {
-                return m1[1].replace(/\.(md|jsonld|csv)$/, '');
-            }
-            return '';
-        }
-
-        function attachResponseActionButtons(contentDiv, responseText, promptText, options = {}) {
-            if (!contentDiv || !responseText || !responseText.trim()) return;
-            // Remove existing action bar if re-attaching
-            const oldBar = contentDiv.querySelector('.chat-response-actions');
-            if (oldBar) oldBar.remove();
-
-            let currentResponseText = responseText;
-            const isDocContext = Boolean(options && options.isDocContext);
-
-            const detectedId = (options && options.docId) || extractDocIdFromText(currentResponseText) || extractDocIdFromText(promptText);
-            if (detectedId && (!lastCreatedDocId || (options && options.docId))) {
-                lastCreatedDocId = detectedId;
-                localStorage.setItem('ai_studio_last_doc_id', lastCreatedDocId);
-            }
-
-            // Ensure markdown content above the bar is wrapped in a dedicated body container so Edit can swap it cleanly
-            let bodyWrapper = contentDiv.querySelector('.chat-response-body');
-            if (!bodyWrapper) {
-                bodyWrapper = document.createElement('div');
-                bodyWrapper.className = 'chat-response-body';
-                while (contentDiv.firstChild) {
-                    bodyWrapper.appendChild(contentDiv.firstChild);
-                }
-                contentDiv.appendChild(bodyWrapper);
-            }
-
-            const bar = document.createElement('div');
-            bar.className = 'chat-response-actions';
-
-            const leftGroup = document.createElement('div');
-            leftGroup.className = 'chat-action-group';
-
-            const rightGroup = document.createElement('div');
-            rightGroup.className = 'chat-action-group';
-
-            const btnSave = document.createElement('button');
-            btnSave.className = 'chat-action-btn';
-            btnSave.title = 'Save this response as an annotation on the document';
-            btnSave.innerHTML = 'Save';
-
-            const btnEdit = document.createElement('button');
-            btnEdit.className = 'chat-action-btn';
-            btnEdit.title = 'Edit this response text';
-            btnEdit.innerHTML = 'Edit';
-
-            const btnCreate = document.createElement('button');
-            btnCreate.className = 'chat-action-btn';
-            btnCreate.title = 'Create a new Vault document from this response';
-            btnCreate.innerHTML = 'Create';
-
-            const btnAdd = document.createElement('button');
-            btnAdd.className = 'chat-action-btn';
-            btnAdd.title = 'Append this response to the last created document';
-            btnAdd.innerHTML = 'Add';
-
-            const btnUpdate = document.createElement('button');
-            btnUpdate.className = 'chat-action-btn';
-            btnUpdate.title = 'Update the active Vault document with the edited content';
-            btnUpdate.innerHTML = 'Update';
-            if (!isDocContext) {
-                btnUpdate.style.display = 'none';
-            }
-
-            const statusSpan = document.createElement('div');
-            statusSpan.className = 'chat-action-status';
-            if (lastCreatedDocId) {
-                statusSpan.innerHTML = `Target doc: <a href="/vault/doc/${lastCreatedDocId}" target="_blank">${lastCreatedDocId}</a>`;
-            }
-
-            function renderTopDocBanner(docId, docUrl, actionLabel, annotationsUrl) {
-                if (!docId) return;
-                const url = docUrl || `/vault/doc/${docId}`;
-                let banner = contentDiv.querySelector('.chat-doc-top-banner');
-                if (!banner) {
-                    banner = document.createElement('div');
-                    banner.className = 'chat-doc-top-banner';
-                    contentDiv.insertBefore(banner, contentDiv.firstChild);
-                }
-                let html = `<span>📄 <strong>${actionLabel || 'Document'}:</strong> <a href="${url}" target="_blank">${docId}</a></span>`;
-                let links = `<a href="${url}" target="_blank">Open Document &rarr;</a>`;
-                if (annotationsUrl) {
-                    links += ` &nbsp;|&nbsp; <a href="${annotationsUrl}" target="_blank">View Annotations</a>`;
-                }
-                html += `<span>${links}</span>`;
-                banner.innerHTML = html;
-
-                // Also show the link at the top of the corresponding user question bubble if present
-                const msgEl = contentDiv.closest('.message');
-                if (msgEl && msgEl.previousElementSibling && msgEl.previousElementSibling.classList.contains('user')) {
-                    const userContent = msgEl.previousElementSibling.querySelector('.message-content');
-                    if (userContent) {
-                        let uBanner = userContent.querySelector('.chat-doc-top-banner');
-                        if (!uBanner) {
-                            uBanner = document.createElement('div');
-                            uBanner.className = 'chat-doc-top-banner';
-                            userContent.insertBefore(uBanner, userContent.firstChild);
-                        }
-                        uBanner.innerHTML = html;
                     }
                 }
-            }
-            let isEditing = false;
-            let editContainer = null;
+                let isEditing = false;
+                let editContainer = null;
 
-            btnEdit.addEventListener('click', () => {
-                if (!isEditing) {
-                    isEditing = true;
-                    btnEdit.innerHTML = 'Done';
-                    bodyWrapper.style.display = 'none';
-                    editContainer = document.createElement('div');
-                    const ta = document.createElement('textarea');
-                    ta.className = 'chat-edit-area';
-                    ta.value = currentResponseText;
-                    editContainer.appendChild(ta);
-                    contentDiv.insertBefore(editContainer, bar);
-                    ta.focus();
-                } else {
-                    const ta = editContainer ? editContainer.querySelector('textarea') : null;
-                    if (ta) {
-                        currentResponseText = ta.value;
-                        bodyWrapper.innerHTML = marked.parse(currentResponseText);
-                        // Also update localStorage history if applicable
-                        if (currentInteraction) {
-                            currentInteraction.response = currentResponseText;
-                            localStorage.setItem('ai_studio_history', JSON.stringify(chatHistoryStorage));
+                btnEdit.addEventListener('click', () => {
+                    if (!isEditing) {
+                        isEditing = true;
+                        btnEdit.innerHTML = 'Done';
+                        bodyWrapper.style.display = 'none';
+                        editContainer = document.createElement('div');
+                        const ta = document.createElement('textarea');
+                        ta.className = 'chat-edit-area';
+                        ta.value = currentResponseText;
+                        editContainer.appendChild(ta);
+                        contentDiv.insertBefore(editContainer, bar);
+                        ta.focus();
+                    } else {
+                        const ta = editContainer ? editContainer.querySelector('textarea') : null;
+                        if (ta) {
+                            currentResponseText = ta.value;
+                            bodyWrapper.innerHTML = marked.parse(currentResponseText);
+                            // Also update localStorage history if applicable
+                            if (currentInteraction) {
+                                currentInteraction.response = currentResponseText;
+                                localStorage.setItem('ai_studio_history', JSON.stringify(chatHistoryStorage));
+                            }
                         }
+                        if (editContainer) {
+                            editContainer.remove();
+                            editContainer = null;
+                        }
+                        bodyWrapper.style.display = '';
+                        isEditing = false;
+                        btnEdit.innerHTML = 'Edit';
+                        statusSpan.innerHTML = '✏️ Response updated.';
                     }
-                    if (editContainer) {
+                });
+
+                async function runAction(actionType, triggerBtn) {
+                    // If user is currently in edit mode, commit edits first
+                    if (isEditing && editContainer) {
+                        const ta = editContainer.querySelector('textarea');
+                        if (ta) {
+                            currentResponseText = ta.value;
+                            bodyWrapper.innerHTML = marked.parse(currentResponseText);
+                        }
                         editContainer.remove();
                         editContainer = null;
+                        bodyWrapper.style.display = '';
+                        isEditing = false;
+                        btnEdit.innerHTML = 'Edit';
                     }
-                    bodyWrapper.style.display = '';
-                    isEditing = false;
-                    btnEdit.innerHTML = 'Edit';
-                    statusSpan.innerHTML = '✏️ Response updated.';
-                }
-            });
 
-            async function runAction(actionType, triggerBtn) {
-                // If user is currently in edit mode, commit edits first
-                if (isEditing && editContainer) {
-                    const ta = editContainer.querySelector('textarea');
-                    if (ta) {
-                        currentResponseText = ta.value;
-                        bodyWrapper.innerHTML = marked.parse(currentResponseText);
+                    let targetDocId = (options && options.docId) || lastCreatedDocId || extractDocIdFromText(currentResponseText) || extractDocIdFromText(promptText);
+                    if ((actionType === 'add' || actionType === 'save' || actionType === 'update') && !targetDocId) {
+                        const entered = window.prompt(
+                            actionType === 'save'
+                                ? 'Enter the target Document ID (or URL) to save this annotation to (leave empty to create a new document first):'
+                                : 'No active document yet. Enter a Document ID to update/append to (or leave empty to create a new document):',
+                            ''
+                        );
+                        if (entered === null) return;
+                        if (entered.trim()) {
+                            const clean = extractDocIdFromText(entered.trim()) || entered.trim().replace(/\.(md|jsonld|csv)$/, '');
+                            targetDocId = clean;
+                        }
                     }
-                    editContainer.remove();
-                    editContainer = null;
-                    bodyWrapper.style.display = '';
-                    isEditing = false;
-                    btnEdit.innerHTML = 'Edit';
-                }
 
-                let targetDocId = (options && options.docId) || lastCreatedDocId || extractDocIdFromText(currentResponseText) || extractDocIdFromText(promptText);
-                if ((actionType === 'add' || actionType === 'save' || actionType === 'update') && !targetDocId) {
-                    const entered = window.prompt(
-                        actionType === 'save'
-                            ? 'Enter the target Document ID (or URL) to save this annotation to (leave empty to create a new document first):'
-                            : 'No active document yet. Enter a Document ID to update/append to (or leave empty to create a new document):',
-                        ''
-                    );
-                    if (entered === null) return;
-                    if (entered.trim()) {
-                        const clean = extractDocIdFromText(entered.trim()) || entered.trim().replace(/\.(md|jsonld|csv)$/, '');
-                        targetDocId = clean;
-                    }
-                }
+                    btnCreate.disabled = true;
+                    btnAdd.disabled = true;
+                    btnSave.disabled = true;
+                    btnEdit.disabled = true;
+                    btnUpdate.disabled = true;
+                    const origLabel = triggerBtn.innerHTML;
+                    triggerBtn.innerHTML = 'Working...';
+                    statusSpan.innerHTML = 'Saving to Vault...';
 
-                btnCreate.disabled = true;
-                btnAdd.disabled = true;
-                btnSave.disabled = true;
-                btnEdit.disabled = true;
-                btnUpdate.disabled = true;
-                const origLabel = triggerBtn.innerHTML;
-                triggerBtn.innerHTML = 'Working...';
-                statusSpan.innerHTML = 'Saving to Vault...';
+                    try {
+                        const model = (modelSelect && modelSelect.value) ? modelSelect.value : 'CODATA AI Agent';
+                        let effAction = actionType;
+                        if (actionType === 'save' && !targetDocId) {
+                            const createRes = await fetch('/api/chat/document', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    action: 'create',
+                                    text: currentResponseText,
+                                    prompt: promptText || '',
+                                    model: model
+                                })
+                            });
+                            const createData = await createRes.json();
+                            if (!createRes.ok || createData.status !== 'success') {
+                                throw new Error(createData.detail || 'Failed to create base document');
+                            }
+                            targetDocId = createData.doc_id;
+                            lastCreatedDocId = targetDocId;
+                            localStorage.setItem('ai_studio_last_doc_id', lastCreatedDocId);
+                        }
 
-                try {
-                    const model = (modelSelect && modelSelect.value) ? modelSelect.value : 'CODATA AI Agent';
-                    let effAction = actionType;
-                    if (actionType === 'save' && !targetDocId) {
-                        const createRes = await fetch('/api/chat/document', {
+                        const res = await fetch('/api/chat/document', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                action: 'create',
+                                action: effAction,
                                 text: currentResponseText,
                                 prompt: promptText || '',
-                                model: model
+                                model: model,
+                                doc_id: targetDocId || ''
                             })
                         });
-                        const createData = await createRes.json();
-                        if (!createRes.ok || createData.status !== 'success') {
-                            throw new Error(createData.detail || 'Failed to create base document');
+                        const rawText = await res.text();
+                        let data = {};
+                        try {
+                            data = JSON.parse(rawText);
+                        } catch (e) {
+                            throw new Error(`HTTP ${res.status}: ${rawText.slice(0, 120) || res.statusText}`);
                         }
-                        targetDocId = createData.doc_id;
-                        lastCreatedDocId = targetDocId;
-                        localStorage.setItem('ai_studio_last_doc_id', lastCreatedDocId);
-                    }
+                        if (!res.ok || data.status !== 'success') {
+                            throw new Error(data.detail || 'Operation failed');
+                        }
 
-                    const res = await fetch('/api/chat/document', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            action: effAction,
-                            text: currentResponseText,
-                            prompt: promptText || '',
-                            model: model,
-                            doc_id: targetDocId || ''
-                        })
-                    });
-                    const rawText = await res.text();
-                    let data = {};
-                    try {
-                        data = JSON.parse(rawText);
-                    } catch (e) {
-                        throw new Error(`HTTP ${res.status}: ${rawText.slice(0, 120) || res.statusText}`);
-                    }
-                    if (!res.ok || data.status !== 'success') {
-                        throw new Error(data.detail || 'Operation failed');
-                    }
+                        if (data.doc_id) {
+                            lastCreatedDocId = data.doc_id;
+                            localStorage.setItem('ai_studio_last_doc_id', lastCreatedDocId);
+                        }
 
-                    if (data.doc_id) {
-                        lastCreatedDocId = data.doc_id;
-                        localStorage.setItem('ai_studio_last_doc_id', lastCreatedDocId);
+                        if (data.action === 'create') {
+                            statusSpan.innerHTML = `✅ Created document: <a href="${data.doc_url}" target="_blank">${data.doc_id}</a>`;
+                            renderTopDocBanner(data.doc_id, data.doc_url, 'Created Document');
+                        } else if (data.action === 'add') {
+                            statusSpan.innerHTML = `✅ Appended to document: <a href="${data.doc_url}" target="_blank">${data.doc_id}</a>`;
+                            renderTopDocBanner(data.doc_id, data.doc_url, 'Updated Document');
+                        } else if (data.action === 'update') {
+                            statusSpan.innerHTML = `✅ Updated document in Vault: <a href="${data.doc_url}" target="_blank">${data.doc_id}</a>`;
+                            renderTopDocBanner(data.doc_id, data.doc_url, 'Updated Document');
+                        } else if (data.action === 'save') {
+                            statusSpan.innerHTML = `✅ Saved annotation on <a href="${data.doc_url}" target="_blank">${data.doc_id}</a> (<a href="${data.annotations_url}" target="_blank">View Annotations</a>)`;
+                            renderTopDocBanner(data.doc_id, data.doc_url, 'Annotated Document', data.annotations_url);
+                        }
+                    } catch (err) {
+                        console.error('Chat action error:', err);
+                        statusSpan.innerHTML = `<span style="color:#ef4444;">❌ Error: ${err.message}</span>`;
+                    } finally {
+                        triggerBtn.innerHTML = origLabel;
+                        btnCreate.disabled = false;
+                        btnAdd.disabled = false;
+                        btnSave.disabled = false;
+                        btnEdit.disabled = false;
+                        btnUpdate.disabled = false;
                     }
-
-                    if (data.action === 'create') {
-                        statusSpan.innerHTML = `✅ Created document: <a href="${data.doc_url}" target="_blank">${data.doc_id}</a>`;
-                        renderTopDocBanner(data.doc_id, data.doc_url, 'Created Document');
-                    } else if (data.action === 'add') {
-                        statusSpan.innerHTML = `✅ Appended to document: <a href="${data.doc_url}" target="_blank">${data.doc_id}</a>`;
-                        renderTopDocBanner(data.doc_id, data.doc_url, 'Updated Document');
-                    } else if (data.action === 'update') {
-                        statusSpan.innerHTML = `✅ Updated document in Vault: <a href="${data.doc_url}" target="_blank">${data.doc_id}</a>`;
-                        renderTopDocBanner(data.doc_id, data.doc_url, 'Updated Document');
-                    } else if (data.action === 'save') {
-                        statusSpan.innerHTML = `✅ Saved annotation on <a href="${data.doc_url}" target="_blank">${data.doc_id}</a> (<a href="${data.annotations_url}" target="_blank">View Annotations</a>)`;
-                        renderTopDocBanner(data.doc_id, data.doc_url, 'Annotated Document', data.annotations_url);
-                    }
-                } catch (err) {
-                    console.error('Chat action error:', err);
-                    statusSpan.innerHTML = `<span style="color:#ef4444;">❌ Error: ${err.message}</span>`;
-                } finally {
-                    triggerBtn.innerHTML = origLabel;
-                    btnCreate.disabled = false;
-                    btnAdd.disabled = false;
-                    btnSave.disabled = false;
-                    btnEdit.disabled = false;
-                    btnUpdate.disabled = false;
                 }
+
+                btnCreate.addEventListener('click', () => runAction('create', btnCreate));
+                btnAdd.addEventListener('click', () => runAction('add', btnAdd));
+                btnSave.addEventListener('click', () => runAction('save', btnSave));
+                btnUpdate.addEventListener('click', () => runAction('update', btnUpdate));
+
+                leftGroup.appendChild(btnSave);
+                leftGroup.appendChild(btnEdit);
+                leftGroup.appendChild(btnUpdate);
+
+                rightGroup.appendChild(btnCreate);
+                rightGroup.appendChild(btnAdd);
+
+                bar.appendChild(leftGroup);
+                bar.appendChild(rightGroup);
+                bar.appendChild(statusSpan);
+                contentDiv.appendChild(bar);
+                chatHistory.scrollTop = chatHistory.scrollHeight;
             }
 
-            btnCreate.addEventListener('click', () => runAction('create', btnCreate));
-            btnAdd.addEventListener('click', () => runAction('add', btnAdd));
-            btnSave.addEventListener('click', () => runAction('save', btnSave));
-            btnUpdate.addEventListener('click', () => runAction('update', btnUpdate));
-
-            leftGroup.appendChild(btnSave);
-            leftGroup.appendChild(btnEdit);
-            leftGroup.appendChild(btnUpdate);
-
-            rightGroup.appendChild(btnCreate);
-            rightGroup.appendChild(btnAdd);
-
-            bar.appendChild(leftGroup);
-            bar.appendChild(rightGroup);
-            bar.appendChild(statusSpan);
-            contentDiv.appendChild(bar);
-            chatHistory.scrollTop = chatHistory.scrollHeight;
-        }
-        
-        async function executeTool(toolName, args, contentDiv) {
-            const toolId = 'tool-' + Math.random().toString(36).substr(2, 9);
-            contentDiv.innerHTML += `<div id="${toolId}" style="background:#f0f0f0; padding:10px; border-radius:5px; margin-top:10px; font-family:monospace; font-size:12px; border-left: 3px solid #0066cc;">
+            async function executeTool(toolName, args, contentDiv) {
+                const toolId = 'tool-' + Math.random().toString(36).substr(2, 9);
+                contentDiv.innerHTML += `<div id="${toolId}" style="background:#f0f0f0; padding:10px; border-radius:5px; margin-top:10px; font-family:monospace; font-size:12px; border-left: 3px solid #0066cc;">
                 <span style="font-weight:bold; color:#0066cc;">⚙️ Running tool: ${toolName}</span> <span class="typing"><span>.</span><span>.</span><span>.</span></span>
                 <details style="margin-top:5px; cursor:pointer; color:#555;"><summary>View Arguments</summary><pre style="font-size:10px; white-space:pre-wrap;">${JSON.stringify(args, null, 2)}</pre></details>
             </div>`;
-            chatHistory.scrollTop = chatHistory.scrollHeight;
-            
-            let result;
-            try {
-                const res = await fetch('/gateway/v1/tools/execute', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: toolName, arguments: args })
-                });
-                
-                if (!res.ok) {
-                    const errText = await res.text();
-                    result = [{ type: "text", text: `Error: ${res.status} - ${errText}` }];
-                } else {
-                    result = await res.json();
-                }
-            } catch (err) {
-                result = [{ type: "text", text: `Error: ${err.message}` }];
-            }
+                chatHistory.scrollTop = chatHistory.scrollHeight;
 
-            const toolDiv = document.getElementById(toolId);
-            if (toolDiv) {
-                let resText = "No output";
-                if (result && result.length > 0 && result[0].text) resText = result[0].text;
-                // Escape HTML tags to prevent rendering issues in pre block
-                resText = resText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                
-                toolDiv.innerHTML = `
+                let result;
+                try {
+                    const res = await fetch('/gateway/v1/tools/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: toolName, arguments: args })
+                    });
+
+                    if (!res.ok) {
+                        const errText = await res.text();
+                        result = [{ type: "text", text: `Error: ${res.status} - ${errText}` }];
+                    } else {
+                        result = await res.json();
+                    }
+                } catch (err) {
+                    result = [{ type: "text", text: `Error: ${err.message}` }];
+                }
+
+                const toolDiv = document.getElementById(toolId);
+                if (toolDiv) {
+                    let resText = "No output";
+                    if (result && result.length > 0 && result[0].text) resText = result[0].text;
+                    // Escape HTML tags to prevent rendering issues in pre block
+                    resText = resText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+                    toolDiv.innerHTML = `
                     <span style="font-weight:bold; color:#008800;">✅ Tool finished: ${toolName}</span>
                     <details style="margin-top:5px; cursor:pointer; color:#555;"><summary>View Result</summary><pre style="font-size:10px; white-space:pre-wrap; max-height:200px; overflow-y:auto; background:#fff; padding:5px; border:1px solid #ccc;">${resText}</pre></details>
                 `;
-                chatHistory.scrollTop = chatHistory.scrollHeight;
+                    chatHistory.scrollTop = chatHistory.scrollHeight;
+                }
+                return result;
             }
-            return result;
-        }
 
-        async function sendMessage(isToolCallback = false, toolCallbackData = null) {
-            if (!isToolCallback) {
-                const text = promptInput.value.trim();
-                if (!text) return;
-                
-                // Add to UI
-                appendMessage('user', text);
-                promptInput.value = '';
-                promptInput.style.height = 'auto';
-                
-                // Intercept static search queries to bypass LLM
-                const searchPrefix = "Search Croissant datasets for:";
-                if (text.startsWith(searchPrefix)) {
-                    const query = text.substring(searchPrefix.length).trim();
-                    if (query) {
-                        const ui = appendMessage('assistant', '<p>Searching Elasticsearch<span class="typing"><span>.</span><span>.</span><span>.</span></span></p>');
-                        
-                        executeTool('elasticsearch_fulltext_search', { q: query, format: "vault_list", limit: 10 }, ui.contentDiv).then(result => {
-                            let resText = "No records found.";
-                            if (result && result.length > 0 && result[0].text) resText = result[0].text;
-                            resText = resText.replace(/\n---\nSYSTEM INSTRUCTION FOR LLM:.*$/g, '');
-                            const backBtnHTML = '<button onclick="this.closest(\'.message\').remove()" style="margin-bottom:15px; padding:6px 12px; background:var(--button-bg); color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.9rem;">&larr; Back</button>\n\n';
-                            ui.contentDiv.innerHTML = backBtnHTML + marked.parse(resText);
-                            attachResponseActionButtons(ui.contentDiv, resText, text);
-                            chatHistory.scrollTop = chatHistory.scrollHeight;
-                        });
-                        return; // Stop execution to bypass LLM
+            async function sendMessage(isToolCallback = false, toolCallbackData = null) {
+                if (!isToolCallback) {
+                    const text = promptInput.value.trim();
+                    if (!text) return;
+
+                    // Add to UI
+                    appendMessage('user', text);
+                    promptInput.value = '';
+                    promptInput.style.height = 'auto';
+
+                    // Intercept static search queries to bypass LLM
+                    const searchPrefix = "Search Croissant datasets for:";
+                    if (text.startsWith(searchPrefix)) {
+                        const query = text.substring(searchPrefix.length).trim();
+                        if (query) {
+                            const ui = appendMessage('assistant', '<p>Searching Elasticsearch<span class="typing"><span>.</span><span>.</span><span>.</span></span></p>');
+
+                            executeTool('elasticsearch_fulltext_search', { q: query, format: "vault_list", limit: 10 }, ui.contentDiv).then(result => {
+                                let resText = "No records found.";
+                                if (result && result.length > 0 && result[0].text) resText = result[0].text;
+                                resText = resText.replace(/\n---\nSYSTEM INSTRUCTION FOR LLM:.*$/g, '');
+                                const backBtnHTML = '<button onclick="this.closest(\'.message\').remove()" style="margin-bottom:15px; padding:6px 12px; background:var(--button-bg); color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.9rem;">&larr; Back</button>\n\n';
+                                ui.contentDiv.innerHTML = backBtnHTML + marked.parse(resText);
+                                attachResponseActionButtons(ui.contentDiv, resText, text);
+                                chatHistory.scrollTop = chatHistory.scrollHeight;
+                            });
+                            return; // Stop execution to bypass LLM
+                        }
                     }
-                }
-                
-                // Save to history tracking
-                currentInteraction = {
-                    prompt: text,
-                    date: new Date().toISOString(),
-                    response: ""
-                };
-                chatHistoryStorage.push(currentInteraction);
-                localStorage.setItem('ai_studio_history', JSON.stringify(chatHistoryStorage));
-                
-                // Add to messages array
-                messages.push({ role: 'user', content: text });
-            } else {
-                // If it's a tool callback, messages array already has the user's tool_result
-            }
-            
-            const model = modelSelect.value || "claude-3-5-sonnet-20241022";
-            const apiKey = apiKeyInput.value.trim();
-            sendBtn.disabled = true;
-            
-            // Create placeholder for assistant response
-            let contentDiv = null;
-            if (!isToolCallback) {
-                const ui = appendMessage('assistant', '<p>Thinking<span class="typing"><span>.</span><span>.</span><span>.</span></span></p>');
-                contentDiv = ui.contentDiv;
-            } else {
-                const ui = appendMessage('assistant', '<p>Processing tool result<span class="typing"><span>.</span><span>.</span><span>.</span></span></p>');
-                contentDiv = ui.contentDiv;
-            }
 
-            try {
-                const headers = { 'Content-Type': 'application/json' };
-                if (apiKey) {
-                    headers['Authorization'] = `Bearer ${apiKey}`;
-                    headers['X-API-Key'] = apiKey;
+                    // Save to history tracking
+                    currentInteraction = {
+                        prompt: text,
+                        date: new Date().toISOString(),
+                        response: ""
+                    };
+                    chatHistoryStorage.push(currentInteraction);
+                    localStorage.setItem('ai_studio_history', JSON.stringify(chatHistoryStorage));
+
+                    // Add to messages array
+                    messages.push({ role: 'user', content: text });
+                } else {
+                    // If it's a tool callback, messages array already has the user's tool_result
                 }
 
-                const payload = {
-                    model: model,
-                    system: "You are the Semantic Croissant AI Assistant, connected to an MCP (Model Context Protocol) server. You have access to various tools to interact with the system, such as reading from the vault (read_vault_article), searching the web, cdif_variables, extracting variables, ask_expert, and build_collection_from_expert. YOU MUST USE THESE TOOLS when the user asks you to read, search, or fetch data. Do not refuse to read the vault; instead, use the read_vault_article tool.\n\nEXPERT COLLECTIONS & BUILDING COLLECTIONS:\n- When the user asks to create a collection and fill it with an expert (e.g., 'Create collection Tools and ask SSHOC expert to fill it' or 'Create collection Trump and ask Trump expert to fill it'), you MUST IMMEDIATELY call 'build_collection_from_expert' with the appropriate expert_index ('sshoc' for SSHOC / tools and services expert, 'trump' for Trump expert, 'croissant' for Croissant expert, 'dataverse' for Dataverse expert, 'openml' for OpenML expert, etc.). For SSHOC expert, always specify expert_index='sshoc' and query='*' (or the specified query) to query the 'sshoc' Elasticsearch index directly, NOT the croissant index!\n- When querying expert collections with 'ask_expert', specify index='sshoc' for SSHOC tools & services.\n\nCRITICAL RULE - ALWAYS INCLUDE HYPERLINKS:\nWhenever you list, mention, or describe variables or datasets, you MUST ALWAYS provide direct Markdown links for them:\n- For each dataset: link its title/name to its dataset URL or vault/registry URL (e.g., [Dataset Title](url)). If available, also include links to its files or collection.\n- For each variable: link the variable name to its variable registry link or CDIF export link (e.g., [/variableindex?q=varName](/variableindex?q=varName) or [/export?ds=...](/export?...)) and clearly mention which dataset it belongs to with a link to that dataset.\nNever list dataset names or variables as plain text without clickable links!",
-                    messages: messages,
-                    stream: true,
-                    max_tokens: 4096
-                };
-                if (availableTools.length > 0) {
-                    payload.tools = availableTools;
+                const model = modelSelect.value || "claude-3-5-sonnet-20241022";
+                const apiKey = apiKeyInput.value.trim();
+                sendBtn.disabled = true;
+
+                // Create placeholder for assistant response
+                let contentDiv = null;
+                if (!isToolCallback) {
+                    const ui = appendMessage('assistant', '<p>Thinking<span class="typing"><span>.</span><span>.</span><span>.</span></span></p>');
+                    contentDiv = ui.contentDiv;
+                } else {
+                    const ui = appendMessage('assistant', '<p>Processing tool result<span class="typing"><span>.</span><span>.</span><span>.</span></span></p>');
+                    contentDiv = ui.contentDiv;
                 }
 
-                const response = await fetch('/gateway/v1/messages', {
-                    method: 'POST',
-                    headers: headers,
-                    body: JSON.stringify(payload)
-                });
+                try {
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (apiKey) {
+                        headers['Authorization'] = `Bearer ${apiKey}`;
+                        headers['X-API-Key'] = apiKey;
+                    }
 
-                if (!response.ok) {
-                    const err = await response.text();
-                    contentDiv.innerHTML = `<p style="color: #ff6b6b;">Error: ${response.status} - ${err}</p>`;
-                    sendBtn.disabled = false;
-                    return;
-                }
+                    const payload = {
+                        model: model,
+                        system: "You are the Semantic Croissant AI Assistant, connected to an MCP (Model Context Protocol) server. You have access to various tools to interact with the system, such as reading from the vault (read_vault_article), searching the web, cdif_variables, extracting variables, ask_expert, and build_collection_from_expert. YOU MUST USE THESE TOOLS when the user asks you to read, search, or fetch data. Do not refuse to read the vault; instead, use the read_vault_article tool.\n\nEXPERT COLLECTIONS & BUILDING COLLECTIONS:\n- When the user asks to create a collection and fill it with an expert (e.g., 'Create collection Tools and ask SSHOC expert to fill it' or 'Create collection Trump and ask Trump expert to fill it'), you MUST IMMEDIATELY call 'build_collection_from_expert' with the appropriate expert_index ('sshoc' for SSHOC / tools and services expert, 'trump' for Trump expert, 'croissant' for Croissant expert, 'dataverse' for Dataverse expert, 'openml' for OpenML expert, etc.). For SSHOC expert, always specify expert_index='sshoc' and query='*' (or the specified query) to query the 'sshoc' Elasticsearch index directly, NOT the croissant index!\n- When querying expert collections with 'ask_expert', specify index='sshoc' for SSHOC tools & services.\n\nCRITICAL RULE - ALWAYS INCLUDE HYPERLINKS:\nWhenever you list, mention, or describe variables or datasets, you MUST ALWAYS provide direct Markdown links for them:\n- For each dataset: link its title/name to its dataset URL or vault/registry URL (e.g., [Dataset Title](url)). If available, also include links to its files or collection.\n- For each variable: link the variable name to its variable registry link or CDIF export link (e.g., [/variableindex?q=varName](/variableindex?q=varName) or [/export?ds=...](/export?...)) and clearly mention which dataset it belongs to with a link to that dataset.\nNever list dataset names or variables as plain text without clickable links!",
+                        messages: messages,
+                        stream: true,
+                        max_tokens: 4096
+                    };
+                    if (availableTools.length > 0) {
+                        payload.tools = availableTools;
+                    }
 
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder("utf-8");
-                let fullResponse = "";
-                
-                let currentToolCall = null;
-                let assistantMessageContent = []; // To store in messages array
-                
-                // Do not clear contentDiv immediately so the Thinking indicator stays visible
+                    const response = await fetch('/gateway/v1/messages', {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify(payload)
+                    });
 
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    
-                    const chunk = decoder.decode(value, { stream: true });
-                    const lines = chunk.split('\n');
-                    
-                    for (const line of lines) {
-                        if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-                            try {
-                                const data = JSON.parse(line.slice(6));
-                                
-                                if (data.type === 'content_block_start') {
-                                    if (data.content_block && data.content_block.type === 'tool_use') {
-                                        currentToolCall = {
-                                            type: 'tool_use',
-                                            id: data.content_block.id,
-                                            name: data.content_block.name,
-                                            input_json: ""
-                                        };
-                                        assistantMessageContent.push(currentToolCall);
-                                    } else if (data.content_block && data.content_block.type === 'text') {
-                                        assistantMessageContent.push({ type: 'text', text: data.content_block.text });
+                    if (!response.ok) {
+                        const err = await response.text();
+                        contentDiv.innerHTML = `<p style="color: #ff6b6b;">Error: ${response.status} - ${err}</p>`;
+                        sendBtn.disabled = false;
+                        return;
+                    }
+
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder("utf-8");
+                    let fullResponse = "";
+
+                    let currentToolCall = null;
+                    let assistantMessageContent = []; // To store in messages array
+
+                    // Do not clear contentDiv immediately so the Thinking indicator stays visible
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        const chunk = decoder.decode(value, { stream: true });
+                        const lines = chunk.split('\n');
+
+                        for (const line of lines) {
+                            if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+                                try {
+                                    const data = JSON.parse(line.slice(6));
+
+                                    if (data.type === 'content_block_start') {
+                                        if (data.content_block && data.content_block.type === 'tool_use') {
+                                            currentToolCall = {
+                                                type: 'tool_use',
+                                                id: data.content_block.id,
+                                                name: data.content_block.name,
+                                                input_json: ""
+                                            };
+                                            assistantMessageContent.push(currentToolCall);
+                                        } else if (data.content_block && data.content_block.type === 'text') {
+                                            assistantMessageContent.push({ type: 'text', text: data.content_block.text });
+                                        }
                                     }
-                                }
-                                
-                                else if (data.type === 'content_block_delta') {
-                                    if (data.delta && data.delta.type === 'text_delta') {
-                                        fullResponse += data.delta.text;
-                                        contentDiv.innerHTML = marked.parse(fullResponse);
-                                        chatHistory.scrollTop = chatHistory.scrollHeight;
-                                        
-                                        // Update the last text block in assistantMessageContent
-                                        for (let i = assistantMessageContent.length - 1; i >= 0; i--) {
-                                            if (assistantMessageContent[i].type === 'text') {
-                                                assistantMessageContent[i].text += data.delta.text;
-                                                break;
+
+                                    else if (data.type === 'content_block_delta') {
+                                        if (data.delta && data.delta.type === 'text_delta') {
+                                            fullResponse += data.delta.text;
+                                            contentDiv.innerHTML = marked.parse(fullResponse);
+                                            chatHistory.scrollTop = chatHistory.scrollHeight;
+
+                                            // Update the last text block in assistantMessageContent
+                                            for (let i = assistantMessageContent.length - 1; i >= 0; i--) {
+                                                if (assistantMessageContent[i].type === 'text') {
+                                                    assistantMessageContent[i].text += data.delta.text;
+                                                    break;
+                                                }
+                                            }
+                                        } else if (data.delta && data.delta.type === 'input_json_delta' && currentToolCall) {
+                                            currentToolCall.input_json += data.delta.partial_json;
+                                        }
+                                    }
+
+                                    else if (data.type === 'content_block_stop') {
+                                        if (currentToolCall) {
+                                            try {
+                                                currentToolCall.input = JSON.parse(currentToolCall.input_json);
+                                                delete currentToolCall.input_json; // clean up
+                                            } catch (e) {
+                                                console.error("Failed to parse tool JSON", currentToolCall.input_json);
                                             }
                                         }
-                                    } else if (data.delta && data.delta.type === 'input_json_delta' && currentToolCall) {
-                                        currentToolCall.input_json += data.delta.partial_json;
                                     }
+                                } catch (e) {
+                                    // Ignore parse errors for incomplete chunks
                                 }
-                                
-                                else if (data.type === 'content_block_stop') {
-                                    if (currentToolCall) {
-                                        try {
-                                            currentToolCall.input = JSON.parse(currentToolCall.input_json);
-                                            delete currentToolCall.input_json; // clean up
-                                        } catch (e) {
-                                            console.error("Failed to parse tool JSON", currentToolCall.input_json);
-                                        }
-                                    }
-                                }
-                            } catch (e) {
-                                // Ignore parse errors for incomplete chunks
                             }
                         }
                     }
-                }
-                
-                // If stream finished and no text was generated, clear the typing indicator
-                if (fullResponse.trim() === '') {
-                    contentDiv.innerHTML = '';
-                }
-                
-                // Save assistant message to history
-                messages.push({ role: 'assistant', content: assistantMessageContent });
 
-                // Hide empty assistant messages that resulted from processing a tool
-                if (isToolCallback && fullResponse.trim() === '' && (!currentToolCall || !currentToolCall.name)) {
-                    contentDiv.parentElement.style.display = 'none';
-                }
-                
-                // If a tool was called, execute it and automatically send the result
-                if (currentToolCall && currentToolCall.name) {
-                    const resultContent = await executeTool(currentToolCall.name, currentToolCall.input, contentDiv);
-                    
-                    // Save any text generated before the tool call
-                    if (currentInteraction && fullResponse.trim() !== '') {
-                        currentInteraction.response += fullResponse + "\n\n";
+                    // If stream finished and no text was generated, clear the typing indicator
+                    if (fullResponse.trim() === '') {
+                        contentDiv.innerHTML = '';
+                    }
+
+                    // Save assistant message to history
+                    messages.push({ role: 'assistant', content: assistantMessageContent });
+
+                    // Hide empty assistant messages that resulted from processing a tool
+                    if (isToolCallback && fullResponse.trim() === '' && (!currentToolCall || !currentToolCall.name)) {
+                        contentDiv.parentElement.style.display = 'none';
+                    }
+
+                    // If a tool was called, execute it and automatically send the result
+                    if (currentToolCall && currentToolCall.name) {
+                        const resultContent = await executeTool(currentToolCall.name, currentToolCall.input, contentDiv);
+
+                        // Save any text generated before the tool call
+                        if (currentInteraction && fullResponse.trim() !== '') {
+                            currentInteraction.response += fullResponse + "\n\n";
+                            localStorage.setItem('ai_studio_history', JSON.stringify(chatHistoryStorage));
+                        }
+
+                        // Append user message with tool result
+                        messages.push({
+                            role: 'user',
+                            content: [
+                                {
+                                    type: 'tool_result',
+                                    tool_use_id: currentToolCall.id,
+                                    content: resultContent
+                                }
+                            ]
+                        });
+
+                        // Recursive call to send the tool result back
+                        await sendMessage(true);
+                        return;
+                    }
+
+                    // Save final text to history interaction
+                    if (currentInteraction) {
+                        if (isToolCallback && currentInteraction.response.trim() !== '') {
+                            currentInteraction.response += "\n\n" + fullResponse;
+                        } else {
+                            currentInteraction.response = fullResponse;
+                        }
                         localStorage.setItem('ai_studio_history', JSON.stringify(chatHistoryStorage));
                     }
-                    
-                    // Append user message with tool result
+
+                    const finalResponseText = (currentInteraction && currentInteraction.response && currentInteraction.response.trim())
+                        ? currentInteraction.response.trim()
+                        : fullResponse.trim();
+                    const finalPromptText = currentInteraction ? (currentInteraction.prompt || '') : '';
+                    if (finalResponseText && contentDiv && contentDiv.parentElement && contentDiv.parentElement.style.display !== 'none') {
+                        attachResponseActionButtons(contentDiv, finalResponseText, finalPromptText);
+                    }
+
+                } catch (err) {
+                    console.error(err);
+                    if (contentDiv) {
+                        contentDiv.innerHTML += `<p style="color: #ff6b6b;">Connection failed: ${err.message}</p>`;
+                    }
+                } finally {
+                    sendBtn.disabled = false;
+                    if (!isToolCallback) promptInput.focus();
+                }
+            }
+
+            sendBtn.addEventListener('click', () => sendMessage(false));
+
+            promptInput.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+
+            async function loadDocumentIntoChatMode(rawDocId) {
+                const cleanId = (rawDocId || '').replace(/\.(md|jsonld|csv)$/, '').split('/').pop().trim();
+                if (!cleanId) return;
+
+                lastCreatedDocId = cleanId;
+                localStorage.setItem('ai_studio_last_doc_id', lastCreatedDocId);
+
+                const ui = appendMessage('assistant', `<p>📖 Reading document <strong>${cleanId}</strong> into Chat mode<span class="typing"><span>.</span><span>.</span><span>.</span></span></p>`);
+                try {
+                    const res = await fetch(`/vault/doc/raw/${encodeURIComponent(cleanId)}`);
+                    if (!res.ok) {
+                        throw new Error(`Document ${cleanId} not found (${res.status})`);
+                    }
+                    let rawMd = await res.text();
+                    // Strip the top [View Croissant JSON-LD Data] button line and Digital Signature footer for cleaner chat display & editing
+                    let cleanBody = rawMd
+                        .replace(/^\[View Croissant JSON-LD Data\][^\n]*\n+/i, '')
+                        .replace(/\n*---\n\*\*Digital Signature:\*\*[\s\S]*$/i, '')
+                        .trim();
+                    if (!cleanBody) cleanBody = rawMd;
+
+                    ui.contentDiv.innerHTML = marked.parse(cleanBody);
+                    attachResponseActionButtons(ui.contentDiv, cleanBody, `Loaded document ${cleanId}`, {
+                        docId: cleanId,
+                        isDocContext: true
+                    });
+
+                    // Render top document banner on the loaded document card
+                    const docUrl = `/vault/doc/${cleanId}.md`;
+                    let banner = ui.contentDiv.querySelector('.chat-doc-top-banner');
+                    if (!banner) {
+                        banner = document.createElement('div');
+                        banner.className = 'chat-doc-top-banner';
+                        ui.contentDiv.insertBefore(banner, ui.contentDiv.firstChild);
+                    }
+                    banner.innerHTML = `<span>📄 <strong>Active Document in Chat Mode:</strong> <a href="${docUrl}" target="_blank">${cleanId}</a></span><span><a href="${docUrl}" target="_blank">Open Document &rarr;</a> &nbsp;|&nbsp; <a href="/vault/doc/${cleanId}/annotations" target="_blank">View Annotations</a></span>`;
+
+                    // Seed the conversation messages array so the AI has the full document in context for any follow-up questions
+                    const maxCtx = cleanBody.length > 28000 ? (cleanBody.substring(0, 28000) + '\n...[truncated]') : cleanBody;
                     messages.push({
                         role: 'user',
-                        content: [
-                            {
-                                type: 'tool_result',
-                                tool_use_id: currentToolCall.id,
-                                content: resultContent
-                            }
-                        ]
+                        content: `I have opened Vault document ${cleanId} (${window.location.origin}/vault/doc/${cleanId}) in Chat mode. Please read and keep its full content in context for my questions:\n\n${maxCtx}`
                     });
-                    
-                    // Recursive call to send the tool result back
-                    await sendMessage(true);
-                    return;
-                }
-                
-                // Save final text to history interaction
-                if (currentInteraction) {
-                    if (isToolCallback && currentInteraction.response.trim() !== '') {
-                        currentInteraction.response += "\n\n" + fullResponse;
-                    } else {
-                        currentInteraction.response = fullResponse;
-                    }
-                    localStorage.setItem('ai_studio_history', JSON.stringify(chatHistoryStorage));
-                }
+                    messages.push({
+                        role: 'assistant',
+                        content: [{
+                            type: 'text',
+                            text: `I have read document **${cleanId}** (${cleanBody.length} chars). You can now ask questions about it, or use **Save**, **Edit**, **Update**, **Create**, and **Add** on any section or response.`
+                        }]
+                    });
 
-                const finalResponseText = (currentInteraction && currentInteraction.response && currentInteraction.response.trim())
-                    ? currentInteraction.response.trim()
-                    : fullResponse.trim();
-                const finalPromptText = currentInteraction ? (currentInteraction.prompt || '') : '';
-                if (finalResponseText && contentDiv && contentDiv.parentElement && contentDiv.parentElement.style.display !== 'none') {
-                    attachResponseActionButtons(contentDiv, finalResponseText, finalPromptText);
+                    promptInput.placeholder = `Ask a question about document ${cleanId}...`;
+                    promptInput.focus();
+                    chatHistory.scrollTop = chatHistory.scrollHeight;
+                } catch (err) {
+                    console.error('Failed to load document into chat mode:', err);
+                    ui.contentDiv.innerHTML = `<p style="color:#ef4444;">❌ Could not load document ${cleanId}: ${err.message}</p>`;
                 }
-                
-            } catch (err) {
-                console.error(err);
-                if (contentDiv) {
-                    contentDiv.innerHTML += `<p style="color: #ff6b6b;">Connection failed: ${err.message}</p>`;
-                }
-            } finally {
-                sendBtn.disabled = false;
-                if (!isToolCallback) promptInput.focus();
             }
-        }
 
-        sendBtn.addEventListener('click', () => sendMessage(false));
-        
-        promptInput.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
-            }
-        });
-        
-        async function loadDocumentIntoChatMode(rawDocId) {
-            const cleanId = (rawDocId || '').replace(/\.(md|jsonld|csv)$/, '').split('/').pop().trim();
-            if (!cleanId) return;
-
-            lastCreatedDocId = cleanId;
-            localStorage.setItem('ai_studio_last_doc_id', lastCreatedDocId);
-
-            const ui = appendMessage('assistant', `<p>📖 Reading document <strong>${cleanId}</strong> into Chat mode<span class="typing"><span>.</span><span>.</span><span>.</span></span></p>`);
-            try {
-                const res = await fetch(`/vault/doc/raw/${encodeURIComponent(cleanId)}`);
-                if (!res.ok) {
-                    throw new Error(`Document ${cleanId} not found (${res.status})`);
+            window.addEventListener('DOMContentLoaded', async () => {
+                const params = new URLSearchParams(window.location.search);
+                const docParam = params.get('doc');
+                const q = params.get('q');
+                if (docParam) {
+                    await loadDocumentIntoChatMode(docParam);
                 }
-                let rawMd = await res.text();
-                // Strip the top [View Croissant JSON-LD Data] button line and Digital Signature footer for cleaner chat display & editing
-                let cleanBody = rawMd
-                    .replace(/^\[View Croissant JSON-LD Data\][^\n]*\n+/i, '')
-                    .replace(/\n*---\n\*\*Digital Signature:\*\*[\s\S]*$/i, '')
-                    .trim();
-                if (!cleanBody) cleanBody = rawMd;
-
-                ui.contentDiv.innerHTML = marked.parse(cleanBody);
-                attachResponseActionButtons(ui.contentDiv, cleanBody, `Loaded document ${cleanId}`, {
-                    docId: cleanId,
-                    isDocContext: true
-                });
-
-                // Render top document banner on the loaded document card
-                const docUrl = `/vault/doc/${cleanId}.md`;
-                let banner = ui.contentDiv.querySelector('.chat-doc-top-banner');
-                if (!banner) {
-                    banner = document.createElement('div');
-                    banner.className = 'chat-doc-top-banner';
-                    ui.contentDiv.insertBefore(banner, ui.contentDiv.firstChild);
+                if (q) {
+                    promptInput.value = q;
+                    sendMessage();
                 }
-                banner.innerHTML = `<span>📄 <strong>Active Document in Chat Mode:</strong> <a href="${docUrl}" target="_blank">${cleanId}</a></span><span><a href="${docUrl}" target="_blank">Open Document &rarr;</a> &nbsp;|&nbsp; <a href="/vault/doc/${cleanId}/annotations" target="_blank">View Annotations</a></span>`;
 
-                // Seed the conversation messages array so the AI has the full document in context for any follow-up questions
-                const maxCtx = cleanBody.length > 28000 ? (cleanBody.substring(0, 28000) + '\n...[truncated]') : cleanBody;
-                messages.push({
-                    role: 'user',
-                    content: `I have opened Vault document ${cleanId} (${window.location.origin}/vault/doc/${cleanId}) in Chat mode. Please read and keep its full content in context for my questions:\n\n${maxCtx}`
-                });
-                messages.push({
-                    role: 'assistant',
-                    content: [{
-                        type: 'text',
-                        text: `I have read document **${cleanId}** (${cleanBody.length} chars). You can now ask questions about it, or use **Save**, **Edit**, **Update**, **Create**, and **Add** on any section or response.`
-                    }]
-                });
+                setTimeout(() => {
+                    if (window.location.hash === '#groups') document.getElementById('menu-groups').click();
+                    if (window.location.hash === '#vault') document.getElementById('menu-vault').click();
+                    if (window.location.hash === '#history') document.getElementById('menu-history').click();
+                    if (window.location.hash === '#collections') window.location.href = '/collectionsindex';
+                }, 300);
+            });
 
-                promptInput.placeholder = `Ask a question about document ${cleanId}...`;
-                promptInput.focus();
-                chatHistory.scrollTop = chatHistory.scrollHeight;
-            } catch (err) {
-                console.error('Failed to load document into chat mode:', err);
-                ui.contentDiv.innerHTML = `<p style="color:#ef4444;">❌ Could not load document ${cleanId}: ${err.message}</p>`;
-            }
-        }
-
-        window.addEventListener('DOMContentLoaded', async () => {
-            const params = new URLSearchParams(window.location.search);
-            const docParam = params.get('doc');
-            const q = params.get('q');
-            if (docParam) {
-                await loadDocumentIntoChatMode(docParam);
-            }
-            if (q) {
-                promptInput.value = q;
-                sendMessage();
-            }
-            
-            setTimeout(() => {
-                if (window.location.hash === '#groups') document.getElementById('menu-groups').click();
-                if (window.location.hash === '#vault') document.getElementById('menu-vault').click();
-                if (window.location.hash === '#history') document.getElementById('menu-history').click();
-                if (window.location.hash === '#collections') window.location.href = '/collectionsindex';
-            }, 300);
-        });
-        
-        // Simple auth check injected by server
-        document.getElementById('auth-status').innerHTML = `{{AUTH_STATUS}}`;
-    </script>
+            // Simple auth check injected by server
+            document.getElementById('auth-status').innerHTML = `{{AUTH_STATUS}}`;
+        </script>
     </div>
-    
-    <footer style="position: fixed; bottom: 0; left: 0; right: 0; margin: 0; padding: 10px 20px; font-size: 0.85rem; color: #888; background-color: var(--bg-color); border-top: 1px solid var(--border-color); z-index: 10000; width: 100%; box-sizing: border-box; font-family: 'Inter', -apple-system, sans-serif; box-shadow: 0 -2px 5px rgba(0,0,0,0.05); display: flex; justify-content: center; align-items: center;">
-        <div style="text-align: center; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
+
+    <footer
+        style="position: fixed; bottom: 0; left: 0; right: 0; margin: 0; padding: 10px 20px; font-size: 0.85rem; color: #888; background-color: var(--bg-color); border-top: 1px solid var(--border-color); z-index: 10000; width: 100%; box-sizing: border-box; font-family: 'Inter', -apple-system, sans-serif; box-shadow: 0 -2px 5px rgba(0,0,0,0.05); display: flex; justify-content: center; align-items: center;">
+        <div
+            style="text-align: center; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
             {{VAULT_FOOTER_HTML}}
         </div>
-            <div style="position: absolute; right: 20px; display: flex; gap: 10px; align-items: center;">
-            <button class="theme-toggle" onclick="document.getElementById('share-url-input').value = window.location.href; document.getElementById('share-modal').style.display='flex'">Share</button>
+        <div style="position: absolute; right: 20px; display: flex; gap: 10px; align-items: center;">
+            <button class="theme-toggle"
+                onclick="document.getElementById('share-url-input').value = window.location.href; document.getElementById('share-modal').style.display='flex'">Share</button>
             <button class="theme-toggle" id="theme-toggle">Toggle Theme</button>
         </div>
     </footer>
 
-    <div id="share-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center;">
-        <div style="background:var(--bg-color); padding:30px; border-radius:8px; border:1px solid var(--border-color); max-width:500px; width:90%; color:var(--text-color);">
+    <div id="share-modal"
+        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center;">
+        <div
+            style="background:var(--bg-color); padding:30px; border-radius:8px; border:1px solid var(--border-color); max-width:500px; width:90%; color:var(--text-color);">
             <h2 style="margin-top:0;">Open with External AI</h2>
-            <p>To analyze this document with <strong>Claude</strong>, <strong>Codex</strong>, or <strong>Manus</strong>, copy the exact URL below and paste it into their chat window:</p>
-            <input type="text" id="share-url-input" readonly style="width:100%; padding:10px; margin-bottom:20px; box-sizing:border-box; background:var(--panel-bg); border:1px solid var(--border-color); color:var(--text-color); border-radius:4px; font-family:monospace; font-size:1rem;" />
+            <p>To analyze this document with <strong>Claude</strong>, <strong>Codex</strong>, or <strong>Manus</strong>,
+                copy the exact URL below and paste it into their chat window:</p>
+            <input type="text" id="share-url-input" readonly
+                style="width:100%; padding:10px; margin-bottom:20px; box-sizing:border-box; background:var(--panel-bg); border:1px solid var(--border-color); color:var(--text-color); border-radius:4px; font-family:monospace; font-size:1rem;" />
             <div style="display:flex; justify-content:flex-end; gap:10px;">
-                <button class="theme-toggle" onclick="document.getElementById('share-modal').style.display='none'">Close</button>
-                <button class="theme-toggle" onclick="navigator.clipboard.writeText(document.getElementById('share-url-input').value); alert('URL Copied to clipboard!'); document.getElementById('share-modal').style.display='none';">Copy URL</button>
+                <button class="theme-toggle"
+                    onclick="document.getElementById('share-modal').style.display='none'">Close</button>
+                <button class="theme-toggle"
+                    onclick="navigator.clipboard.writeText(document.getElementById('share-url-input').value); alert('URL Copied to clipboard!'); document.getElementById('share-modal').style.display='none';">Copy
+                    URL</button>
             </div>
         </div>
     </div>
 
-    <div id="ai-transmit-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center;">
-        <div style="background:var(--bg-color); padding:30px; border-radius:8px; border:1px solid var(--border-color); max-width:400px; width:90%; color:var(--text-color); text-align: center;">
+    <div id="ai-transmit-modal"
+        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center;">
+        <div
+            style="background:var(--bg-color); padding:30px; border-radius:8px; border:1px solid var(--border-color); max-width:400px; width:90%; color:var(--text-color); text-align: center;">
             <h2 style="margin-top:0;">Open in AI Assistant</h2>
-            <p style="margin-bottom: 10px;">Select your installed AI assistant to analyze this Croissant JSON-LD data:</p>
-            <div style="margin-bottom: 20px; font-size: 0.9rem; background: var(--panel-bg); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color); text-align: left;">
+            <p style="margin-bottom: 10px;">Select your installed AI assistant to analyze this Croissant JSON-LD data:
+            </p>
+            <div
+                style="margin-bottom: 20px; font-size: 0.9rem; background: var(--panel-bg); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color); text-align: left;">
                 <div style="margin-bottom: 5px; font-weight: bold;">Open your AI Assistant and copy-paste:</div>
                 <div style="display: flex; gap: 10px;">
-                    <input type="text" id="ai-prompt-input" readonly style="flex: 1; padding: 8px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; font-family: monospace;" />
-                    <button class="theme-toggle" onclick="navigator.clipboard.writeText(document.getElementById('ai-prompt-input').value); alert('Prompt copied!');">Copy</button>
+                    <input type="text" id="ai-prompt-input" readonly
+                        style="flex: 1; padding: 8px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; font-family: monospace;" />
+                    <button class="theme-toggle"
+                        onclick="navigator.clipboard.writeText(document.getElementById('ai-prompt-input').value); alert('Prompt copied!');">Copy</button>
                 </div>
             </div>
             <div style="display:flex; flex-direction:column; gap:10px;">
-                <button class="popup-btn btn-blue" style="padding: 10px; font-size: 1rem;" onclick="window.location.href='claude://' + window.location.href; document.getElementById('ai-transmit-modal').style.display='none'">🤖 Claude</button>
-                <button class="popup-btn btn-blue" style="padding: 10px; font-size: 1rem;" onclick="window.location.href='cursor://' + window.location.href; document.getElementById('ai-transmit-modal').style.display='none'">💻 Codex (Cursor)</button>
-                <button class="popup-btn btn-blue" style="padding: 10px; font-size: 1rem;" onclick="window.location.href='manus://' + window.location.href; document.getElementById('ai-transmit-modal').style.display='none'">🦉 Manus</button>
-                <button class="popup-btn btn-blue" style="padding: 10px; font-size: 1rem;" onclick="window.location.href='lmstudio://' + window.location.href; document.getElementById('ai-transmit-modal').style.display='none'">🦙 LM Studio</button>
+                <button class="popup-btn btn-blue" style="padding: 10px; font-size: 1rem;"
+                    onclick="window.location.href='claude://' + window.location.href; document.getElementById('ai-transmit-modal').style.display='none'">🤖
+                    Claude</button>
+                <button class="popup-btn btn-blue" style="padding: 10px; font-size: 1rem;"
+                    onclick="window.location.href='cursor://' + window.location.href; document.getElementById('ai-transmit-modal').style.display='none'">💻
+                    Codex (Cursor)</button>
+                <button class="popup-btn btn-blue" style="padding: 10px; font-size: 1rem;"
+                    onclick="window.location.href='manus://' + window.location.href; document.getElementById('ai-transmit-modal').style.display='none'">🦉
+                    Manus</button>
+                <button class="popup-btn btn-blue" style="padding: 10px; font-size: 1rem;"
+                    onclick="window.location.href='lmstudio://' + window.location.href; document.getElementById('ai-transmit-modal').style.display='none'">🦙
+                    LM Studio</button>
             </div>
             <div style="margin-top: 20px;">
-                <button class="theme-toggle" onclick="document.getElementById('ai-transmit-modal').style.display='none'">Cancel</button>
+                <button class="theme-toggle"
+                    onclick="document.getElementById('ai-transmit-modal').style.display='none'">Cancel</button>
             </div>
         </div>
     </div>
-    <div id="add-resource-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10001; justify-content: center; align-items: center;">
-        <div style="background: var(--bg-color); padding: 22px; border-radius: 8px; width: 480px; max-width: 90%; border: 1px solid var(--border-color); box-shadow: 0 4px 16px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto;">
-            <h3 style="margin-top: 0; margin-bottom: 12px; color: var(--text-color); font-size: 1.15rem;">Add Resource</h3>
-            
+    <div id="add-resource-modal"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10001; justify-content: center; align-items: center;">
+        <div
+            style="background: var(--bg-color); padding: 22px; border-radius: 8px; width: 480px; max-width: 90%; border: 1px solid var(--border-color); box-shadow: 0 4px 16px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto;">
+            <h3 style="margin-top: 0; margin-bottom: 12px; color: var(--text-color); font-size: 1.15rem;">Add Resource
+            </h3>
+
             <!-- Ingest via URL -->
-            <p style="font-size: 0.9rem; margin-bottom: 6px; color: var(--text-color); font-weight: 500;">Enter the URL of the resource you want to ingest:</p>
-            <input type="text" id="add-resource-input" placeholder="https://..." style="width: 100%; padding: 8px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box; background: var(--panel-bg); color: var(--text-color); font-family: inherit; font-size: 14px;" oninput="onResourceInputChanged()" onkeydown="if(event.key === 'Enter') document.getElementById('add-resource-submit').click()">
-            
+            <p style="font-size: 0.9rem; margin-bottom: 6px; color: var(--text-color); font-weight: 500;">Enter the URL
+                of the resource you want to ingest:</p>
+            <input type="text" id="add-resource-input" placeholder="https://..."
+                style="width: 100%; padding: 8px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box; background: var(--panel-bg); color: var(--text-color); font-family: inherit; font-size: 14px;"
+                oninput="onResourceInputChanged()"
+                onkeydown="if(event.key === 'Enter') document.getElementById('add-resource-submit').click()">
+
             <!-- Local file upload option if PALEFIRE is True -->
-            <div id="add-resource-file-container" style="display: {{PALEFIRE_DISPLAY}}; flex-direction: column; margin-bottom: 14px; padding: 10px; border: 1px dashed var(--border-color); border-radius: 6px; background: rgba(128,128,128,0.05);">
-                <label style="font-size: 0.85rem; color: var(--text-color); font-weight: 500; margin-bottom: 6px; display: block;">Or upload local file (Image, PDF, Document):</label>
-                <input type="file" id="add-resource-file-input" onchange="onResourceFileChanged()" style="font-size: 0.85rem; color: var(--text-color); width: 100%;">
+            <div id="add-resource-file-container"
+                style="display: {{PALEFIRE_DISPLAY}}; flex-direction: column; margin-bottom: 14px; padding: 10px; border: 1px dashed var(--border-color); border-radius: 6px; background: rgba(128,128,128,0.05);">
+                <label
+                    style="font-size: 0.85rem; color: var(--text-color); font-weight: 500; margin-bottom: 6px; display: block;">Or
+                    upload local file (Image, PDF, Document):</label>
+                <input type="file" id="add-resource-file-input" onchange="onResourceFileChanged()"
+                    style="font-size: 0.85rem; color: var(--text-color); width: 100%;">
             </div>
 
             <!-- Collection Options -->
-            <div style="margin-bottom: 14px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 6px; background: rgba(0,0,0,0.02);">
-                <label style="font-size: 0.85rem; color: var(--text-color); font-weight: 600; display: block; margin-bottom: 8px;">Collection Options:</label>
-                
+            <div
+                style="margin-bottom: 14px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 6px; background: rgba(0,0,0,0.02);">
+                <label
+                    style="font-size: 0.85rem; color: var(--text-color); font-weight: 600; display: block; margin-bottom: 8px;">Collection
+                    Options:</label>
+
                 <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <label style="font-size: 0.82rem; color: var(--text-color); display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                        <input type="radio" name="add-col-option" value="none" checked onchange="toggleCollectionInputs()">
+                    <label
+                        style="font-size: 0.82rem; color: var(--text-color); display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                        <input type="radio" name="add-col-option" value="none" checked
+                            onchange="toggleCollectionInputs()">
                         <span>Do not add to collection</span>
                     </label>
 
-                    <label style="font-size: 0.82rem; color: var(--text-color); display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                    <label
+                        style="font-size: 0.82rem; color: var(--text-color); display: flex; align-items: center; gap: 6px; cursor: pointer;">
                         <input type="radio" name="add-col-option" value="existing" onchange="toggleCollectionInputs()">
                         <span>Add to existing collection</span>
                     </label>
                     <div id="add-col-existing-container" style="display: none; margin-left: 20px; margin-bottom: 4px;">
-                        <select id="add-resource-col-select" style="width: 100%; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-color); color: var(--text-color); font-size: 0.85rem;">
+                        <select id="add-resource-col-select"
+                            style="width: 100%; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-color); color: var(--text-color); font-size: 0.85rem;">
                             <option value="">Loading collections...</option>
                         </select>
                     </div>
 
-                    <label style="font-size: 0.82rem; color: var(--text-color); display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                    <label
+                        style="font-size: 0.82rem; color: var(--text-color); display: flex; align-items: center; gap: 6px; cursor: pointer;">
                         <input type="radio" name="add-col-option" value="new" onchange="toggleCollectionInputs()">
                         <span>Create new collection</span>
                     </label>
                     <div id="add-col-new-container" style="display: none; margin-left: 20px;">
-                        <input type="text" id="add-resource-new-col-name" placeholder="Collection name..." style="width: 100%; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-color); color: var(--text-color); font-size: 0.85rem; box-sizing: border-box; margin-bottom: 4px;">
-                        <div style="font-size: 0.72rem; color: #888;">Suggested automatically from URL / filename, or customize as desired.</div>
+                        <input type="text" id="add-resource-new-col-name" placeholder="Collection name..."
+                            style="width: 100%; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-color); color: var(--text-color); font-size: 0.85rem; box-sizing: border-box; margin-bottom: 4px;">
+                        <div style="font-size: 0.72rem; color: #888;">Suggested automatically from URL / filename, or
+                            customize as desired.</div>
                     </div>
                 </div>
             </div>
 
-            <label id="add-resource-vision-label" style="display: {{PALEFIRE_DISPLAY}}; align-items: center; gap: 8px; margin-bottom: 15px; font-size: 0.85rem; color: var(--text-color); cursor: pointer; user-select: none;">
+            <label id="add-resource-vision-label"
+                style="display: {{PALEFIRE_DISPLAY}}; align-items: center; gap: 8px; margin-bottom: 15px; font-size: 0.85rem; color: var(--text-color); cursor: pointer; user-select: none;">
                 <input type="checkbox" id="add-resource-vision" style="cursor: pointer; width: 15px; height: 15px;">
                 <span>Use Computer Vision</span>
             </label>
-            
+
             <div id="add-resource-progress-container" style="display: none; margin-bottom: 14px;">
-                <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-color); margin-bottom: 6px; font-weight: 500;">
+                <div
+                    style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-color); margin-bottom: 6px; font-weight: 500;">
                     <span id="add-resource-status-text">Processing file with PaleFire OCR & Ingestion...</span>
                     <span id="add-resource-progress-percent">0%</span>
                 </div>
-                <div style="width: 100%; height: 8px; background: rgba(128,128,128,0.2); border-radius: 4px; overflow: hidden;">
-                    <div id="add-resource-progress-bar" style="width: 0%; height: 100%; background: #006bb3; transition: width 0.3s ease; border-radius: 4px;"></div>
+                <div
+                    style="width: 100%; height: 8px; background: rgba(128,128,128,0.2); border-radius: 4px; overflow: hidden;">
+                    <div id="add-resource-progress-bar"
+                        style="width: 0%; height: 100%; background: #006bb3; transition: width 0.3s ease; border-radius: 4px;">
+                    </div>
                 </div>
-                <div id="add-resource-status-subtext" style="font-size: 0.75rem; color: var(--text-color); opacity: 0.8; margin-top: 4px;">Uploading file...</div>
+                <div id="add-resource-status-subtext"
+                    style="font-size: 0.75rem; color: var(--text-color); opacity: 0.8; margin-top: 4px;">Uploading
+                    file...</div>
             </div>
-            <div id="add-resource-error" style="display: none; font-size: 0.85rem; color: #d32f2f; margin-bottom: 10px;"></div>
+            <div id="add-resource-error"
+                style="display: none; font-size: 0.85rem; color: #d32f2f; margin-bottom: 10px;"></div>
             <div style="display: flex; justify-content: flex-end; gap: 10px;">
-                <button onclick="document.getElementById('add-resource-modal').style.display='none'" class="theme-toggle">Cancel</button>
-                <button id="add-resource-submit" onclick="submitAddResource()" style="background-color: #006bb3; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 500;">Ingest</button>
+                <button onclick="document.getElementById('add-resource-modal').style.display='none'"
+                    class="theme-toggle">Cancel</button>
+                <button id="add-resource-submit" onclick="submitAddResource()"
+                    style="background-color: #006bb3; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 500;">Ingest</button>
             </div>
         </div>
     </div>
@@ -1837,7 +1996,7 @@
             var modal = document.getElementById("add-resource-modal");
             if (!modal) return;
             modal.style.display = "flex";
-            setTimeout(function() {
+            setTimeout(function () {
                 var inp = document.getElementById("add-resource-input");
                 if (inp) inp.focus();
             }, 50);
@@ -1869,7 +2028,7 @@
             var select = document.getElementById("add-resource-col-select");
             if (!select) return;
             select.innerHTML = "<option value=>-- Select a collection --</option>";
-            cols.forEach(function(c) {
+            cols.forEach(function (c) {
                 var opt = document.createElement("option");
                 opt.value = c.id;
                 opt.textContent = c.name + (c.is_private ? " (Private)" : "");
@@ -1892,7 +2051,7 @@
         function suggestCollectionName() {
             var newColInp = document.getElementById("add-resource-new-col-name");
             if (!newColInp || (newColInp.value && newColInp.getAttribute("data-user-edited") === "true")) return;
-            
+
             var fileInput = document.getElementById("add-resource-file-input");
             var urlInput = document.getElementById("add-resource-input");
             var raw = "";
@@ -1919,7 +2078,7 @@
                         }
                     }
                     if (!name) {
-                        var parts = u.pathname.split("/").filter(function(p) { return p && !p.match(/\.(html|xhtml|php|asp)$/i); });
+                        var parts = u.pathname.split("/").filter(function (p) { return p && !p.match(/\.(html|xhtml|php|asp)$/i); });
                         if (parts.length > 0) {
                             name = parts[parts.length - 1].replace(/\.[a-zA-Z0-9]+$/, "").replace(/[^a-zA-Z0-9_-]/g, " ").trim();
                         }
@@ -1928,7 +2087,7 @@
                         var hostParts = u.hostname.split(".");
                         name = hostParts.length >= 2 ? hostParts[hostParts.length - 2] : u.hostname;
                     }
-                } catch(e) {
+                } catch (e) {
                     name = raw.replace(/[^a-zA-Z0-9_-]/g, " ").trim();
                 }
             } else {
@@ -1937,7 +2096,7 @@
             }
 
             if (name) {
-                name = name.split(/\s+/).map(function(w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(" ");
+                name = name.split(/\s+/).map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(" ");
                 newColInp.value = name;
             }
         }
@@ -1968,10 +2127,10 @@
                     try {
                         await fetch("/api/collections/" + encodeURIComponent(cid) + "/add", {
                             method: "POST",
-                            headers: {"Content-Type": "application/json"},
-                            body: JSON.stringify({docId: docId})
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ docId: docId })
                         });
-                    } catch(e) {
+                    } catch (e) {
                         console.error("Failed to add to existing collection:", e);
                     }
                 }
@@ -1982,14 +2141,14 @@
                     try {
                         await fetch("/api/collections", {
                             method: "POST",
-                            headers: {"Content-Type": "application/json"},
+                            headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
                                 name: cname,
                                 description: "Created during ingestion of resource " + docId,
                                 items: [docId]
                             })
                         });
-                    } catch(e) {
+                    } catch (e) {
                         console.error("Failed to create new collection:", e);
                     }
                 }
@@ -2008,7 +2167,7 @@
             var progPercent = document.getElementById("add-resource-progress-percent");
             var progBar = document.getElementById("add-resource-progress-bar");
             var errBox = document.getElementById("add-resource-error");
-            
+
             if (fileInput && fileInput.files && fileInput.files.length > 0) {
                 btn.disabled = true;
                 btn.innerText = "Processing...";
@@ -2019,7 +2178,7 @@
                 if (progBar) progBar.style.width = "15%";
                 if (progPercent) progPercent.innerText = "15%";
 
-                var progressInterval = setInterval(function() {
+                var progressInterval = setInterval(function () {
                     var cur = parseInt(progBar ? progBar.style.width : "15") || 15;
                     if (cur < 35) {
                         cur += 5;
@@ -2042,46 +2201,46 @@
                     method: "POST",
                     body: formData
                 })
-                .then(function(r) { return r.json().then(function(data) { return {ok: r.ok, data: data}; }); })
-                .then(async function(res) {
-                    clearInterval(progressInterval);
-                    if (res.ok && res.data.redirect_url) {
-                        if (progBar) progBar.style.width = "100%";
-                        if (progPercent) progPercent.innerText = "100%";
-                        if (progSubtext) progSubtext.innerText = "Updating collection & redirecting to Vault...";
-                        
-                        var docId = res.data.redirect_url.split("/vault/doc/")[1];
-                        if (docId) {
-                            docId = docId.split("?")[0].split("#")[0].replace(/\.md$/, "");
-                            await handlePostIngestCollection(docId);
+                    .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+                    .then(async function (res) {
+                        clearInterval(progressInterval);
+                        if (res.ok && res.data.redirect_url) {
+                            if (progBar) progBar.style.width = "100%";
+                            if (progPercent) progPercent.innerText = "100%";
+                            if (progSubtext) progSubtext.innerText = "Updating collection & redirecting to Vault...";
+
+                            var docId = res.data.redirect_url.split("/vault/doc/")[1];
+                            if (docId) {
+                                docId = docId.split("?")[0].split("#")[0].replace(/\.md$/, "");
+                                await handlePostIngestCollection(docId);
+                            }
+                            setTimeout(function () {
+                                window.location.href = res.data.redirect_url;
+                            }, 400);
+                        } else {
+                            if (progContainer) progContainer.style.display = "none";
+                            if (errBox) {
+                                errBox.style.display = "block";
+                                errBox.innerText = "Error: " + (res.data.detail || "Upload failed");
+                            }
+                            btn.disabled = false;
+                            btn.innerText = "Ingest";
                         }
-                        setTimeout(function() {
-                            window.location.href = res.data.redirect_url;
-                        }, 400);
-                    } else {
+                    })
+                    .catch(function (err) {
+                        clearInterval(progressInterval);
                         if (progContainer) progContainer.style.display = "none";
                         if (errBox) {
                             errBox.style.display = "block";
-                            errBox.innerText = "Error: " + (res.data.detail || "Upload failed");
+                            errBox.innerText = "Upload error: " + err;
                         }
                         btn.disabled = false;
                         btn.innerText = "Ingest";
-                    }
-                })
-                .catch(function(err) {
-                    clearInterval(progressInterval);
-                    if (progContainer) progContainer.style.display = "none";
-                    if (errBox) {
-                        errBox.style.display = "block";
-                        errBox.innerText = "Upload error: " + err;
-                    }
-                    btn.disabled = false;
-                    btn.innerText = "Ingest";
-                });
+                    });
             } else if (urlInput && urlInput.value.trim()) {
                 var url = urlInput.value.trim();
                 var target = "/dataverse?url=" + encodeURIComponent(url) + (cv ? "&vision=true" : "");
-                
+
                 var opt = document.querySelector('input[name="add-col-option"]:checked');
                 var val = opt ? opt.value : "none";
                 if (val === "existing") {
@@ -2100,15 +2259,20 @@
         }
     </script>
     </div>
-    
-    <div id="add-text-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10001; justify-content: center; align-items: center;">
-        <div style="background: var(--bg-color); padding: 20px; border-radius: 8px; width: 600px; max-width: 90%; border: 1px solid var(--border-color);">
+
+    <div id="add-text-modal"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10001; justify-content: center; align-items: center;">
+        <div
+            style="background: var(--bg-color); padding: 20px; border-radius: 8px; width: 600px; max-width: 90%; border: 1px solid var(--border-color);">
             <h3 style="margin-top: 0; color: var(--text-color);">Add Text</h3>
-            <p style="font-size: 0.9rem; margin-bottom: 10px; color: var(--text-color);">Paste the text you want to ingest into the vault:</p>
-            <textarea id="add-text-input" placeholder="Enter text here..." style="width: 100%; height: 300px; padding: 8px; margin-bottom: 15px; border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box; background: var(--panel-bg); color: var(--text-color); font-family: inherit; font-size: 14px;"></textarea>
+            <p style="font-size: 0.9rem; margin-bottom: 10px; color: var(--text-color);">Paste the text you want to
+                ingest into the vault:</p>
+            <textarea id="add-text-input" placeholder="Enter text here..."
+                style="width: 100%; height: 300px; padding: 8px; margin-bottom: 15px; border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box; background: var(--panel-bg); color: var(--text-color); font-family: inherit; font-size: 14px;"></textarea>
             <div id="add-text-error" style="color: red; display: none; margin-bottom: 10px; font-size: 14px;"></div>
             <div style="display: flex; justify-content: flex-end; gap: 10px;">
-                <button onclick="document.getElementById('add-text-modal').style.display='none'" class="theme-toggle">Cancel</button>
+                <button onclick="document.getElementById('add-text-modal').style.display='none'"
+                    class="theme-toggle">Cancel</button>
                 <button id="add-text-submit" onclick="
                     var btn = this;
                     var text = document.getElementById('add-text-input').value;
@@ -2135,7 +2299,8 @@
                         document.getElementById('add-text-error').innerText = e.message;
                         document.getElementById('add-text-error').style.display = 'block';
                     });
-                " style="background-color: #008855; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: 500;">Ingest</button>
+                "
+                    style="background-color: #008855; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: 500;">Ingest</button>
             </div>
         </div>
     </div>
@@ -2143,11 +2308,12 @@
         const toggleBtn = document.getElementById('theme-toggle');
         if (toggleBtn) {
             toggleBtn.addEventListener('click', () => {
-                const isDark = document.documentElement.getAttribute('data-theme') === 'dark' || 
-                             (!document.documentElement.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                const isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
+                    (!document.documentElement.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
                 document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
             });
         }
     </script>
 </body>
+
 </html>
