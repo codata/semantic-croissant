@@ -6639,7 +6639,7 @@ Question: {question}
             ollama_host = os.environ.get("OLLAMA_HOST", "http://host.docker.internal:11434").strip()
             if os.path.exists("/.dockerenv") and ("localhost:" in ollama_host or "127.0.0.1:" in ollama_host):
                 ollama_host = ollama_host.replace("localhost:", "host.docker.internal:").replace("127.0.0.1:", "host.docker.internal:")
-            ollama_token = os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY")
+            ollama_token = os.environ.get("NODE15_API_KEY") or os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY")
             headers = {}
             if ollama_token:
                 headers["Authorization"] = f"Bearer {ollama_token}"
@@ -11939,7 +11939,7 @@ Instructions:
             # Keep configured ollama_url
             pass
             model = os.environ.get("MODEL") or os.environ.get("MODEL_NAME") or OLLAMA_DEFAULT_MODEL
-            ollama_token = os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY") or "test-api-key-12345"
+            ollama_token = os.environ.get("NODE15_API_KEY") or os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY") or "test-api-key-12345"
             req_headers = {"Authorization": f"Bearer {ollama_token}"} if ollama_token else {}
 
             try:
@@ -13777,7 +13777,7 @@ Instructions:
             # Keep configured ollama_url
             pass
             model = os.environ.get("MODEL") or os.environ.get("MODEL_NAME") or OLLAMA_DEFAULT_MODEL
-            ollama_token = os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY") or "test-api-key-12345"
+            ollama_token = os.environ.get("NODE15_API_KEY") or os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY") or "test-api-key-12345"
             req_headers = {"Authorization": f"Bearer {ollama_token}"} if ollama_token else {}
 
             try:
@@ -13912,7 +13912,7 @@ CDIF EXPORT VARIABLES CONTEXT:
             # Allow user to specify model or default to OLLAMA_DEFAULT_MODEL
             req_model = body.get("model") or body.get("ai_model")
             model = req_model or os.environ.get("OLLAMA_DEFAULT_MODEL") or os.environ.get("MODEL") or os.environ.get("MODEL_NAME") or os.environ.get("OLLAMA_DEFAULT_MODEL", "gemma4:e2b")
-            ollama_token = os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY") or "test-api-key-12345"
+            ollama_token = os.environ.get("NODE15_API_KEY") or os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY") or "test-api-key-12345"
             req_headers = {"Authorization": f"Bearer {ollama_token}"} if ollama_token else {}
 
             try:
@@ -14156,7 +14156,7 @@ CDIF EXPORT VARIABLES CONTEXT:
             # Keep configured ollama_url
             pass
             model = os.environ.get("MODEL") or os.environ.get("MODEL_NAME") or OLLAMA_DEFAULT_MODEL
-            ollama_token = os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY") or "test-api-key-12345"
+            ollama_token = os.environ.get("NODE15_API_KEY") or os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY") or "test-api-key-12345"
             req_headers = {"Authorization": f"Bearer {ollama_token}"} if ollama_token else {}
             
             intent_prompt = f"Analyze this user query: '{query}'. If the user wants to create a collection/subcollection and ask an expert to populate it, output a JSON object with keys 'intent' (set to 'CREATE_EXPERT_TASK'), 'subcollection_name', 'expert_type', and 'message' (a detailed instruction for the expert). Otherwise, output {{\"intent\": \"QA\"}}."
@@ -14436,7 +14436,7 @@ Output a JSON object with:
             # Keep configured ollama_url
             pass
             model = os.environ.get("MODEL") or os.environ.get("MODEL_NAME") or OLLAMA_DEFAULT_MODEL
-            ollama_token = os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY") or "test-api-key-12345"
+            ollama_token = os.environ.get("NODE15_API_KEY") or os.environ.get("OLLAMA_TOKEN") or os.environ.get("OLLAMA_API_KEY") or "test-api-key-12345"
             req_headers = {"Authorization": f"Bearer {ollama_token}"} if ollama_token else {}
             
             async with httpx.AsyncClient(timeout=120.0) as client:
