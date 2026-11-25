@@ -9430,6 +9430,33 @@ Question: {question}
                     if model in mapping:
                         model = mapping[model]
                         body_json["model"] = model
+
+                    if model in ("qwen3-30b-a3b", "qwen3-30b-a3b-fast") and os.environ.get("NODE15_API_KEY"):
+                        from starlette.responses import JSONResponse
+                        oai_msgs = []
+                        sys_val = body_json.get("system")
+                        if isinstance(sys_val, str) and sys_val.strip():
+                            oai_msgs.append({"role": "system", "content": sys_val})
+                        elif isinstance(sys_val, list):
+                            sys_txt = "\n".join(b.get("text", "") for b in sys_val if isinstance(b, dict))
+                            if sys_txt.strip():
+                                oai_msgs.append({"role": "system", "content": sys_txt})
+                        for m in body_json.get("messages", []):
+                            c = m.get("content", "")
+                            if isinstance(c, list):
+                                c = "\n".join(b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text")
+                            oai_msgs.append({"role": m.get("role", "user"), "content": str(c)})
+                        async with httpx.AsyncClient(timeout=120.0, verify=False) as _n15:
+                            _n15_r = await _n15.post(
+                                "https://66.220.3.91:4001/v1/chat/completions",
+                                headers={"Authorization": f"Bearer {os.environ['NODE15_API_KEY']}", "Content-Type": "application/json"},
+                                json={"model": model, "messages": oai_msgs, "max_tokens": body_json.get("max_tokens", 2048)},
+                            )
+                        if _n15_r.status_code == 200:
+                            _n15_d = _n15_r.json()
+                            _txt = ((_n15_d.get("choices") or [{}])[0].get("message") or {}).get("content", "")
+                            return JSONResponse({"id": _n15_d.get("id", "msg_node15"), "type": "message", "role": "assistant", "model": model, "content": [{"type": "text", "text": _txt}], "stop_reason": "end_turn"})
+                        return JSONResponse({"type": "error", "error": {"type": "api_error", "message": f"NODE15 HTTP {_n15_r.status_code}: {_n15_r.text[:300]}"}}, status_code=_n15_r.status_code)
                     
                     # Ensure system prompt ALWAYS requires links to variables and datasets
                     link_instruction = (
