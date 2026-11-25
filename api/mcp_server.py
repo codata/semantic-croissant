@@ -5707,7 +5707,7 @@ def main(port: int, transport: str) -> int:
                             import requests as _req_t
                             _oh = os.environ.get("OLLAMA_HOST", "http://host.docker.internal:11434").rstrip("/")
                             _om = body.get("model") or OLLAMA_DEFAULT_MODEL
-                            _tr = _req_t.post(f"{_oh}/api/generate", json={"model": _om, "prompt": f"Generate a short 4-8 word title for this document. Return ONLY the title.\n\n{text[:1500]}", "stream": False}, timeout=15)
+                            _tr = _req_t.post(f"{_oh}/api/generate", json={"model": _om, "prompt": f"Generate a short 4-8 word title for this document. Return ONLY the title.\n\n{text[:1500]}", "stream": False}, headers=({"Authorization": f"Bearer {os.environ.get('NODE15_API_KEY') or os.environ.get('OLLAMA_API_KEY')}"} if (os.environ.get('NODE15_API_KEY') or os.environ.get('OLLAMA_API_KEY')) else {}), timeout=15)
                             if _tr.status_code == 200 and _tr.json().get("response", "").strip():
                                 ds_title = _tr.json()["response"].strip().strip('"\'')[:120]
                         except Exception:
@@ -6565,7 +6565,7 @@ Question: {question}
                             _ann_hdr = ("=== USER ANNOTATIONS & NOTES (isBasedOn — treat these as authoritative corrections to the text) ===\n" + "\n".join(_al) + "\n\n") if ('_al' in locals() and _al) else ""
                             def _ask_chunk(ch):
                                 _p = f"{_ann_hdr}Context:\n{ch}{suffix}"
-                                _r = _req_ch.post(f"{_oh_ch}/api/generate", json={"model": _om_ch, "prompt": _p, "stream": False}, timeout=120)
+                                _r = _req_ch.post(f"{_oh_ch}/api/generate", json={"model": _om_ch, "prompt": _p, "stream": False}, headers=({"Authorization": f"Bearer {os.environ.get('NODE15_API_KEY') or os.environ.get('OLLAMA_API_KEY')}"} if (os.environ.get('NODE15_API_KEY') or os.environ.get('OLLAMA_API_KEY')) else {}), timeout=120)
                                 return _r.json().get("response", "").strip() if _r.status_code == 200 else ""
                             with _cf.ThreadPoolExecutor(max_workers=len(_chunks)) as _ex:
                                 _ch_ans = [a for a in _ex.map(_ask_chunk, _chunks) if a]

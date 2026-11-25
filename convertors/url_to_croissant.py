@@ -941,6 +941,7 @@ def fetch_url_markdown(url, traverse=False, use_computer_vision=False):
                                         "images": [img_b64],
                                         "stream": False,
                                     },
+                                    headers=({"Authorization": f"Bearer {os.environ.get('NODE15_API_KEY') or os.environ.get('OLLAMA_API_KEY')}"} if (os.environ.get('NODE15_API_KEY') or os.environ.get('OLLAMA_API_KEY')) else {}),
                                     timeout=120,
                                 )
                                 if ov_resp.status_code == 200:
