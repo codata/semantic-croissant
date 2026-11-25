@@ -9455,7 +9455,17 @@ Question: {question}
                         if _n15_r.status_code == 200:
                             _n15_d = _n15_r.json()
                             _txt = ((_n15_d.get("choices") or [{}])[0].get("message") or {}).get("content", "")
-                            return JSONResponse({"id": _n15_d.get("id", "msg_node15"), "type": "message", "role": "assistant", "model": model, "content": [{"type": "text", "text": _txt}], "stop_reason": "end_turn"})
+                            _mid = _n15_d.get("id", "msg_node15")
+                            if body_json.get("stream"):
+                                from starlette.responses import StreamingResponse
+                                async def _sse_gen():
+                                    yield f"event: message_start\ndata: {json.dumps({'type': 'message_start', 'message': {'id': _mid, 'type': 'message', 'role': 'assistant', 'model': model, 'content': []}})}\n\n"
+                                    yield f"event: content_block_start\ndata: {json.dumps({'type': 'content_block_start', 'index': 0, 'content_block': {'type': 'text', 'text': ''}})}\n\n"
+                                    yield f"event: content_block_delta\ndata: {json.dumps({'type': 'content_block_delta', 'index': 0, 'delta': {'type': 'text_delta', 'text': _txt}})}\n\n"
+                                    yield f"event: content_block_stop\ndata: {json.dumps({'type': 'content_block_stop', 'index': 0})}\n\n"
+                                    yield f"event: message_stop\ndata: {json.dumps({'type': 'message_stop'})}\n\n"
+                                return StreamingResponse(_sse_gen(), media_type="text/event-stream")
+                            return JSONResponse({"id": _mid, "type": "message", "role": "assistant", "model": model, "content": [{"type": "text", "text": _txt}], "stop_reason": "end_turn"})
                         return JSONResponse({"type": "error", "error": {"type": "api_error", "message": f"NODE15 HTTP {_n15_r.status_code}: {_n15_r.text[:300]}"}}, status_code=_n15_r.status_code)
                     
                     # Ensure system prompt ALWAYS requires links to variables and datasets
