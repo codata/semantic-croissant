@@ -6588,6 +6588,23 @@ Question: {question}
                 if not model_name or model_name in ["default", "llama3.1"]:
                     model_name = os.environ.get("OLLAMA_DEFAULT_MODEL") or os.environ.get("MODEL") or os.environ.get("MODEL_NAME") or "gemma4:e2b"
 
+                if model_name in ("qwen3-30b-a3b", "qwen3-30b-a3b-fast") and os.environ.get("NODE15_API_KEY"):
+                    from starlette.responses import JSONResponse
+                    try:
+                        import httpx as _hx_n15
+                        async with _hx_n15.AsyncClient(timeout=120.0, verify=False) as _cl_n15:
+                            _rn15 = await _cl_n15.post(
+                                "https://66.220.3.91:4001/v1/chat/completions",
+                                headers={"Authorization": f"Bearer {os.environ['NODE15_API_KEY']}", "Content-Type": "application/json"},
+                                json={"model": model_name, "messages": [{"role": "user", "content": prompt}], "max_tokens": 2048},
+                            )
+                        if _rn15.status_code == 200:
+                            _ans_n15 = ((_rn15.json().get("choices") or [{}])[0].get("message") or {}).get("content", "")
+                            return JSONResponse({"success": True, "answer": _ans_n15})
+                        return JSONResponse({"success": False, "error": f"NODE15 HTTP {_rn15.status_code}: {_rn15.text[:300]}"})
+                    except Exception as _en15:
+                        return JSONResponse({"success": False, "error": str(_en15)})
+
                 def run_agent():
                     env = os.environ.copy()
                     env["MCP_URL"] = "http://localhost:7070/sse"
